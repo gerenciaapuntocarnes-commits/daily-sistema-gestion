@@ -1,0 +1,1081 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Daily — Sistema de Gestión</title>
+<style>
+:root {
+  --bg: #0f1117;
+  --sidebar: #13161f;
+  --card: #1a1d27;
+  --card2: #22263a;
+  --border: #2a2f45;
+  --accent: #4f6ef7;
+  --green: #22c55e;
+  --red: #ef4444;
+  --yellow: #f59e0b;
+  --orange: #f97316;
+  --text: #e2e8f0;
+  --muted: #6b7a99;
+  --radius: 10px;
+  --sidebar-w: 220px;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 14px; display: flex; min-height: 100vh; }
+
+/* ── SIDEBAR ── */
+#sidebar {
+  width: var(--sidebar-w); background: var(--sidebar); border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; position: fixed; top: 0; left: 0; height: 100vh; z-index: 50; overflow-y: auto;
+}
+.sidebar-brand {
+  padding: 20px 18px 16px; font-size: 18px; font-weight: 800; color: var(--accent);
+  border-bottom: 1px solid var(--border); letter-spacing: -.3px;
+}
+.sidebar-brand small { display: block; font-size: 10px; font-weight: 400; color: var(--muted); letter-spacing: .5px; margin-top: 2px; text-transform: uppercase; }
+.nav-group { padding: 14px 10px 6px; }
+.nav-group-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; padding: 0 8px; margin-bottom: 4px; }
+.nav-item {
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 7px;
+  cursor: pointer; color: var(--muted); font-size: 13px; font-weight: 500; transition: all .15s; border: none; background: none; width: 100%; text-align: left;
+}
+.nav-item:hover { background: rgba(79,110,247,.08); color: var(--text); }
+.nav-item.active { background: rgba(79,110,247,.15); color: var(--accent); }
+.nav-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+
+/* ── MAIN ── */
+#main { margin-left: var(--sidebar-w); flex: 1; padding: 28px 28px; max-width: calc(100vw - var(--sidebar-w)); }
+.section { display: none; }
+.section.active { display: block; }
+
+/* ── PAGE HEADER ── */
+.page-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+.page-title { font-size: 22px; font-weight: 700; }
+.page-subtitle { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
+/* ── CARDS ── */
+.card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; margin-bottom: 20px; }
+.stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin-bottom: 24px; }
+.stat-card { background: var(--card); border: 1px solid var(--border); border-radius: var(--radius); padding: 18px 20px; }
+.stat-val { font-size: 26px; font-weight: 700; color: var(--accent); line-height: 1; }
+.stat-label { font-size: 11px; color: var(--muted); margin-top: 6px; text-transform: uppercase; letter-spacing: .4px; }
+.stat-sub { font-size: 12px; color: var(--muted); margin-top: 4px; }
+
+/* ── TWO COL ── */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.three-col { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+
+/* ── FORMS ── */
+.form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.form-group { display: flex; flex-direction: column; gap: 6px; }
+.form-group.full { grid-column: 1 / -1; }
+label { font-size: 11px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; }
+input, select, textarea {
+  background: var(--card2); border: 1px solid var(--border); border-radius: 7px;
+  color: var(--text); padding: 9px 12px; font-size: 13px; width: 100%; outline: none; transition: border .15s;
+}
+input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+textarea { resize: vertical; min-height: 80px; font-family: inherit; }
+select option { background: var(--card2); }
+
+/* ── BUTTONS ── */
+.btn { padding: 9px 18px; border-radius: 7px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; transition: opacity .15s; display: inline-flex; align-items: center; gap: 6px; }
+.btn:hover { opacity: .85; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-success { background: var(--green); color: #fff; }
+.btn-danger { background: rgba(239,68,68,.15); color: var(--red); border: 1px solid rgba(239,68,68,.2); }
+.btn-danger:hover { background: rgba(239,68,68,.25); opacity: 1; }
+.btn-outline { background: none; border: 1px solid var(--border); color: var(--text); }
+.btn-ghost { background: none; border: none; color: var(--muted); }
+.btn-sm { padding: 5px 12px; font-size: 12px; }
+.btn-xs { padding: 3px 8px; font-size: 11px; border-radius: 5px; }
+.btn-row { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; align-items: center; }
+
+/* ── TABLE ── */
+.table-wrap { overflow-x: auto; border-radius: 8px; }
+table { width: 100%; border-collapse: collapse; }
+thead { background: var(--card2); }
+th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .5px; padding: 10px 14px; text-align: left; white-space: nowrap; font-weight: 600; }
+td { padding: 11px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: rgba(79,110,247,.04); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* ── BADGE ── */
+.badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; }
+.badge-blue   { background: rgba(79,110,247,.15); color: var(--accent); }
+.badge-green  { background: rgba(34,197,94,.15);  color: var(--green); }
+.badge-red    { background: rgba(239,68,68,.15);  color: var(--red); }
+.badge-yellow { background: rgba(245,158,11,.15); color: var(--yellow); }
+.badge-orange { background: rgba(249,115,22,.15); color: var(--orange); }
+
+/* ── MODAL ── */
+.modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.75); z-index: 200; align-items: center; justify-content: center; padding: 16px; }
+.modal-bg.open { display: flex; }
+.modal { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 28px; width: 100%; max-width: 680px; max-height: 90vh; overflow-y: auto; }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 22px; }
+.modal-title { font-size: 16px; font-weight: 700; }
+.modal-close { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 22px; line-height: 1; padding: 0 4px; }
+.modal-close:hover { color: var(--text); }
+
+/* ── MISC ── */
+.empty { text-align: center; color: var(--muted); padding: 36px; font-size: 13px; }
+.sep { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+.muted { color: var(--muted); }
+.pos { color: var(--green); } .neg { color: var(--red); }
+.tag-row { display: flex; gap: 6px; flex-wrap: wrap; }
+
+/* ── STEPS BUILDER ── */
+.steps-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+.step-item { display: flex; align-items: flex-start; gap: 8px; background: var(--card2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+.step-num { background: var(--accent); color: #fff; border-radius: 50%; width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+.step-text { flex: 1; color: var(--text); font-size: 13px; line-height: 1.5; }
+.step-del { background: none; border: none; color: var(--muted); cursor: pointer; font-size: 16px; padding: 0 4px; flex-shrink: 0; }
+.step-del:hover { color: var(--red); }
+.step-add { display: flex; gap: 8px; }
+.step-add input { flex: 1; }
+
+/* ── INGREDIENT ROWS ── */
+.ing-row { display: flex; align-items: center; gap: 8px; background: var(--card2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+.ing-row span { flex: 1; font-size: 13px; }
+.ing-qty { font-size: 12px; color: var(--muted); background: var(--card); border-radius: 4px; padding: 2px 7px; }
+.ing-cost { font-size: 12px; color: var(--accent); font-weight: 600; }
+
+/* ── HAMBURGER ── */
+.hamburger { display: none; position: fixed; top: 14px; left: 14px; z-index: 60; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; color: var(--text); font-size: 18px; }
+
+/* ── RESPONSIVE ── */
+@media (max-width: 768px) {
+  #sidebar { transform: translateX(-100%); transition: transform .25s; }
+  #sidebar.open { transform: translateX(0); }
+  #main { margin-left: 0; padding: 16px; max-width: 100vw; }
+  .hamburger { display: block; }
+  .two-col { grid-template-columns: 1fr; }
+  .three-col { grid-template-columns: 1fr 1fr; }
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+}
+@media (max-width: 480px) {
+  .three-col { grid-template-columns: 1fr; }
+  .stat-grid { grid-template-columns: 1fr 1fr; }
+}
+</style>
+</head>
+<body>
+
+<button class="hamburger" onclick="toggleSidebar()">☰</button>
+
+<!-- ══ SIDEBAR ══════════════════════════════════════════════════ -->
+<nav id="sidebar">
+  <div class="sidebar-brand">Daily<small>Sistema de Gestión</small></div>
+
+  <div class="nav-group">
+    <div class="nav-group-label">General</div>
+    <button class="nav-item active" onclick="goto('dashboard')">
+      <span class="nav-icon">📊</span> Dashboard
+    </button>
+  </div>
+
+  <div class="nav-group">
+    <div class="nav-group-label">Producción</div>
+    <button class="nav-item" onclick="goto('mp')">
+      <span class="nav-icon">🥩</span> Materias Primas
+    </button>
+    <button class="nav-item" onclick="goto('registro-mp')">
+      <span class="nav-icon">📦</span> Registro de MP
+    </button>
+    <button class="nav-item" onclick="goto('recetas')">
+      <span class="nav-icon">📋</span> Recetas
+    </button>
+    <button class="nav-item" onclick="goto('produccion')">
+      <span class="nav-icon">🏭</span> Bitácora Producción
+    </button>
+  </div>
+
+  <div class="nav-group">
+    <div class="nav-group-label">Finanzas</div>
+    <button class="nav-item" onclick="goto('gastos')">
+      <span class="nav-icon">💰</span> Gastos
+    </button>
+  </div>
+
+  <div class="nav-group">
+    <div class="nav-group-label">Calidad</div>
+    <button class="nav-item" onclick="goto('procedimientos')">
+      <span class="nav-icon">📝</span> Procedimientos
+    </button>
+    <button class="nav-item" onclick="goto('sanitario')">
+      <span class="nav-icon">🛡️</span> Registros Sanitarios
+    </button>
+  </div>
+</nav>
+
+<!-- ══ MAIN CONTENT ═══════════════════════════════════════════════ -->
+<main id="main">
+
+<!-- ════ DASHBOARD ════ -->
+<div id="s-dashboard" class="section active">
+  <div class="page-header">
+    <div><div class="page-title">Dashboard</div><div class="page-subtitle">Resumen general de operaciones</div></div>
+  </div>
+  <div class="stat-grid" id="dash-stats"></div>
+  <div class="two-col">
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:14px;font-size:14px">Última producción</div>
+      <div class="table-wrap"><table>
+        <thead><tr><th>Fecha</th><th>Receta</th><th class="num">Planeado</th><th class="num">Real</th><th>Operario</th></tr></thead>
+        <tbody id="dash-prod-body"></tbody>
+      </table></div>
+    </div>
+    <div class="card">
+      <div style="font-weight:600;margin-bottom:14px;font-size:14px">Accesos rápidos</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <button class="btn btn-primary" onclick="goto('produccion');openModal('modal-prod')">🏭 Registrar producción</button>
+        <button class="btn btn-outline" onclick="goto('registro-mp');openModal('modal-compra')">📦 Registrar llegada de MP</button>
+        <button class="btn btn-outline" onclick="goto('gastos');openModal('modal-gasto')">💰 Registrar gasto</button>
+        <button class="btn btn-outline" onclick="goto('sanitario');openModal('modal-sanitario')">🛡️ Registro sanitario</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ MATERIAS PRIMAS — CATÁLOGO ════ -->
+<div id="s-mp" class="section">
+  <div class="page-header">
+    <div><div class="page-title">Materias Primas</div><div class="page-subtitle">Catálogo de ingredientes y precios actuales</div></div>
+    <button class="btn btn-primary" onclick="openModal('modal-mp')">+ Nueva MP</button>
+  </div>
+  <div class="card">
+    <div class="table-wrap"><table>
+      <thead><tr><th>Ingrediente</th><th>Unidad</th><th>Categoría</th><th class="num">Precio actual</th><th>Última compra</th><th>Proveedor</th><th></th></tr></thead>
+      <tbody id="mp-body"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- ════ REGISTRO DE MP (COMPRAS) ════ -->
+<div id="s-registro-mp" class="section">
+  <div class="page-header">
+    <div><div class="page-title">Registro de Materias Primas</div><div class="page-subtitle">Registra cada llegada: precio, proveedor, cantidad, remisión o factura</div></div>
+    <button class="btn btn-primary" onclick="openModal('modal-compra')">+ Registrar llegada</button>
+  </div>
+  <div class="card">
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fecha</th><th>Ingrediente</th><th class="num">Cantidad</th><th class="num">Precio / und</th><th class="num">Total</th><th>Proveedor</th><th>Remisión / Factura</th><th>Notas</th><th></th></tr></thead>
+      <tbody id="compras-body"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- ════ RECETAS ════ -->
+<div id="s-recetas" class="section">
+  <div class="page-header">
+    <div><div class="page-title">Recetas</div><div class="page-subtitle">Costos actualizados automáticamente con últimos precios de MP</div></div>
+    <button class="btn btn-primary" onclick="openModal('modal-receta')">+ Nueva receta</button>
+  </div>
+  <div class="two-col" style="align-items:start">
+    <div class="card" style="margin-bottom:0">
+      <div class="table-wrap"><table>
+        <thead><tr><th>Receta</th><th>Categoría</th><th class="num">Costo/porción</th><th class="num">P. venta</th><th class="num">Margen %</th><th></th></tr></thead>
+        <tbody id="recetas-body"></tbody>
+      </table></div>
+    </div>
+    <div id="receta-detalle-panel">
+      <div class="card"><p class="muted" style="text-align:center;padding:20px">Selecciona una receta para ver el detalle y editar ingredientes.</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ BITÁCORA PRODUCCIÓN ════ -->
+<div id="s-produccion" class="section">
+  <div class="page-header">
+    <div><div class="page-title">Bitácora de Producción</div><div class="page-subtitle">Registro diario: cantidad planeada vs real producida</div></div>
+    <button class="btn btn-primary" onclick="openModal('modal-prod')">+ Registrar producción</button>
+  </div>
+  <div class="card">
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fecha</th><th>Producto</th><th>Categoría</th><th class="num">Planeado</th><th class="num">Real producido</th><th class="num">Diferencia</th><th>Lote</th><th>Operario</th><th class="num">Costo total</th><th>Notas</th><th></th></tr></thead>
+      <tbody id="prod-body"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- ════ GASTOS ════ -->
+<div id="s-gastos" class="section">
+  <div class="page-header">
+    <div><div class="page-title">Gastos</div><div class="page-subtitle">Caja menor y gastos mensuales</div></div>
+    <button class="btn btn-primary" onclick="openModal('modal-gasto')">+ Registrar gasto</button>
+  </div>
+  <div style="display:flex;gap:8px;margin-bottom:20px">
+    <button class="btn btn-outline btn-sm" id="tab-todos"   onclick="gastosTab('todos')"      style="border-color:var(--accent);color:var(--accent)">Todos</button>
+    <button class="btn btn-outline btn-sm" id="tab-caja"    onclick="gastosTab('caja_menor')">Caja Menor</button>
+    <button class="btn btn-outline btn-sm" id="tab-mensual" onclick="gastosTab('mensual')">Gastos Mensuales</button>
+  </div>
+  <div class="stat-grid" id="gastos-resumen" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr))"></div>
+  <div class="card">
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fecha</th><th>Tipo</th><th>Categoría</th><th>Descripción</th><th class="num">Monto</th><th>Responsable</th><th>Comprobante</th><th></th></tr></thead>
+      <tbody id="gastos-body"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- ════ PROCEDIMIENTOS ════ -->
+<div id="s-procedimientos" class="section">
+  <div class="page-header">
+    <div><div class="page-title">Procedimientos (SOPs)</div><div class="page-subtitle">Estándares de operación por proceso</div></div>
+    <button class="btn btn-primary" onclick="openModal('modal-proc')">+ Nuevo SOP</button>
+  </div>
+  <div class="two-col" style="align-items:start">
+    <div class="card" style="margin-bottom:0">
+      <div id="proc-list"><p class="empty">Sin procedimientos. Crea el primero.</p></div>
+    </div>
+    <div id="proc-detalle-panel">
+      <div class="card"><p class="muted" style="text-align:center;padding:20px">Selecciona un procedimiento para ver sus pasos.</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ REGISTROS SANITARIOS ════ -->
+<div id="s-sanitario" class="section">
+  <div class="page-header">
+    <div><div class="page-title">Registros Sanitarios</div><div class="page-subtitle">Control de higiene, temperaturas, plagas y auditorías</div></div>
+    <button class="btn btn-primary" onclick="openModal('modal-sanitario')">+ Nuevo registro</button>
+  </div>
+  <div class="card">
+    <div class="table-wrap"><table>
+      <thead><tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Resultado</th><th>Operario</th><th>Próxima revisión</th><th>Observaciones</th><th></th></tr></thead>
+      <tbody id="sanitario-body"></tbody>
+    </table></div>
+  </div>
+</div>
+
+</main>
+
+<!-- ══ MODALES ════════════════════════════════════════════════════ -->
+
+<!-- Nueva MP -->
+<div id="modal-mp" class="modal-bg">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Nueva Materia Prima</div>
+      <button class="modal-close" onclick="closeModal('modal-mp')">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group"><label>Nombre del ingrediente</label><input id="mp-nombre" placeholder="Ej: Lomo de cerdo"></div>
+      <div class="form-group"><label>Unidad de medida</label>
+        <select id="mp-unidad"><option>kg</option><option>g</option><option>lt</option><option>ml</option><option>und</option><option>lb</option><option>oz</option></select>
+      </div>
+      <div class="form-group"><label>Categoría</label>
+        <select id="mp-categoria">
+          <option>Carnes y proteínas</option><option>Salsas y condimentos</option><option>Vegetales</option>
+          <option>Lácteos</option><option>Empaques</option><option>Insumos</option><option>General</option>
+        </select>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="crearMP()">Guardar</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-mp')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Registrar llegada de MP -->
+<div id="modal-compra" class="modal-bg">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Registrar llegada de Materia Prima</div>
+      <button class="modal-close" onclick="closeModal('modal-compra')">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full"><label>Ingrediente</label><select id="compra-mp"></select></div>
+      <div class="form-group"><label>Fecha de llegada</label><input type="date" id="compra-fecha"></div>
+      <div class="form-group"><label>Proveedor</label><input id="compra-proveedor" placeholder="Nombre del proveedor"></div>
+      <div class="form-group"><label>Cantidad recibida</label><input type="number" id="compra-cantidad" step="0.001" placeholder="0.000"></div>
+      <div class="form-group"><label>Precio por unidad ($)</label><input type="number" id="compra-precio" step="0.01" placeholder="0.00"></div>
+      <div class="form-group"><label>N° Remisión o Factura</label><input id="compra-factura" placeholder="Ej: REF-2024-001"></div>
+      <div class="form-group full"><label>Notas u observaciones</label><textarea id="compra-notas" rows="2" placeholder="Estado del producto, temperatura al llegar, etc."></textarea></div>
+    </div>
+    <div id="compra-preview" style="background:var(--card2);border-radius:8px;padding:12px;margin-top:4px;font-size:13px;display:none">
+      Total: <strong id="compra-total">$0</strong>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="registrarCompra()">Guardar</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-compra')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Nueva Receta -->
+<div id="modal-receta" class="modal-bg">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Nueva Receta</div>
+      <button class="modal-close" onclick="closeModal('modal-receta')">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group"><label>Nombre de la receta</label><input id="rec-nombre" placeholder="Ej: Sopa de costilla"></div>
+      <div class="form-group"><label>Categoría</label>
+        <select id="rec-categoria"><option>Sopas</option><option>Proteínas</option><option>Salsas</option><option>Procesos</option><option>General</option></select>
+      </div>
+      <div class="form-group"><label>Porciones que rinde</label><input type="number" id="rec-porciones" step="0.5" value="1"></div>
+      <div class="form-group"><label>Precio de venta por porción ($)</label><input type="number" id="rec-precio" step="100" value="0"></div>
+      <div class="form-group full"><label>Descripción</label><textarea id="rec-descripcion" rows="2" placeholder="Descripción breve de la receta"></textarea></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="crearReceta()">Crear receta</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-receta')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Registrar Producción -->
+<div id="modal-prod" class="modal-bg">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Registrar Producción</div>
+      <button class="modal-close" onclick="closeModal('modal-prod')">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full"><label>Producto / Receta</label><select id="prod-receta"></select></div>
+      <div class="form-group"><label>Fecha</label><input type="date" id="prod-fecha"></div>
+      <div class="form-group"><label>Cantidad planeada</label><input type="number" id="prod-planeado" step="0.5" placeholder="0" oninput="actualizarDifProd()"></div>
+      <div class="form-group"><label>Cantidad real producida</label><input type="number" id="prod-porciones" step="0.5" placeholder="0" oninput="actualizarDifProd()"></div>
+      <div class="form-group"><label>Diferencia</label>
+        <div id="prod-diferencia" style="padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--muted)">—</div>
+      </div>
+      <div class="form-group"><label>Lote</label><input id="prod-lote" placeholder="Ej: L2024-001"></div>
+      <div class="form-group"><label>Operario responsable</label><input id="prod-operario" placeholder="Nombre"></div>
+      <div class="form-group full"><label>Notas / Observaciones</label><textarea id="prod-notas" rows="2"></textarea></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="registrarProduccion()">Guardar</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-prod')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Registrar Gasto -->
+<div id="modal-gasto" class="modal-bg">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Registrar Gasto</div>
+      <button class="modal-close" onclick="closeModal('modal-gasto')">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group"><label>Fecha</label><input type="date" id="gasto-fecha"></div>
+      <div class="form-group"><label>Tipo</label>
+        <select id="gasto-tipo"><option value="caja_menor">Caja Menor</option><option value="mensual">Gasto Mensual</option></select>
+      </div>
+      <div class="form-group"><label>Categoría</label>
+        <select id="gasto-categoria">
+          <option>Nómina</option><option>Arriendo</option><option>Servicios públicos</option>
+          <option>Transporte</option><option>Publicidad</option><option>Insumos menores</option>
+          <option>Mantenimiento</option><option>Impuestos</option><option>General</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Monto ($)</label><input type="number" id="gasto-monto" step="100" placeholder="0"></div>
+      <div class="form-group full"><label>Descripción</label><input id="gasto-desc" placeholder="Descripción del gasto"></div>
+      <div class="form-group"><label>Responsable</label><input id="gasto-resp" placeholder="Nombre"></div>
+      <div class="form-group"><label>N° Comprobante</label><input id="gasto-comp" placeholder=""></div>
+      <div class="form-group full"><label>Notas</label><textarea id="gasto-notas" rows="2"></textarea></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="registrarGasto()">Guardar</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-gasto')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Nuevo Procedimiento con constructor de pasos -->
+<div id="modal-proc" class="modal-bg">
+  <div class="modal" style="max-width:720px">
+    <div class="modal-header">
+      <div class="modal-title">Nuevo Procedimiento (SOP)</div>
+      <button class="modal-close" onclick="closeModal('modal-proc')">×</button>
+    </div>
+    <div class="form-grid" style="margin-bottom:16px">
+      <div class="form-group"><label>Nombre del procedimiento</label><input id="proc-nombre" placeholder="Ej: Limpieza de equipos"></div>
+      <div class="form-group"><label>Categoría</label>
+        <select id="proc-categoria">
+          <option>Producción</option><option>Limpieza y sanitización</option><option>Recepción de MP</option>
+          <option>Almacenamiento</option><option>Despacho</option><option>General</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Responsable</label><input id="proc-resp" placeholder="Cargo o nombre"></div>
+      <div class="form-group"><label>Frecuencia</label>
+        <select id="proc-frecuencia"><option>Cada vez</option><option>Diario</option><option>Semanal</option><option>Quincenal</option><option>Mensual</option></select>
+      </div>
+      <div class="form-group full"><label>Descripción general</label><textarea id="proc-desc" rows="2" placeholder="Objetivo o resumen del procedimiento"></textarea></div>
+    </div>
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:10px">Pasos del procedimiento</div>
+    <div id="modal-steps-list" class="steps-list"></div>
+    <div class="step-add">
+      <input id="nuevo-paso-input" placeholder="Escribe el paso y presiona Agregar..." onkeydown="if(event.key==='Enter'){event.preventDefault();agregarPasoModal()}">
+      <button class="btn btn-outline btn-sm" onclick="agregarPasoModal()">+ Agregar paso</button>
+    </div>
+    <div class="btn-row" style="margin-top:20px">
+      <button class="btn btn-primary" onclick="crearProcedimiento()">Guardar SOP</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-proc')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Nuevo Registro Sanitario -->
+<div id="modal-sanitario" class="modal-bg">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Nuevo Registro Sanitario</div>
+      <button class="modal-close" onclick="closeModal('modal-sanitario')">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group"><label>Fecha</label><input type="date" id="san-fecha"></div>
+      <div class="form-group"><label>Tipo de control</label>
+        <select id="san-tipo">
+          <option>Control temperatura</option><option>Limpieza y desinfección</option>
+          <option>Control de plagas</option><option>Vencimientos</option>
+          <option>Control de agua</option><option>Higiene personal</option>
+          <option>Auditoría interna</option><option>Otro</option>
+        </select>
+      </div>
+      <div class="form-group"><label>Resultado</label>
+        <select id="san-resultado"><option>Aprobado</option><option>Rechazado</option><option>Pendiente corrección</option></select>
+      </div>
+      <div class="form-group"><label>Operario</label><input id="san-operario" placeholder="Nombre"></div>
+      <div class="form-group full"><label>Descripción de lo controlado</label><input id="san-desc" placeholder="Qué se verificó / inspeccionó"></div>
+      <div class="form-group full"><label>Observaciones</label><textarea id="san-obs" rows="2"></textarea></div>
+      <div class="form-group"><label>Próxima revisión</label><input type="date" id="san-proxima"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="crearRegistroSanitario()">Guardar</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-sanitario')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Agregar ingrediente a receta -->
+<div id="modal-ing" class="modal-bg">
+  <div class="modal" style="max-width:460px">
+    <div class="modal-header">
+      <div class="modal-title">Agregar Ingrediente</div>
+      <button class="modal-close" onclick="closeModal('modal-ing')">×</button>
+    </div>
+    <div class="form-grid">
+      <div class="form-group full"><label>Ingrediente</label><select id="ing-mp"></select></div>
+      <div class="form-group"><label>Cantidad</label><input type="number" id="ing-cantidad" step="0.001" placeholder="0.000"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" onclick="agregarIngrediente()">Agregar</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-ing')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = '';
+let mpList = [], recetasList = [], currentRecetaId = null, currentGastosTab = 'todos';
+let modalPasos = [];
+
+const $ = id => document.getElementById(id);
+const fmt  = n => n == null ? '—' : Number(n).toLocaleString('es-CO', {minimumFractionDigits:0, maximumFractionDigits:0});
+const fmtD = (n, d=2) => n == null ? '—' : Number(n).toLocaleString('es-CO', {minimumFractionDigits:d, maximumFractionDigits:d});
+const today = () => new Date().toISOString().split('T')[0];
+
+// ── Sidebar & nav ─────────────────────────────────────────────────
+function toggleSidebar() {
+  $('sidebar').classList.toggle('open');
+}
+function goto(sec) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
+  $('s-' + sec).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(b => {
+    if(b.getAttribute('onclick') && b.getAttribute('onclick').includes("'"+sec+"'")) b.classList.add('active');
+  });
+  if(window.innerWidth <= 768) $('sidebar').classList.remove('open');
+  const loaders = {
+    dashboard: loadDashboard,
+    mp: loadMP,
+    'registro-mp': loadCompras,
+    recetas: loadRecetas,
+    produccion: () => { loadProduccion(); fillSelectRecetas(); },
+    gastos: loadGastos,
+    procedimientos: loadProcedimientos,
+    sanitario: loadSanitario
+  };
+  if(loaders[sec]) loaders[sec]();
+}
+
+// ── Modales ────────────────────────────────────────────────────────
+function openModal(id) {
+  $(id).classList.add('open');
+  if(id === 'modal-compra')   { fillSelectMP('compra-mp'); $('compra-fecha').value = today(); }
+  if(id === 'modal-prod')     { fillSelectRecetas(); $('prod-fecha').value = today(); }
+  if(id === 'modal-gasto')    { $('gasto-fecha').value = today(); }
+  if(id === 'modal-sanitario'){ $('san-fecha').value = today(); }
+  if(id === 'modal-ing')      { fillSelectMP('ing-mp'); }
+  if(id === 'modal-proc')     { modalPasos = []; renderModalPasos(); }
+}
+function closeModal(id) { $(id).classList.remove('open'); }
+document.querySelectorAll('.modal-bg').forEach(m => {
+  m.addEventListener('click', e => { if(e.target === m) m.classList.remove('open'); });
+});
+
+// ── API helper ─────────────────────────────────────────────────────
+async function api(path, method='GET', body=null, silent=false) {
+  const opts = { method, headers: {'Content-Type':'application/json'} };
+  if(body) opts.body = JSON.stringify(body);
+  const r = await fetch(API + '/api' + path, opts);
+  if(!r.ok) {
+    const e = await r.json().catch(()=>({detail:'Error de conexión'}));
+    if(!silent) alert(e.detail || 'Error');
+    throw e;
+  }
+  return r.json();
+}
+
+function fillSelectMP(selectId) {
+  const sel = $(selectId); if(!sel) return;
+  sel.innerHTML = '<option value="">— Seleccionar —</option>';
+  mpList.forEach(m => { const o = document.createElement('option'); o.value=m.id; o.textContent=m.nombre+' ('+m.unidad+')'; sel.appendChild(o); });
+}
+function fillSelectRecetas() {
+  const sel = $('prod-receta'); if(!sel) return;
+  sel.innerHTML = '<option value="">— Seleccionar receta —</option>';
+  recetasList.forEach(r => { const o = document.createElement('option'); o.value=r.id; o.textContent=r.nombre; sel.appendChild(o); });
+}
+
+// ── DASHBOARD ─────────────────────────────────────────────────────
+async function loadDashboard() {
+  const d = await api('/dashboard','GET',null,true).catch(()=>({
+    total_mp:0,total_recetas:0,produccion_hoy:{porciones:0,registros:0},
+    gastos_mes:0,caja_hoy:0,alertas_sanitarias:0,ultima_produccion:[]
+  }));
+  $('dash-stats').innerHTML = `
+    <div class="stat-card"><div class="stat-val">${d.total_mp}</div><div class="stat-label">Materias Primas</div></div>
+    <div class="stat-card"><div class="stat-val">${d.total_recetas}</div><div class="stat-label">Recetas activas</div></div>
+    <div class="stat-card"><div class="stat-val">${d.produccion_hoy.porciones}</div><div class="stat-label">Porciones hoy</div></div>
+    <div class="stat-card"><div class="stat-val">$${fmt(d.gastos_mes)}</div><div class="stat-label">Gastos del mes</div></div>
+    <div class="stat-card"><div class="stat-val">$${fmt(d.caja_hoy)}</div><div class="stat-label">Caja menor hoy</div></div>
+    <div class="stat-card"><div class="stat-val ${d.alertas_sanitarias>0?'neg':''}">${d.alertas_sanitarias}</div><div class="stat-label">Alertas sanitarias</div></div>
+  `;
+  $('dash-prod-body').innerHTML = d.ultima_produccion.length
+    ? d.ultima_produccion.map(p=>`<tr><td>${p.fecha}</td><td>${p.receta||'—'}</td><td class="num">${fmtD(p.porciones_planeadas,1)}</td><td class="num">${fmtD(p.porciones,1)}</td><td>${p.operario||'—'}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="empty">Sin producción reciente</td></tr>';
+}
+
+// ── MATERIAS PRIMAS ────────────────────────────────────────────────
+async function loadMP() {
+  mpList = await api('/materias-primas','GET',null,true).catch(()=>[]);
+  $('mp-body').innerHTML = mpList.map(m => `
+    <tr>
+      <td><strong>${m.nombre}</strong></td>
+      <td><span class="badge badge-blue">${m.unidad}</span></td>
+      <td>${m.categoria}</td>
+      <td class="num">${m.precio_actual ? '$'+fmt(m.precio_actual) : '<span class="muted">Sin compras</span>'}</td>
+      <td>${m.ultima_compra || '<span class="muted">—</span>'}</td>
+      <td>${m.ultimo_proveedor || '<span class="muted">—</span>'}</td>
+      <td><button class="btn btn-danger btn-xs" onclick="eliminarMP(${m.id})">Eliminar</button></td>
+    </tr>`).join('') || '<tr><td colspan="7" class="empty">Sin materias primas registradas</td></tr>';
+}
+
+async function crearMP() {
+  const nombre = $('mp-nombre').value.trim();
+  if(!nombre) return alert('Ingresa el nombre del ingrediente');
+  await api('/materias-primas','POST',{nombre, unidad:$('mp-unidad').value, categoria:$('mp-categoria').value});
+  closeModal('modal-mp'); $('mp-nombre').value = '';
+  await loadMP();
+}
+async function eliminarMP(id) {
+  if(!confirm('¿Eliminar esta materia prima?')) return;
+  await api('/materias-primas/'+id,'DELETE');
+  loadMP();
+}
+
+// ── REGISTRO DE MP (COMPRAS) ───────────────────────────────────────
+async function loadCompras() {
+  const compras = await api('/compras-mp','GET',null,true).catch(()=>[]);
+  $('compras-body').innerHTML = compras.map(c => `
+    <tr>
+      <td>${c.fecha}</td>
+      <td><strong>${c.mp_nombre}</strong></td>
+      <td class="num">${fmtD(c.cantidad,3)} <span class="muted">${c.unidad}</span></td>
+      <td class="num">$${fmt(c.precio_unit)}</td>
+      <td class="num"><strong>$${fmt(c.total)}</strong></td>
+      <td>${c.proveedor||'<span class="muted">—</span>'}</td>
+      <td>${c.factura||'<span class="muted">—</span>'}</td>
+      <td>${c.notas||'<span class="muted">—</span>'}</td>
+      <td><button class="btn btn-danger btn-xs" onclick="eliminarCompra(${c.id})">×</button></td>
+    </tr>`).join('') || '<tr><td colspan="9" class="empty">Sin registros de llegadas</td></tr>';
+}
+
+async function registrarCompra() {
+  const mp_id = parseInt($('compra-mp').value);
+  const cantidad = parseFloat($('compra-cantidad').value);
+  const precio_unit = parseFloat($('compra-precio').value);
+  if(!mp_id || !cantidad || !precio_unit) return alert('Selecciona el ingrediente, cantidad y precio');
+  await api('/compras-mp','POST',{
+    mp_id, fecha:$('compra-fecha').value, cantidad, precio_unit,
+    proveedor:$('compra-proveedor').value||null,
+    factura:$('compra-factura').value||null,
+    notas:$('compra-notas').value||null
+  });
+  closeModal('modal-compra');
+  ['compra-cantidad','compra-precio','compra-proveedor','compra-factura','compra-notas'].forEach(id=>$(id).value='');
+  $('compra-preview').style.display='none';
+  loadCompras(); loadMP();
+}
+async function eliminarCompra(id) {
+  if(!confirm('¿Eliminar este registro de compra?')) return;
+  await api('/compras-mp/'+id,'DELETE');
+  loadCompras(); loadMP();
+}
+
+// Calcular total en tiempo real
+['compra-cantidad','compra-precio'].forEach(id => {
+  document.addEventListener('DOMContentLoaded', ()=>{
+    const el = $(id); if(!el) return;
+    el.addEventListener('input', () => {
+      const c = parseFloat($('compra-cantidad').value)||0;
+      const p = parseFloat($('compra-precio').value)||0;
+      const prev = $('compra-preview');
+      if(c && p) { prev.style.display='block'; $('compra-total').textContent='$'+fmt(c*p); }
+      else prev.style.display='none';
+    });
+  });
+});
+
+// ── RECETAS ────────────────────────────────────────────────────────
+async function loadRecetas() {
+  recetasList = await api('/recetas','GET',null,true).catch(()=>[]);
+  $('recetas-body').innerHTML = recetasList.map(r => `
+    <tr style="cursor:pointer" onclick="verReceta(${r.id})">
+      <td><strong>${r.nombre}</strong></td>
+      <td><span class="badge badge-blue">${r.categoria}</span></td>
+      <td class="num">$${fmt(r.costo_porcion)}</td>
+      <td class="num">$${fmt(r.precio_venta)}</td>
+      <td class="num ${r.margen_pct>=0?'pos':'neg'}">${fmtD(r.margen_pct,1)}%</td>
+      <td><button class="btn btn-danger btn-xs" onclick="event.stopPropagation();eliminarReceta(${r.id})">×</button></td>
+    </tr>`).join('') || '<tr><td colspan="6" class="empty">Sin recetas</td></tr>';
+}
+
+async function crearReceta() {
+  const nombre = $('rec-nombre').value.trim();
+  if(!nombre) return alert('Ingresa el nombre de la receta');
+  const res = await api('/recetas','POST',{
+    nombre, categoria:$('rec-categoria').value,
+    descripcion:$('rec-descripcion').value||null,
+    porciones:parseFloat($('rec-porciones').value)||1,
+    precio_venta:parseFloat($('rec-precio').value)||0
+  });
+  closeModal('modal-receta');
+  $('rec-nombre').value=''; $('rec-descripcion').value='';
+  await loadRecetas();
+  verReceta(res.id);
+  goto('recetas');
+}
+
+async function eliminarReceta(id) {
+  if(!confirm('¿Eliminar esta receta?')) return;
+  await api('/recetas/'+id,'DELETE');
+  loadRecetas();
+  $('receta-detalle-panel').innerHTML = '<div class="card"><p class="muted" style="text-align:center;padding:20px">Selecciona una receta.</p></div>';
+}
+
+async function verReceta(id) {
+  currentRecetaId = id;
+  const r = await api('/recetas/'+id);
+  const margenClass = r.margen >= 0 ? 'pos' : 'neg';
+  const ingsHtml = r.ingredientes.length ? r.ingredientes.map(i => `
+    <div class="ing-row">
+      <span>${i.mp_nombre}</span>
+      <span class="ing-qty">${fmtD(i.cantidad,3)} ${i.unidad}</span>
+      <span class="ing-cost">$${fmt(i.costo_linea)}</span>
+      <button class="step-del" onclick="eliminarIngrediente(${i.id})" title="Quitar">×</button>
+    </div>`).join('') : '<p class="muted" style="padding:8px">Sin ingredientes aún.</p>';
+
+  $('receta-detalle-panel').innerHTML = `
+    <div class="card" style="margin-bottom:0">
+      <div style="margin-bottom:16px">
+        <div style="font-size:16px;font-weight:700">${r.nombre}</div>
+        <div class="muted" style="font-size:12px;margin-top:4px">${r.categoria} · Rinde ${r.porciones} porciones</div>
+        ${r.descripcion?`<div style="margin-top:8px;font-size:13px;color:var(--muted)">${r.descripcion}</div>`:''}
+      </div>
+      <div class="three-col" style="margin-bottom:20px">
+        <div class="stat-card"><div class="stat-val" style="font-size:18px">$${fmt(r.costo_total)}</div><div class="stat-label">Costo total</div></div>
+        <div class="stat-card"><div class="stat-val" style="font-size:18px">$${fmt(r.costo_porcion)}</div><div class="stat-label">Costo / porción</div></div>
+        <div class="stat-card"><div class="stat-val ${margenClass}" style="font-size:18px">${fmtD(r.margen_pct,1)}%</div><div class="stat-label">Margen</div></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <div style="font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Ingredientes</div>
+        <button class="btn btn-outline btn-sm" onclick="openModal('modal-ing')">+ Agregar</button>
+      </div>
+      ${ingsHtml}
+      <div class="sep"></div>
+      <div style="text-align:right;font-size:12px;color:var(--muted)">
+        Venta: <strong style="color:var(--text)">$${fmt(r.precio_venta)}</strong> &nbsp;·&nbsp;
+        Costo: <strong style="color:var(--text)">$${fmt(r.costo_porcion)}</strong> &nbsp;·&nbsp;
+        Margen: <strong class="${margenClass}">$${fmt(r.margen)}</strong>
+      </div>
+    </div>`;
+}
+
+async function agregarIngrediente() {
+  if(!currentRecetaId) return alert('Selecciona una receta primero');
+  const mp_id = parseInt($('ing-mp').value);
+  const cantidad = parseFloat($('ing-cantidad').value);
+  if(!mp_id || !cantidad) return alert('Completa todos los campos');
+  await api('/recetas/'+currentRecetaId+'/ingredientes','POST',{mp_id,cantidad});
+  closeModal('modal-ing'); $('ing-cantidad').value='';
+  verReceta(currentRecetaId);
+}
+async function eliminarIngrediente(id) {
+  await api('/receta-ingredientes/'+id,'DELETE');
+  verReceta(currentRecetaId);
+}
+
+// ── PRODUCCIÓN ─────────────────────────────────────────────────────
+function actualizarDifProd() {
+  const plan = parseFloat($('prod-planeado').value)||0;
+  const real  = parseFloat($('prod-porciones').value)||0;
+  const dif   = real - plan;
+  const el    = $('prod-diferencia');
+  if(!plan && !real) { el.textContent='—'; el.style.color='var(--muted)'; return; }
+  el.textContent = (dif>=0?'+':'')+fmtD(dif,1);
+  el.style.color = dif>=0?'var(--green)':'var(--red)';
+}
+
+async function loadProduccion() {
+  const prods = await api('/produccion','GET',null,true).catch(()=>[]);
+  $('prod-body').innerHTML = prods.map(p => {
+    const dif = p.porciones - p.porciones_planeadas;
+    const difClass = dif >= 0 ? 'pos' : 'neg';
+    const difStr = p.porciones_planeadas > 0 ? `<span class="${difClass}">${dif>=0?'+':''}${fmtD(dif,1)}</span>` : '<span class="muted">—</span>';
+    return `<tr>
+      <td>${p.fecha}</td>
+      <td><strong>${p.receta||'—'}</strong></td>
+      <td><span class="badge badge-blue">${p.categoria||'—'}</span></td>
+      <td class="num">${p.porciones_planeadas>0?fmtD(p.porciones_planeadas,1):'<span class="muted">—</span>'}</td>
+      <td class="num"><strong>${fmtD(p.porciones,1)}</strong></td>
+      <td class="num">${difStr}</td>
+      <td>${p.lote||'<span class="muted">—</span>'}</td>
+      <td>${p.operario||'<span class="muted">—</span>'}</td>
+      <td class="num">$${fmt(p.costo_total)}</td>
+      <td style="max-width:160px;font-size:12px;color:var(--muted)">${p.notas||''}</td>
+      <td><button class="btn btn-danger btn-xs" onclick="eliminarProduccion(${p.id})">×</button></td>
+    </tr>`;}).join('') || '<tr><td colspan="11" class="empty">Sin registros de producción</td></tr>';
+}
+
+async function registrarProduccion() {
+  const receta_id = parseInt($('prod-receta').value);
+  const porciones = parseFloat($('prod-porciones').value);
+  if(!receta_id || !porciones) return alert('Selecciona la receta y la cantidad real producida');
+  await api('/produccion','POST',{
+    receta_id, porciones,
+    porciones_planeadas: parseFloat($('prod-planeado').value)||0,
+    fecha:$('prod-fecha').value,
+    lote:$('prod-lote').value||null,
+    operario:$('prod-operario').value||null,
+    notas:$('prod-notas').value||null
+  });
+  closeModal('modal-prod');
+  ['prod-planeado','prod-porciones','prod-lote','prod-operario','prod-notas'].forEach(id=>$(id).value='');
+  $('prod-diferencia').textContent='—'; $('prod-diferencia').style.color='var(--muted)';
+  loadProduccion();
+}
+async function eliminarProduccion(id) {
+  if(!confirm('¿Eliminar este registro?')) return;
+  await api('/produccion/'+id,'DELETE');
+  loadProduccion();
+}
+
+// ── GASTOS ─────────────────────────────────────────────────────────
+function gastosTab(tab) {
+  currentGastosTab = tab;
+  ['todos','caja','mensual'].forEach(t => {
+    const el = $('tab-'+t); if(!el) return;
+    el.style.borderColor = ''; el.style.color = '';
+    el.style.background = '';
+  });
+  const activeId = tab==='todos'?'tab-todos':tab==='caja_menor'?'tab-caja':'tab-mensual';
+  const el = $(activeId); if(el){ el.style.borderColor='var(--accent)'; el.style.color='var(--accent)'; }
+  loadGastos();
+}
+
+async function loadGastos() {
+  const tipo = currentGastosTab==='todos' ? null : currentGastosTab;
+  const gastos = await api('/gastos'+(tipo?'?tipo='+tipo:''),'GET',null,true).catch(()=>[]);
+  const total = gastos.reduce((s,g)=>s+g.monto,0);
+  const mes = gastos.filter(g=>{const d=new Date(g.fecha);const n=new Date();return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();});
+  $('gastos-resumen').innerHTML = `
+    <div class="stat-card"><div class="stat-val" style="font-size:20px">$${fmt(total)}</div><div class="stat-label">Total visible</div></div>
+    <div class="stat-card"><div class="stat-val" style="font-size:20px">$${fmt(mes.reduce((s,g)=>s+g.monto,0))}</div><div class="stat-label">Este mes</div></div>
+    <div class="stat-card"><div class="stat-val" style="font-size:20px">${gastos.length}</div><div class="stat-label">Registros</div></div>
+  `;
+  $('gastos-body').innerHTML = gastos.map(g => `
+    <tr>
+      <td>${g.fecha}</td>
+      <td><span class="badge ${g.tipo==='caja_menor'?'badge-yellow':'badge-blue'}">${g.tipo==='caja_menor'?'Caja menor':'Mensual'}</span></td>
+      <td>${g.categoria}</td>
+      <td>${g.descripcion}</td>
+      <td class="num"><strong>$${fmt(g.monto)}</strong></td>
+      <td>${g.responsable||'<span class="muted">—</span>'}</td>
+      <td>${g.comprobante||'<span class="muted">—</span>'}</td>
+      <td><button class="btn btn-danger btn-xs" onclick="eliminarGasto(${g.id})">×</button></td>
+    </tr>`).join('') || '<tr><td colspan="8" class="empty">Sin gastos registrados</td></tr>';
+}
+
+async function registrarGasto() {
+  const desc = $('gasto-desc').value.trim();
+  const monto = parseFloat($('gasto-monto').value);
+  if(!desc || !monto) return alert('Completa descripción y monto');
+  await api('/gastos','POST',{
+    fecha:$('gasto-fecha').value, tipo:$('gasto-tipo').value,
+    categoria:$('gasto-categoria').value, descripcion:desc, monto,
+    responsable:$('gasto-resp').value||null,
+    comprobante:$('gasto-comp').value||null,
+    notas:$('gasto-notas').value||null
+  });
+  closeModal('modal-gasto');
+  ['gasto-desc','gasto-monto','gasto-resp','gasto-comp','gasto-notas'].forEach(id=>$(id).value='');
+  loadGastos();
+}
+async function eliminarGasto(id) {
+  if(!confirm('¿Eliminar este gasto?')) return;
+  await api('/gastos/'+id,'DELETE');
+  loadGastos();
+}
+
+// ── PROCEDIMIENTOS ─────────────────────────────────────────────────
+function renderModalPasos() {
+  $('modal-steps-list').innerHTML = modalPasos.map((p,i) => `
+    <div class="step-item">
+      <div class="step-num">${i+1}</div>
+      <div class="step-text">${p}</div>
+      <button class="step-del" onclick="eliminarPasoModal(${i})">×</button>
+    </div>`).join('') || '<p class="muted" style="font-size:13px;padding:8px 0">Aún no hay pasos. Agrega el primero.</p>';
+}
+function agregarPasoModal() {
+  const input = $('nuevo-paso-input');
+  const texto = input.value.trim();
+  if(!texto) return;
+  modalPasos.push(texto);
+  input.value = '';
+  renderModalPasos();
+  input.focus();
+}
+function eliminarPasoModal(i) {
+  modalPasos.splice(i,1);
+  renderModalPasos();
+}
+
+async function loadProcedimientos() {
+  const procs = await api('/procedimientos','GET',null,true).catch(()=>[]);
+  if(!procs.length) { $('proc-list').innerHTML='<p class="empty">Sin procedimientos. Crea el primero.</p>'; return; }
+  $('proc-list').innerHTML = procs.map(p => `
+    <div onclick="verProcedimiento(${p.id})"
+         style="padding:12px 14px;border:1px solid var(--border);border-radius:8px;margin-bottom:8px;cursor:pointer;transition:border-color .15s"
+         onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div style="font-weight:600;font-size:13px">${p.nombre}</div>
+      <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+        <span class="badge badge-blue">${p.categoria}</span>
+        ${p.frecuencia?`<span class="badge badge-orange">${p.frecuencia}</span>`:''}
+        ${p.responsable?`<span style="font-size:11px;color:var(--muted);padding:3px 0">👤 ${p.responsable}</span>`:''}
+      </div>
+    </div>`).join('');
+}
+
+async function verProcedimiento(id) {
+  const procs = await api('/procedimientos','GET',null,true).catch(()=>[]);
+  const p = procs.find(x=>x.id===id);
+  if(!p) return;
+  const lineas = p.pasos ? p.pasos.split('\n').filter(Boolean) : [];
+  const pasosHtml = lineas.length ? lineas.map((s,i) => `
+    <div class="step-item">
+      <div class="step-num">${i+1}</div>
+      <div class="step-text">${s.replace(/^\d+\.\s*/,'')}</div>
+    </div>`).join('') : '<p class="muted" style="font-size:13px">Sin pasos registrados.</p>';
+
+  $('proc-detalle-panel').innerHTML = `
+    <div class="card" style="margin-bottom:0">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:16px">
+        <div>
+          <div style="font-size:16px;font-weight:700">${p.nombre}</div>
+          <div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap">
+            <span class="badge badge-blue">${p.categoria}</span>
+            ${p.frecuencia?`<span class="badge badge-orange">${p.frecuencia}</span>`:''}
+          </div>
+          ${p.responsable?`<div style="font-size:12px;color:var(--muted);margin-top:6px">👤 ${p.responsable}</div>`:''}
+        </div>
+        <button class="btn btn-danger btn-sm" onclick="eliminarProcedimiento(${p.id})">Eliminar</button>
+      </div>
+      ${p.descripcion?`<p style="font-size:13px;color:var(--muted);margin-bottom:16px">${p.descripcion}</p>`:''}
+      <div style="font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Pasos</div>
+      ${pasosHtml}
+    </div>`;
+}
+
+async function crearProcedimiento() {
+  const nombre = $('proc-nombre').value.trim();
+  if(!nombre) return alert('Ingresa el nombre del procedimiento');
+  const pasosTexto = modalPasos.join('\n');
+  await api('/procedimientos','POST',{
+    nombre, categoria:$('proc-categoria').value,
+    descripcion:$('proc-desc').value||null,
+    pasos:pasosTexto||null,
+    responsable:$('proc-resp').value||null,
+    frecuencia:$('proc-frecuencia').value
+  });
+  closeModal('modal-proc');
+  ['proc-nombre','proc-desc','proc-resp'].forEach(id=>$(id).value='');
+  modalPasos=[];
+  loadProcedimientos();
+}
+async function eliminarProcedimiento(id) {
+  if(!confirm('¿Eliminar este procedimiento?')) return;
+  await api('/procedimientos/'+id,'DELETE');
+  loadProcedimientos();
+  $('proc-detalle-panel').innerHTML='<div class="card"><p class="muted" style="text-align:center;padding:20px">Selecciona un procedimiento.</p></div>';
+}
+
+// ── REGISTROS SANITARIOS ───────────────────────────────────────────
+async function loadSanitario() {
+  const regs = await api('/registros-sanitarios','GET',null,true).catch(()=>[]);
+  $('sanitario-body').innerHTML = regs.map(r => {
+    const cls = r.resultado==='Aprobado'?'badge-green':r.resultado==='Rechazado'?'badge-red':'badge-yellow';
+    const hoy = today();
+    const alerta = r.proxima_revision && r.proxima_revision <= hoy ? '⚠️ ' : '';
+    return `<tr>
+      <td>${r.fecha}</td><td>${r.tipo}</td><td>${r.descripcion}</td>
+      <td><span class="badge ${cls}">${r.resultado}</span></td>
+      <td>${r.operario||'<span class="muted">—</span>'}</td>
+      <td>${r.proxima_revision?alerta+r.proxima_revision:'<span class="muted">—</span>'}</td>
+      <td style="max-width:160px;font-size:12px;color:var(--muted)">${r.observaciones||'—'}</td>
+      <td><button class="btn btn-danger btn-xs" onclick="eliminarRegistro(${r.id})">×</button></td>
+    </tr>`;}).join('') || '<tr><td colspan="8" class="empty">Sin registros sanitarios</td></tr>';
+}
+async function crearRegistroSanitario() {
+  const desc = $('san-desc').value.trim();
+  if(!desc) return alert('Ingresa la descripción');
+  await api('/registros-sanitarios','POST',{
+    fecha:$('san-fecha').value, tipo:$('san-tipo').value, descripcion:desc,
+    resultado:$('san-resultado').value, operario:$('san-operario').value||null,
+    observaciones:$('san-obs').value||null, proxima_revision:$('san-proxima').value||null
+  });
+  closeModal('modal-sanitario');
+  ['san-desc','san-obs','san-proxima','san-operario'].forEach(id=>$(id).value='');
+  loadSanitario();
+}
+async function eliminarRegistro(id) {
+  if(!confirm('¿Eliminar este registro?')) return;
+  await api('/registros-sanitarios/'+id,'DELETE');
+  loadSanitario();
+}
+
+// Init
+loadDashboard();
+api('/materias-primas','GET',null,true).then(m=>mpList=m).catch(()=>{});
+api('/recetas','GET',null,true).then(r=>recetasList=r).catch(()=>{});
+</script>
+</body>
+</html>
