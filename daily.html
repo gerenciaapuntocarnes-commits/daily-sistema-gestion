@@ -43,6 +43,10 @@ body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', syste
 .nav-item:hover { background: rgba(79,110,247,.08); color: var(--text); }
 .nav-item.active { background: rgba(79,110,247,.15); color: var(--accent); }
 .nav-icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+.nav-badge {
+  margin-left: auto; background: var(--red); color: #fff;
+  border-radius: 10px; font-size: 10px; font-weight: 700; padding: 2px 7px; min-width: 20px; text-align: center;
+}
 
 /* ── MAIN ── */
 #main { margin-left: var(--sidebar-w); flex: 1; padding: 28px 28px; max-width: calc(100vw - var(--sidebar-w)); }
@@ -78,6 +82,10 @@ input, select, textarea {
 input:focus, select:focus, textarea:focus { border-color: var(--accent); }
 textarea { resize: vertical; min-height: 80px; font-family: inherit; }
 select option { background: var(--card2); }
+input[type="file"] { padding: 7px 10px; cursor: pointer; }
+.field-msg { font-size: 11px; margin-top: 3px; font-weight: 500; }
+.field-msg.ok  { color: var(--green); }
+.field-msg.err { color: var(--red); }
 
 /* ── BUTTONS ── */
 .btn { padding: 9px 18px; border-radius: 7px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; transition: opacity .15s; display: inline-flex; align-items: center; gap: 6px; }
@@ -86,6 +94,7 @@ select option { background: var(--card2); }
 .btn-success { background: var(--green); color: #fff; }
 .btn-danger { background: rgba(239,68,68,.15); color: var(--red); border: 1px solid rgba(239,68,68,.2); }
 .btn-danger:hover { background: rgba(239,68,68,.25); opacity: 1; }
+.btn-warning { background: rgba(245,158,11,.15); color: var(--yellow); border: 1px solid rgba(245,158,11,.25); }
 .btn-outline { background: none; border: 1px solid var(--border); color: var(--text); }
 .btn-ghost { background: none; border: none; color: var(--muted); }
 .btn-sm { padding: 5px 12px; font-size: 12px; }
@@ -139,8 +148,45 @@ tbody tr:hover td { background: rgba(79,110,247,.04); }
 /* ── INGREDIENT ROWS ── */
 .ing-row { display: flex; align-items: center; gap: 8px; background: var(--card2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
 .ing-row span { flex: 1; font-size: 13px; }
-.ing-qty { font-size: 12px; color: var(--muted); background: var(--card); border-radius: 4px; padding: 2px 7px; }
-.ing-cost { font-size: 12px; color: var(--accent); font-weight: 600; }
+.ing-qty { font-size: 12px; color: var(--muted); background: var(--card); border-radius: 4px; padding: 2px 7px; flex-shrink: 0; }
+.ing-cost { font-size: 12px; color: var(--accent); font-weight: 600; flex-shrink: 0; }
+
+/* ── FOTO PREVIEW ── */
+.foto-preview-wrap { margin-top: 8px; }
+#rem-foto-preview {
+  display: none; width: 100%; max-height: 200px; object-fit: cover;
+  border-radius: 8px; border: 1px solid var(--border); margin-top: 8px;
+}
+
+/* ── SPINNER Y OVERLAY DE ESPERA ── */
+@keyframes spin { to { transform: rotate(360deg); } }
+.spinner {
+  width: 52px; height: 52px;
+  border: 4px solid rgba(79,110,247,.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin: 0 auto;
+}
+#rem-espera-overlay {
+  display: none; position: fixed; inset: 0;
+  background: rgba(10,12,20,.92); z-index: 400;
+  flex-direction: column; align-items: center; justify-content: center; gap: 24px;
+}
+
+/* ── APROBACIONES CARD ── */
+.aprobacion-card {
+  background: var(--card); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 20px; margin-bottom: 16px;
+}
+.aprobacion-card-header {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 14px;
+}
+.aprobacion-foto-thumb {
+  width: 80px; height: 80px; object-fit: cover; border-radius: 8px;
+  border: 1px solid var(--border); cursor: pointer; flex-shrink: 0;
+}
 
 /* ── HAMBURGER ── */
 .hamburger { display: none; position: fixed; top: 14px; left: 14px; z-index: 60; background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; cursor: pointer; color: var(--text); font-size: 18px; }
@@ -193,6 +239,17 @@ tbody tr:hover td { background: rgba(79,110,247,.04); }
   </div>
 
   <div class="nav-group">
+    <div class="nav-group-label">Recepción</div>
+    <button class="nav-item" onclick="goto('remisiones')">
+      <span class="nav-icon">🚚</span> Remisiones
+    </button>
+    <button class="nav-item" onclick="goto('aprobaciones')">
+      <span class="nav-icon">✅</span> Aprobaciones
+      <span id="badge-pendientes" class="nav-badge" style="display:none">0</span>
+    </button>
+  </div>
+
+  <div class="nav-group">
     <div class="nav-group-label">Finanzas</div>
     <button class="nav-item" onclick="goto('gastos')">
       <span class="nav-icon">💰</span> Gastos
@@ -231,7 +288,7 @@ tbody tr:hover td { background: rgba(79,110,247,.04); }
       <div style="font-weight:600;margin-bottom:14px;font-size:14px">Accesos rápidos</div>
       <div style="display:flex;flex-direction:column;gap:8px">
         <button class="btn btn-primary" onclick="goto('produccion');openModal('modal-prod')">🏭 Registrar producción</button>
-        <button class="btn btn-outline" onclick="goto('registro-mp');openModal('modal-compra')">📦 Registrar llegada de MP</button>
+        <button class="btn btn-outline" onclick="goto('remisiones');openModal('modal-remision')">🚚 Nueva remisión</button>
         <button class="btn btn-outline" onclick="goto('gastos');openModal('modal-gasto')">💰 Registrar gasto</button>
         <button class="btn btn-outline" onclick="goto('sanitario');openModal('modal-sanitario')">🛡️ Registro sanitario</button>
       </div>
@@ -247,7 +304,7 @@ tbody tr:hover td { background: rgba(79,110,247,.04); }
   </div>
   <div class="card">
     <div class="table-wrap"><table>
-      <thead><tr><th>Ingrediente</th><th>Unidad</th><th>Categoría</th><th class="num">Precio actual</th><th>Última compra</th><th>Proveedor</th><th></th></tr></thead>
+      <thead><tr><th>Código</th><th>Ingrediente</th><th>Unidad</th><th>Categoría</th><th class="num">Precio actual</th><th>Última compra</th><th>Proveedor</th><th></th></tr></thead>
       <tbody id="mp-body"></tbody>
     </table></div>
   </div>
@@ -289,7 +346,7 @@ tbody tr:hover td { background: rgba(79,110,247,.04); }
 <!-- ════ BITÁCORA PRODUCCIÓN ════ -->
 <div id="s-produccion" class="section">
   <div class="page-header">
-    <div><div class="page-title">Bitácora de Producción</div><div class="page-subtitle">Registro diario: cantidad planeada vs real producida</div></div>
+    <div><div class="page-title">Bitácora de Producción</div><div class="page-subtitle">Registro diario — el lote se genera automáticamente</div></div>
     <button class="btn btn-primary" onclick="openModal('modal-prod')">+ Registrar producción</button>
   </div>
   <div class="card">
@@ -298,6 +355,30 @@ tbody tr:hover td { background: rgba(79,110,247,.04); }
       <tbody id="prod-body"></tbody>
     </table></div>
   </div>
+</div>
+
+<!-- ════ REMISIONES ════ -->
+<div id="s-remisiones" class="section">
+  <div class="page-header">
+    <div><div class="page-title">Remisiones</div><div class="page-subtitle">Recepción de materiales — requiere aprobación del supervisor y foto obligatoria</div></div>
+    <button class="btn btn-primary" onclick="openModal('modal-remision')">+ Nueva remisión</button>
+  </div>
+  <div id="rem-resultado"></div>
+  <div class="card">
+    <div class="table-wrap"><table>
+      <thead><tr><th>N° Remisión</th><th>Fecha</th><th>Proveedor</th><th>Operario</th><th>Ítems</th><th>Estado</th><th>Aprobada/Rechazada por</th><th></th></tr></thead>
+      <tbody id="remisiones-body"></tbody>
+    </table></div>
+  </div>
+</div>
+
+<!-- ════ APROBACIONES (SUPERVISOR) ════ -->
+<div id="s-aprobaciones" class="section">
+  <div class="page-header">
+    <div><div class="page-title">Aprobaciones</div><div class="page-subtitle">Remisiones pendientes de aprobación — vista del supervisor</div></div>
+    <button class="btn btn-outline" onclick="loadAprobaciones()">↻ Actualizar</button>
+  </div>
+  <div id="aprobaciones-lista"><p class="empty">Sin remisiones pendientes.</p></div>
 </div>
 
 <!-- ════ GASTOS ════ -->
@@ -352,6 +433,18 @@ tbody tr:hover td { background: rgba(79,110,247,.04); }
 
 </main>
 
+<!-- ══ OVERLAY DE ESPERA (operario espera aprobación) ════════════ -->
+<div id="rem-espera-overlay">
+  <div class="spinner"></div>
+  <div style="text-align:center">
+    <div style="font-size:22px;font-weight:700;color:var(--text)">Esperando aprobación del supervisor</div>
+    <div style="margin-top:10px;color:var(--muted);font-size:14px">
+      Remisión <strong id="rem-espera-numero" style="color:var(--accent)"></strong>
+    </div>
+    <div style="margin-top:6px;color:var(--muted);font-size:13px">El supervisor debe aprobar antes de finalizar. Por favor espera…</div>
+  </div>
+</div>
+
 <!-- ══ MODALES ════════════════════════════════════════════════════ -->
 
 <!-- Nueva MP -->
@@ -362,6 +455,11 @@ tbody tr:hover td { background: rgba(79,110,247,.04); }
       <button class="modal-close" onclick="closeModal('modal-mp')">×</button>
     </div>
     <div class="form-grid">
+      <div class="form-group">
+        <label>Código único <span style="color:var(--muted);font-weight:400">(opcional)</span></label>
+        <input id="mp-codigo" placeholder="Ej: MP-001" oninput="checkCodigoMP()">
+        <div id="mp-codigo-msg" class="field-msg"></div>
+      </div>
       <div class="form-group"><label>Nombre del ingrediente</label><input id="mp-nombre" placeholder="Ej: Lomo de cerdo"></div>
       <div class="form-group"><label>Unidad de medida</label>
         <select id="mp-unidad"><option>kg</option><option>g</option><option>lt</option><option>ml</option><option>und</option><option>lb</option><option>oz</option></select>
@@ -444,13 +542,72 @@ tbody tr:hover td { background: rgba(79,110,247,.04); }
       <div class="form-group"><label>Diferencia</label>
         <div id="prod-diferencia" style="padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:7px;font-size:13px;color:var(--muted)">—</div>
       </div>
-      <div class="form-group"><label>Lote</label><input id="prod-lote" placeholder="Ej: L2024-001"></div>
+      <div class="form-group">
+        <label>Lote</label>
+        <div style="padding:9px 12px;background:var(--card2);border:1px solid var(--border);border-radius:7px;font-size:12px;color:var(--muted)">
+          🔒 Se genera automáticamente al guardar
+        </div>
+      </div>
       <div class="form-group"><label>Operario responsable</label><input id="prod-operario" placeholder="Nombre"></div>
       <div class="form-group full"><label>Notas / Observaciones</label><textarea id="prod-notas" rows="2"></textarea></div>
     </div>
     <div class="btn-row">
       <button class="btn btn-primary" onclick="registrarProduccion()">Guardar</button>
       <button class="btn btn-outline" onclick="closeModal('modal-prod')">Cancelar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Nueva Remisión -->
+<div id="modal-remision" class="modal-bg">
+  <div class="modal" style="max-width:760px">
+    <div class="modal-header">
+      <div class="modal-title">🚚 Nueva Remisión</div>
+      <button class="modal-close" onclick="closeModal('modal-remision')">×</button>
+    </div>
+
+    <!-- Datos generales -->
+    <div class="form-grid" style="margin-bottom:20px">
+      <div class="form-group"><label>Fecha</label><input type="date" id="rem-fecha"></div>
+      <div class="form-group"><label>Proveedor *</label><input id="rem-proveedor" placeholder="Nombre del proveedor"></div>
+      <div class="form-group"><label>Operario *</label><input id="rem-operario" placeholder="Nombre del operario"></div>
+      <div class="form-group full"><label>Notas generales</label><textarea id="rem-notas" rows="2" placeholder="Observaciones, condiciones de entrega, etc."></textarea></div>
+    </div>
+
+    <!-- Foto obligatoria -->
+    <div style="margin-bottom:20px">
+      <label style="display:block;margin-bottom:6px;font-size:11px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.4px">
+        📷 Foto de la remisión * <span style="color:var(--red);font-weight:700">(obligatoria)</span>
+      </label>
+      <input type="file" id="rem-foto-input" accept="image/*" capture="environment" onchange="handleFotoChange(this)">
+      <div class="foto-preview-wrap">
+        <img id="rem-foto-preview" alt="Vista previa de la foto">
+      </div>
+      <div id="rem-foto-msg" class="field-msg"></div>
+    </div>
+
+    <!-- Ítems -->
+    <div style="font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:10px">
+      Ítems recibidos *
+    </div>
+    <div id="rem-items-list" style="margin-bottom:12px">
+      <p class="muted" style="font-size:13px;padding:8px 0">Sin ítems. Agrega al menos uno.</p>
+    </div>
+
+    <!-- Agregar ítem -->
+    <div style="background:var(--card2);border:1px solid var(--border);border-radius:8px;padding:14px;margin-bottom:4px">
+      <div style="font-size:12px;color:var(--muted);margin-bottom:10px;font-weight:600">Agregar ítem</div>
+      <div class="form-grid" style="grid-template-columns:2fr 1fr 1fr auto;gap:10px;align-items:end">
+        <div class="form-group" style="margin:0"><label>Ingrediente</label><select id="rem-mp"></select></div>
+        <div class="form-group" style="margin:0"><label>Cantidad</label><input type="number" id="rem-item-cantidad" step="0.001" placeholder="0.000"></div>
+        <div class="form-group" style="margin:0"><label>Precio / und ($)</label><input type="number" id="rem-item-precio" step="0.01" placeholder="0.00"></div>
+        <div style="padding-bottom:1px"><button class="btn btn-outline btn-sm" onclick="addRemisionItem()">+ Agregar</button></div>
+      </div>
+    </div>
+
+    <div class="btn-row" style="margin-top:20px">
+      <button class="btn btn-primary" onclick="crearRemision()">📤 Enviar para aprobación</button>
+      <button class="btn btn-outline" onclick="closeModal('modal-remision')">Cancelar</button>
     </div>
   </div>
 </div>
@@ -571,10 +728,22 @@ tbody tr:hover td { background: rgba(79,110,247,.04); }
   </div>
 </div>
 
+<!-- Modal foto ampliada -->
+<div id="modal-foto" class="modal-bg" onclick="closeModal('modal-foto')">
+  <div style="max-width:90vw;max-height:90vh">
+    <img id="modal-foto-img" style="max-width:90vw;max-height:90vh;border-radius:12px;object-fit:contain" alt="Foto remisión">
+  </div>
+</div>
+
 <script>
 const API = 'https://daily-sistema-gestion-production.up.railway.app';
 let mpList = [], recetasList = [], currentRecetaId = null, currentGastosTab = 'todos';
 let modalPasos = [];
+let remisionItems = [];
+let remisionFotoBase64 = null;
+let pollingInterval = null;
+let currentRemisionId = null;
+let codigoCheckTimer = null;
 
 const $ = id => document.getElementById(id);
 const fmt  = n => n == null ? '—' : Number(n).toLocaleString('es-CO', {minimumFractionDigits:0, maximumFractionDigits:0});
@@ -599,6 +768,8 @@ function goto(sec) {
     'registro-mp': loadCompras,
     recetas: loadRecetas,
     produccion: () => { loadProduccion(); fillSelectRecetas(); },
+    remisiones: loadRemisiones,
+    aprobaciones: loadAprobaciones,
     gastos: loadGastos,
     procedimientos: loadProcedimientos,
     sanitario: loadSanitario
@@ -615,6 +786,20 @@ function openModal(id) {
   if(id === 'modal-sanitario'){ $('san-fecha').value = today(); }
   if(id === 'modal-ing')      { fillSelectMP('ing-mp'); }
   if(id === 'modal-proc')     { modalPasos = []; renderModalPasos(); }
+  if(id === 'modal-remision') {
+    fillSelectMP('rem-mp');
+    $('rem-fecha').value = today();
+    remisionItems = [];
+    remisionFotoBase64 = null;
+    $('rem-foto-preview').style.display = 'none';
+    $('rem-foto-input').value = '';
+    $('rem-foto-msg').textContent = '';
+    $('rem-foto-msg').className = 'field-msg';
+    $('rem-proveedor').value = '';
+    $('rem-operario').value = '';
+    $('rem-notas').value = '';
+    renderRemisionItems();
+  }
 }
 function closeModal(id) { $(id).classList.remove('open'); }
 document.querySelectorAll('.modal-bg').forEach(m => {
@@ -637,7 +822,12 @@ async function api(path, method='GET', body=null, silent=false) {
 function fillSelectMP(selectId) {
   const sel = $(selectId); if(!sel) return;
   sel.innerHTML = '<option value="">— Seleccionar —</option>';
-  mpList.forEach(m => { const o = document.createElement('option'); o.value=m.id; o.textContent=m.nombre+' ('+m.unidad+')'; sel.appendChild(o); });
+  mpList.forEach(m => {
+    const o = document.createElement('option');
+    o.value = m.id;
+    o.textContent = (m.codigo ? '['+m.codigo+'] ' : '') + m.nombre + ' (' + m.unidad + ')';
+    sel.appendChild(o);
+  });
 }
 function fillSelectRecetas() {
   const sel = $('prod-receta'); if(!sel) return;
@@ -649,14 +839,15 @@ function fillSelectRecetas() {
 async function loadDashboard() {
   const d = await api('/dashboard','GET',null,true).catch(()=>({
     total_mp:0,total_recetas:0,produccion_hoy:{porciones:0,registros:0},
-    gastos_mes:0,caja_hoy:0,alertas_sanitarias:0,ultima_produccion:[]
+    gastos_mes:0,caja_hoy:0,alertas_sanitarias:0,remisiones_pendientes:0,ultima_produccion:[]
   }));
+  const pendCls = d.remisiones_pendientes > 0 ? 'neg' : '';
   $('dash-stats').innerHTML = `
     <div class="stat-card"><div class="stat-val">${d.total_mp}</div><div class="stat-label">Materias Primas</div></div>
     <div class="stat-card"><div class="stat-val">${d.total_recetas}</div><div class="stat-label">Recetas activas</div></div>
     <div class="stat-card"><div class="stat-val">${d.produccion_hoy.porciones}</div><div class="stat-label">Porciones hoy</div></div>
     <div class="stat-card"><div class="stat-val">$${fmt(d.gastos_mes)}</div><div class="stat-label">Gastos del mes</div></div>
-    <div class="stat-card"><div class="stat-val">$${fmt(d.caja_hoy)}</div><div class="stat-label">Caja menor hoy</div></div>
+    <div class="stat-card"><div class="stat-val ${pendCls}">${d.remisiones_pendientes}</div><div class="stat-label">Remisiones pendientes</div></div>
     <div class="stat-card"><div class="stat-val ${d.alertas_sanitarias>0?'neg':''}">${d.alertas_sanitarias}</div><div class="stat-label">Alertas sanitarias</div></div>
   `;
   $('dash-prod-body').innerHTML = d.ultima_produccion.length
@@ -669,22 +860,53 @@ async function loadMP() {
   mpList = await api('/materias-primas','GET',null,true).catch(()=>[]);
   $('mp-body').innerHTML = mpList.map(m => `
     <tr>
+      <td><span class="badge badge-blue">${m.codigo || '<span style="color:var(--muted)">—</span>'}</span></td>
       <td><strong>${m.nombre}</strong></td>
-      <td><span class="badge badge-blue">${m.unidad}</span></td>
+      <td><span class="badge badge-orange">${m.unidad}</span></td>
       <td>${m.categoria}</td>
       <td class="num">${m.precio_actual ? '$'+fmt(m.precio_actual) : '<span class="muted">Sin compras</span>'}</td>
       <td>${m.ultima_compra || '<span class="muted">—</span>'}</td>
       <td>${m.ultimo_proveedor || '<span class="muted">—</span>'}</td>
       <td><button class="btn btn-danger btn-xs" onclick="eliminarMP(${m.id})">Eliminar</button></td>
-    </tr>`).join('') || '<tr><td colspan="7" class="empty">Sin materias primas registradas</td></tr>';
+    </tr>`).join('') || '<tr><td colspan="8" class="empty">Sin materias primas registradas</td></tr>';
+}
+
+// Validación en tiempo real del código de MP
+function checkCodigoMP() {
+  const codigo = $('mp-codigo').value.trim();
+  const msg = $('mp-codigo-msg');
+  if(!codigo) { msg.textContent = ''; msg.className = 'field-msg'; return; }
+  clearTimeout(codigoCheckTimer);
+  codigoCheckTimer = setTimeout(async () => {
+    const data = await api('/materias-primas/check-codigo?codigo=' + encodeURIComponent(codigo), 'GET', null, true).catch(() => null);
+    if(!data) return;
+    if(data.existe) {
+      msg.textContent = '⚠️ Este código ya está en uso';
+      msg.className = 'field-msg err';
+    } else {
+      msg.textContent = '✓ Código disponible';
+      msg.className = 'field-msg ok';
+    }
+  }, 500);
 }
 
 async function crearMP() {
   const nombre = $('mp-nombre').value.trim();
   if(!nombre) return alert('Ingresa el nombre del ingrediente');
-  await api('/materias-primas','POST',{nombre, unidad:$('mp-unidad').value, categoria:$('mp-categoria').value});
-  closeModal('modal-mp'); $('mp-nombre').value = '';
-  await loadMP();
+  const codigoMsg = $('mp-codigo-msg');
+  if(codigoMsg.classList.contains('err')) return alert('El código ingresado ya está en uso. Elige otro.');
+  try {
+    await api('/materias-primas','POST',{
+      nombre, codigo: $('mp-codigo').value.trim() || null,
+      unidad:$('mp-unidad').value, categoria:$('mp-categoria').value
+    });
+    closeModal('modal-mp');
+    $('mp-nombre').value = ''; $('mp-codigo').value = '';
+    $('mp-codigo-msg').textContent = ''; $('mp-codigo-msg').className = 'field-msg';
+    await loadMP();
+  } catch(e) {
+    // El backend ya mostró el mensaje de error
+  }
 }
 async function eliminarMP(id) {
   if(!confirm('¿Eliminar esta materia prima?')) return;
@@ -731,7 +953,6 @@ async function eliminarCompra(id) {
   loadCompras(); loadMP();
 }
 
-// Calcular total en tiempo real
 ['compra-cantidad','compra-precio'].forEach(id => {
   document.addEventListener('DOMContentLoaded', ()=>{
     const el = $(id); if(!el) return;
@@ -858,7 +1079,7 @@ async function loadProduccion() {
       <td class="num">${p.porciones_planeadas>0?fmtD(p.porciones_planeadas,1):'<span class="muted">—</span>'}</td>
       <td class="num"><strong>${fmtD(p.porciones,1)}</strong></td>
       <td class="num">${difStr}</td>
-      <td>${p.lote||'<span class="muted">—</span>'}</td>
+      <td><span class="badge badge-yellow" style="font-size:10px;font-family:monospace">${p.lote||'—'}</span></td>
       <td>${p.operario||'<span class="muted">—</span>'}</td>
       <td class="num">$${fmt(p.costo_total)}</td>
       <td style="max-width:160px;font-size:12px;color:var(--muted)">${p.notas||''}</td>
@@ -870,23 +1091,287 @@ async function registrarProduccion() {
   const receta_id = parseInt($('prod-receta').value);
   const porciones = parseFloat($('prod-porciones').value);
   if(!receta_id || !porciones) return alert('Selecciona la receta y la cantidad real producida');
-  await api('/produccion','POST',{
+  const res = await api('/produccion','POST',{
     receta_id, porciones,
     porciones_planeadas: parseFloat($('prod-planeado').value)||0,
     fecha:$('prod-fecha').value,
-    lote:$('prod-lote').value||null,
     operario:$('prod-operario').value||null,
     notas:$('prod-notas').value||null
   });
   closeModal('modal-prod');
-  ['prod-planeado','prod-porciones','prod-lote','prod-operario','prod-notas'].forEach(id=>$(id).value='');
+  ['prod-planeado','prod-porciones','prod-operario','prod-notas'].forEach(id=>$(id).value='');
   $('prod-diferencia').textContent='—'; $('prod-diferencia').style.color='var(--muted)';
+  if(res.lote) {
+    const msg = `✅ Registro guardado. Lote asignado: ${res.lote}`;
+    setTimeout(()=>alert(msg), 100);
+  }
   loadProduccion();
 }
 async function eliminarProduccion(id) {
   if(!confirm('¿Eliminar este registro?')) return;
   await api('/produccion/'+id,'DELETE');
   loadProduccion();
+}
+
+// ── REMISIONES ─────────────────────────────────────────────────────
+
+// Compresión de imagen antes de enviar
+async function compressImage(file, maxWidth=1200, quality=0.78) {
+  return new Promise(resolve => {
+    const canvas = document.createElement('canvas');
+    const img = new Image();
+    img.onload = () => {
+      let w = img.width, h = img.height;
+      if(w > maxWidth) { h = Math.round(h * maxWidth / w); w = maxWidth; }
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality));
+    };
+    img.src = URL.createObjectURL(file);
+  });
+}
+
+async function handleFotoChange(input) {
+  const file = input.files[0];
+  const msg = $('rem-foto-msg');
+  if(!file) {
+    remisionFotoBase64 = null;
+    $('rem-foto-preview').style.display = 'none';
+    msg.textContent = '';
+    return;
+  }
+  msg.textContent = 'Procesando imagen…';
+  msg.className = 'field-msg';
+  remisionFotoBase64 = await compressImage(file);
+  $('rem-foto-preview').src = remisionFotoBase64;
+  $('rem-foto-preview').style.display = 'block';
+  const kb = Math.round(remisionFotoBase64.length * 0.75 / 1024);
+  msg.textContent = `✓ Foto lista (${kb} KB)`;
+  msg.className = 'field-msg ok';
+}
+
+function renderRemisionItems() {
+  const container = $('rem-items-list');
+  if(!remisionItems.length) {
+    container.innerHTML = '<p class="muted" style="font-size:13px;padding:8px 0">Sin ítems. Agrega al menos uno.</p>';
+    return;
+  }
+  container.innerHTML = remisionItems.map((item, i) => `
+    <div class="ing-row">
+      <span>${item.mp_nombre}</span>
+      <span class="ing-qty">${item.cantidad} ${item.unidad}</span>
+      <span class="ing-cost">$${fmt(item.precio_unit)}/und</span>
+      <span class="ing-cost">= $${fmt(item.cantidad * item.precio_unit)}</span>
+      <button class="step-del" onclick="removeRemisionItem(${i})">×</button>
+    </div>`).join('');
+}
+
+function addRemisionItem() {
+  const mp_id = parseInt($('rem-mp').value);
+  const mp = mpList.find(m => m.id === mp_id);
+  if(!mp_id || !mp) return alert('Selecciona un ingrediente');
+  const cantidad = parseFloat($('rem-item-cantidad').value);
+  const precio_unit = parseFloat($('rem-item-precio').value);
+  if(!cantidad || !precio_unit) return alert('Ingresa cantidad y precio por unidad');
+  remisionItems.push({mp_id, mp_nombre: mp.nombre, unidad: mp.unidad, cantidad, precio_unit});
+  $('rem-mp').value = '';
+  $('rem-item-cantidad').value = '';
+  $('rem-item-precio').value = '';
+  renderRemisionItems();
+}
+
+function removeRemisionItem(idx) {
+  remisionItems.splice(idx, 1);
+  renderRemisionItems();
+}
+
+async function crearRemision() {
+  const proveedor = $('rem-proveedor').value.trim();
+  const operario  = $('rem-operario').value.trim();
+  if(!proveedor) return alert('El proveedor es obligatorio');
+  if(!operario)  return alert('El operario es obligatorio');
+  if(!remisionItems.length) return alert('Agrega al menos un ítem a la remisión');
+  if(!remisionFotoBase64) return alert('La foto de la remisión es obligatoria. Por favor toma una foto antes de enviar.');
+
+  const data = {
+    fecha: $('rem-fecha').value,
+    proveedor,
+    operario,
+    notas: $('rem-notas').value || null,
+    foto: remisionFotoBase64,
+    items: remisionItems
+  };
+
+  let res;
+  try {
+    res = await api('/remisiones', 'POST', data);
+  } catch(e) { return; }
+
+  closeModal('modal-remision');
+
+  // Iniciar espera de aprobación
+  currentRemisionId = res.id;
+  $('rem-espera-numero').textContent = res.numero;
+  $('rem-espera-overlay').style.display = 'flex';
+
+  pollingInterval = setInterval(() => checkEstadoRemision(res.id), 2000);
+}
+
+async function checkEstadoRemision(id) {
+  const data = await api('/remisiones/'+id+'/estado', 'GET', null, true).catch(() => null);
+  if(!data || data.estado === 'pendiente') return;
+
+  clearInterval(pollingInterval);
+  pollingInterval = null;
+  $('rem-espera-overlay').style.display = 'none';
+
+  if(data.estado === 'aprobada') {
+    $('rem-resultado').innerHTML = `
+      <div style="background:rgba(34,197,94,.1);border:1px solid rgba(34,197,94,.3);border-radius:10px;padding:24px;text-align:center;margin-bottom:20px">
+        <div style="font-size:40px">✅</div>
+        <div style="font-weight:700;font-size:18px;color:var(--green);margin-top:10px">¡Remisión Aprobada!</div>
+        <div style="color:var(--muted);font-size:13px;margin-top:6px">Aprobada por: <strong style="color:var(--text)">${data.aprobado_por || '—'}</strong></div>
+        <button class="btn btn-outline btn-sm" onclick="$('rem-resultado').innerHTML=''" style="margin-top:14px">Cerrar</button>
+      </div>`;
+  } else {
+    $('rem-resultado').innerHTML = `
+      <div style="background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);border-radius:10px;padding:24px;text-align:center;margin-bottom:20px">
+        <div style="font-size:40px">❌</div>
+        <div style="font-weight:700;font-size:18px;color:var(--red);margin-top:10px">Remisión Rechazada</div>
+        <div style="color:var(--muted);font-size:13px;margin-top:6px">Motivo: <strong style="color:var(--text)">${data.rechazo_motivo || 'Sin motivo especificado'}</strong></div>
+        <button class="btn btn-outline btn-sm" onclick="$('rem-resultado').innerHTML=''" style="margin-top:14px">Cerrar</button>
+      </div>`;
+  }
+
+  goto('remisiones');
+  loadRemisiones();
+}
+
+async function loadRemisiones() {
+  const lista = await api('/remisiones','GET',null,true).catch(()=>[]);
+  $('remisiones-body').innerHTML = lista.map(r => {
+    const estadoCls = r.estado === 'aprobada' ? 'badge-green' : r.estado === 'rechazada' ? 'badge-red' : 'badge-yellow';
+    const estadoLbl = r.estado === 'aprobada' ? '✅ Aprobada' : r.estado === 'rechazada' ? '❌ Rechazada' : '⏳ Pendiente';
+    const itemsText = r.items.map(i => i.mp_nombre).join(', ');
+    const por = r.aprobado_por || '<span class="muted">—</span>';
+    return `<tr>
+      <td><strong style="font-family:monospace;font-size:12px">${r.numero}</strong></td>
+      <td>${r.fecha}</td>
+      <td>${r.proveedor}</td>
+      <td>${r.operario}</td>
+      <td style="max-width:200px;font-size:12px;color:var(--muted)">${itemsText}</td>
+      <td><span class="badge ${estadoCls}">${estadoLbl}</span></td>
+      <td>${por}${r.rechazo_motivo?`<div style="font-size:11px;color:var(--red);margin-top:3px">${r.rechazo_motivo}</div>`:''}</td>
+      <td><button class="btn btn-danger btn-xs" onclick="eliminarRemision(${r.id})">×</button></td>
+    </tr>`;
+  }).join('') || '<tr><td colspan="8" class="empty">Sin remisiones registradas</td></tr>';
+}
+
+async function eliminarRemision(id) {
+  if(!confirm('¿Eliminar esta remisión?')) return;
+  await api('/remisiones/'+id,'DELETE');
+  loadRemisiones();
+}
+
+// ── APROBACIONES (SUPERVISOR) ─────────────────────────────────────
+async function loadAprobaciones() {
+  const lista = await api('/remisiones?estado=pendiente','GET',null,true).catch(()=>[]);
+  const container = $('aprobaciones-lista');
+  if(!lista.length) {
+    container.innerHTML = '<div class="card"><p class="empty">No hay remisiones pendientes de aprobación. 🎉</p></div>';
+    return;
+  }
+  container.innerHTML = lista.map(r => {
+    const total = r.items.reduce((s,i) => s + i.cantidad * i.precio_unit, 0);
+    const itemsHtml = r.items.map(i => `
+      <div class="ing-row" style="margin-bottom:4px">
+        <span>${i.mp_nombre}</span>
+        <span class="ing-qty">${i.cantidad}</span>
+        <span class="ing-cost">$${fmt(i.precio_unit)}/und</span>
+        <span class="ing-cost">= $${fmt(i.cantidad * i.precio_unit)}</span>
+        <span style="font-size:10px;color:var(--muted);font-family:monospace;margin-left:auto">${i.lote}</span>
+      </div>`).join('');
+    return `
+      <div class="aprobacion-card">
+        <div class="aprobacion-card-header">
+          <div>
+            <div style="font-size:16px;font-weight:700;font-family:monospace">${r.numero}</div>
+            <div style="margin-top:4px;color:var(--muted);font-size:13px">
+              📅 ${r.fecha} &nbsp;·&nbsp; 🏪 ${r.proveedor} &nbsp;·&nbsp; 👤 ${r.operario}
+            </div>
+            ${r.notas?`<div style="font-size:12px;color:var(--muted);margin-top:6px;font-style:italic">${r.notas}</div>`:''}
+          </div>
+          <img class="aprobacion-foto-thumb"
+               src="data:image/jpeg;base64,placeholder"
+               id="foto-thumb-${r.id}"
+               alt="Foto remisión"
+               onclick="verFotoRemision(${r.id})"
+               title="Ver foto completa">
+        </div>
+
+        <div style="margin-bottom:12px">${itemsHtml}</div>
+        <div style="font-size:13px;font-weight:700;color:var(--accent);margin-bottom:14px">
+          Total estimado: $${fmt(total)}
+        </div>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+          <div style="flex:1;min-width:180px">
+            <input id="aprob-por-${r.id}" placeholder="Tu nombre (supervisor)" style="width:100%">
+          </div>
+          <button class="btn btn-success btn-sm" onclick="aprobarRemision(${r.id})">✅ Aprobar</button>
+          <button class="btn btn-danger btn-sm" onclick="rechazarRemision(${r.id})">❌ Rechazar</button>
+        </div>
+      </div>`;
+  }).join('');
+
+  // Cargar fotos
+  lista.forEach(r => cargarFotoThumb(r.id));
+}
+
+async function cargarFotoThumb(remisionId) {
+  const data = await api('/remisiones/'+remisionId+'/foto','GET',null,true).catch(()=>null);
+  if(!data || !data.foto) return;
+  const img = $('foto-thumb-'+remisionId);
+  if(img) img.src = data.foto;
+}
+
+async function verFotoRemision(remisionId) {
+  const data = await api('/remisiones/'+remisionId+'/foto','GET',null,true).catch(()=>null);
+  if(!data || !data.foto) return;
+  $('modal-foto-img').src = data.foto;
+  openModal('modal-foto');
+}
+
+async function aprobarRemision(id) {
+  const porEl = $('aprob-por-'+id);
+  const por = porEl ? porEl.value.trim() : '';
+  if(!por) return alert('Ingresa tu nombre antes de aprobar');
+  await api('/remisiones/'+id+'/aprobar','POST',{aprobado_por: por});
+  loadAprobaciones();
+  updatePendingBadge();
+}
+
+async function rechazarRemision(id) {
+  const porEl = $('aprob-por-'+id);
+  const por = porEl ? porEl.value.trim() : '';
+  if(!por) return alert('Ingresa tu nombre antes de rechazar');
+  const motivo = prompt('Motivo del rechazo (obligatorio):');
+  if(!motivo || !motivo.trim()) return;
+  await api('/remisiones/'+id+'/rechazar','POST',{rechazado_por: por, motivo: motivo.trim()});
+  loadAprobaciones();
+  updatePendingBadge();
+}
+
+// ── BADGE de pendientes en sidebar ─────────────────────────────────
+async function updatePendingBadge() {
+  const lista = await api('/remisiones?estado=pendiente','GET',null,true).catch(()=>[]);
+  const badge = $('badge-pendientes');
+  if(lista.length > 0) {
+    badge.textContent = lista.length;
+    badge.style.display = 'inline';
+  } else {
+    badge.style.display = 'none';
+  }
 }
 
 // ── GASTOS ─────────────────────────────────────────────────────────
@@ -1072,10 +1557,13 @@ async function eliminarRegistro(id) {
   loadSanitario();
 }
 
-// Init
+// ── INIT ──────────────────────────────────────────────────────────
 loadDashboard();
-api('/materias-primas','GET',null,true).then(m=>mpList=m).catch(()=>{});
-api('/recetas','GET',null,true).then(r=>recetasList=r).catch(()=>{});
+api('/materias-primas','GET',null,true).then(m=>{ mpList=m; }).catch(()=>{});
+api('/recetas','GET',null,true).then(r=>{ recetasList=r; }).catch(()=>{});
+updatePendingBadge();
+// Refrescar badge de pendientes cada 10 segundos
+setInterval(updatePendingBadge, 10000);
 </script>
 </body>
 </html>

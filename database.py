@@ -15,12 +15,23 @@ def _create_tables():
     cur.execute("""
         CREATE TABLE IF NOT EXISTS materias_primas (
             id        SERIAL PRIMARY KEY,
+            codigo    TEXT,
             nombre    TEXT NOT NULL,
             unidad    TEXT NOT NULL DEFAULT 'kg',
             categoria TEXT NOT NULL DEFAULT 'General',
             activo    BOOLEAN NOT NULL DEFAULT TRUE,
             creado_en TIMESTAMP DEFAULT NOW()
         )
+    """)
+    # Índice único en codigo (ignora NULLs automáticamente en PostgreSQL)
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_mp_codigo
+        ON materias_primas(codigo) WHERE codigo IS NOT NULL
+    """)
+    # Agregar columna codigo si la tabla ya existía sin ella
+    cur.execute("""
+        ALTER TABLE materias_primas
+        ADD COLUMN IF NOT EXISTS codigo TEXT
     """)
 
     cur.execute("""
@@ -74,6 +85,11 @@ def _create_tables():
             creado_en          TIMESTAMP DEFAULT NOW()
         )
     """)
+    # Índice único en lote de producción (ignora NULLs)
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_prod_lote
+        ON produccion(lote) WHERE lote IS NOT NULL
+    """)
 
     # ── Gastos ───────────────────────────────────────────────────────
     cur.execute("""
@@ -118,6 +134,38 @@ def _create_tables():
             observaciones    TEXT,
             proxima_revision DATE,
             creado_en        TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+    # ── Remisiones ───────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS remisiones (
+            id             SERIAL PRIMARY KEY,
+            numero         TEXT UNIQUE NOT NULL,
+            fecha          DATE NOT NULL DEFAULT CURRENT_DATE,
+            proveedor      TEXT NOT NULL,
+            operario       TEXT NOT NULL,
+            notas          TEXT,
+            foto           TEXT NOT NULL,
+            estado         TEXT NOT NULL DEFAULT 'pendiente',
+            aprobado_por   TEXT,
+            rechazo_motivo TEXT,
+            creado_en      TIMESTAMP DEFAULT NOW(),
+            actualizado_en TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+    # ── Ítems de Remisión ────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS remision_items (
+            id          SERIAL PRIMARY KEY,
+            remision_id INTEGER REFERENCES remisiones(id) ON DELETE CASCADE,
+            mp_id       INTEGER REFERENCES materias_primas(id),
+            mp_nombre   TEXT,
+            cantidad    NUMERIC(12,4) NOT NULL,
+            precio_unit NUMERIC(12,2),
+            lote        TEXT UNIQUE NOT NULL,
+            creado_en   TIMESTAMP DEFAULT NOW()
         )
     """)
 

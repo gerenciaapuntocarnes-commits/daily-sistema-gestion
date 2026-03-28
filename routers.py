@@ -1,10 +1,25 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
-from typing import Optional
-from datetime import date
+from typing import Optional, List
+from datetime import date, datetime
+import uuid
+import psycopg2
 from database import get_conn
 
 router = APIRouter()
+
+# ═══════════════════════════════════════════════════════════════
+# HELPERS
+# ═══════════════════════════════════════════════════════════════
+
+def _gen_lote_produccion(new_id: int) -> str:
+    return f"LOT-{datetime.now().strftime('%Y%m%d')}-{new_id:06d}"
+
+def _gen_lote_item(new_id: int) -> str:
+    return f"LMP-{datetime.now().strftime('%Y%m%d')}-{new_id:06d}"
+
+def _gen_numero_remision(new_id: int) -> str:
+    return f"REM-{datetime.now().strftime('%Y%m%d')}-{new_id:06d}"
 
 # ═══════════════════════════════════════════════════════════════
 # MATERIAS PRIMAS
@@ -12,6 +27,7 @@ router = APIRouter()
 
 class MPIn(BaseModel):
     nombre: str
+    codigo: Optional[str] = None
     unidad: str = "kg"
     categoria: str = "General"
 
@@ -24,12 +40,25 @@ class CompraIn(BaseModel):
     factura: Optional[str] = None
     notas: Optional[str] = None
 
+@router.get("/materias-primas/check-codigo")
+def check_codigo(codigo: str):
+    """Verifica en tiempo real si un código ya existe."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id FROM materias_primas WHERE codigo=%s AND activo=TRUE",
+        (codigo.strip(),)
+    )
+    existe = cur.fetchone() is not None
+    cur.close(); conn.close()
+    return {"existe": existe}
+
 @router.get("/materias-primas")
 def listar_mp():
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT mp.id, mp.nombre, mp.unidad, mp.categoria, mp.activo,
+        SELECT mp.id, mp.codigo, mp.nombre, mp.unidad, mp.categoria, mp.activo,
                c.precio_unit AS precio_actual,
                c.fecha       AS ultima_compra,
                c.proveedor   AS ultimo_proveedor
@@ -46,32 +75,47 @@ def listar_mp():
     """)
     rows = cur.fetchall()
     cur.close(); conn.close()
-    return [{"id": r[0], "nombre": r[1], "unidad": r[2], "categoria": r[3],
-             "activo": r[4], "precio_actual": float(r[5]) if r[5] else 0,
-             "ultima_compra": str(r[6]) if r[6] else None,
-             "ultimo_proveedor": r[7]} for r in rows]
+    return [{"id": r[0], "codigo": r[1], "nombre": r[2], "unidad": r[3],
+             "categoria": r[4], "activo": r[5],
+             "precio_actual": float(r[6]) if r[6] else 0,
+             "ultima_compra": str(r[7]) if r[7] else None,
+             "ultimo_proveedor": r[8]} for r in rows]
 
 @router.post("/materias-primas")
 def crear_mp(data: MPIn):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute(
-        "INSERT INTO materias_primas (nombre, unidad, categoria) VALUES (%s,%s,%s) RETURNING id",
-        (data.nombre, data.unidad, data.categoria)
-    )
-    new_id = cur.fetchone()[0]
-    conn.commit(); cur.close(); conn.close()
+    codigo = data.codigo.strip() if data.codigo and data.codigo.strip() else None
+    try:
+        cur.execute(
+            "INSERT INTO materias_primas (codigo, nombre, unidad, categoria) VALUES (%s,%s,%s,%s) RETURNING id",
+            (codigo, data.nombre, data.unidad, data.categoria)
+        )
+        new_id = cur.fetchone()[0]
+        conn.commit()
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        raise HTTPException(409, f"El código '{codigo}' ya está en uso por otra materia prima")
+    finally:
+        cur.close(); conn.close()
     return {"id": new_id, "ok": True}
 
 @router.put("/materias-primas/{mp_id}")
 def editar_mp(mp_id: int, data: MPIn):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute(
-        "UPDATE materias_primas SET nombre=%s, unidad=%s, categoria=%s WHERE id=%s",
-        (data.nombre, data.unidad, data.categoria, mp_id)
-    )
-    conn.commit(); cur.close(); conn.close()
+    codigo = data.codigo.strip() if data.codigo and data.codigo.strip() else None
+    try:
+        cur.execute(
+            "UPDATE materias_primas SET codigo=%s, nombre=%s, unidad=%s, categoria=%s WHERE id=%s",
+            (codigo, data.nombre, data.unidad, data.categoria, mp_id)
+        )
+        conn.commit()
+    except psycopg2.errors.UniqueViolation:
+        conn.rollback()
+        raise HTTPException(409, f"El código '{codigo}' ya está en uso por otra materia prima")
+    finally:
+        cur.close(); conn.close()
     return {"ok": True}
 
 @router.delete("/materias-primas/{mp_id}")
@@ -155,7 +199,6 @@ def listar_recetas():
     recetas = cur.fetchall()
     result = []
     for r in recetas:
-        # Calcular costo usando últimos precios de MP
         cur.execute("""
             SELECT COALESCE(SUM(ri.cantidad * COALESCE(ult.precio_unit,0)), 0)
             FROM receta_ingredientes ri
@@ -270,7 +313,7 @@ def eliminar_ingrediente(ing_id: int):
     return {"ok": True}
 
 # ═══════════════════════════════════════════════════════════════
-# PRODUCCIÓN
+# PRODUCCIÓN  — lote generado automáticamente por el servidor
 # ═══════════════════════════════════════════════════════════════
 
 class ProduccionIn(BaseModel):
@@ -278,7 +321,6 @@ class ProduccionIn(BaseModel):
     receta_id: int
     porciones_planeadas: float = 0
     porciones: float
-    lote: Optional[str] = None
     operario: Optional[str] = None
     notas: Optional[str] = None
 
@@ -314,14 +356,19 @@ def listar_produccion(limit: int = 200):
 def registrar_produccion(data: ProduccionIn):
     conn = get_conn()
     cur = conn.cursor()
+    # Insertar con lote temporal único
+    temp_lote = f"TEMP-{uuid.uuid4()}"
     cur.execute("""
         INSERT INTO produccion (fecha, receta_id, porciones_planeadas, porciones, lote, operario, notas)
         VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id
     """, (data.fecha, data.receta_id, data.porciones_planeadas, data.porciones,
-          data.lote, data.operario, data.notas))
+          temp_lote, data.operario, data.notas))
     new_id = cur.fetchone()[0]
+    # Generar lote definitivo con el ID real
+    lote = _gen_lote_produccion(new_id)
+    cur.execute("UPDATE produccion SET lote=%s WHERE id=%s", (lote, new_id))
     conn.commit(); cur.close(); conn.close()
-    return {"id": new_id, "ok": True}
+    return {"id": new_id, "lote": lote, "ok": True}
 
 @router.delete("/produccion/{prod_id}")
 def eliminar_produccion(prod_id: int):
@@ -494,6 +541,173 @@ def eliminar_registro(reg_id: int):
     return {"ok": True}
 
 # ═══════════════════════════════════════════════════════════════
+# REMISIONES — flujo de aprobación
+# ═══════════════════════════════════════════════════════════════
+
+class RemisionItemIn(BaseModel):
+    mp_id: int
+    mp_nombre: str
+    cantidad: float
+    precio_unit: float
+
+class RemisionIn(BaseModel):
+    fecha: date
+    proveedor: str
+    operario: str
+    notas: Optional[str] = None
+    foto: str          # base64 obligatorio
+    items: List[RemisionItemIn]
+
+class AprobarIn(BaseModel):
+    aprobado_por: str
+
+class RechazarIn(BaseModel):
+    rechazado_por: str
+    motivo: str
+
+@router.get("/remisiones")
+def listar_remisiones(estado: Optional[str] = None, limit: int = 200):
+    conn = get_conn()
+    cur = conn.cursor()
+    if estado:
+        cur.execute("""
+            SELECT id, numero, fecha, proveedor, operario, notas, estado,
+                   aprobado_por, rechazo_motivo, creado_en
+            FROM remisiones WHERE estado=%s
+            ORDER BY creado_en DESC LIMIT %s
+        """, (estado, limit))
+    else:
+        cur.execute("""
+            SELECT id, numero, fecha, proveedor, operario, notas, estado,
+                   aprobado_por, rechazo_motivo, creado_en
+            FROM remisiones ORDER BY creado_en DESC LIMIT %s
+        """, (limit,))
+    rows = cur.fetchall()
+
+    result = []
+    for r in rows:
+        cur.execute("""
+            SELECT mp_nombre, cantidad, precio_unit, lote
+            FROM remision_items WHERE remision_id=%s ORDER BY id
+        """, (r[0],))
+        items = [{"mp_nombre": i[0], "cantidad": float(i[1]),
+                  "precio_unit": float(i[2]) if i[2] else 0,
+                  "lote": i[3]} for i in cur.fetchall()]
+        result.append({
+            "id": r[0], "numero": r[1], "fecha": str(r[2]),
+            "proveedor": r[3], "operario": r[4], "notas": r[5],
+            "estado": r[6], "aprobado_por": r[7], "rechazo_motivo": r[8],
+            "creado_en": str(r[9]), "items": items
+        })
+    cur.close(); conn.close()
+    return result
+
+@router.get("/remisiones/{remision_id}/estado")
+def estado_remision(remision_id: int):
+    """Endpoint de polling para el operario."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT estado, aprobado_por, rechazo_motivo
+        FROM remisiones WHERE id=%s
+    """, (remision_id,))
+    r = cur.fetchone()
+    cur.close(); conn.close()
+    if not r:
+        raise HTTPException(404, "Remisión no encontrada")
+    return {"estado": r[0], "aprobado_por": r[1], "rechazo_motivo": r[2]}
+
+@router.get("/remisiones/{remision_id}/foto")
+def foto_remision(remision_id: int):
+    """Devuelve la foto de una remisión."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT foto FROM remisiones WHERE id=%s", (remision_id,))
+    r = cur.fetchone()
+    cur.close(); conn.close()
+    if not r:
+        raise HTTPException(404, "Remisión no encontrada")
+    return {"foto": r[0]}
+
+@router.post("/remisiones")
+def crear_remision(data: RemisionIn):
+    if not data.items:
+        raise HTTPException(400, "Debe agregar al menos un ítem")
+    if not data.foto:
+        raise HTTPException(400, "La foto de la remisión es obligatoria")
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # 1. Insertar remisión con número temporal único
+    temp_numero = f"TEMP-{uuid.uuid4()}"
+    cur.execute("""
+        INSERT INTO remisiones (numero, fecha, proveedor, operario, notas, foto, estado)
+        VALUES (%s, %s, %s, %s, %s, %s, 'pendiente') RETURNING id
+    """, (temp_numero, data.fecha, data.proveedor, data.operario,
+          data.notas, data.foto))
+    remision_id = cur.fetchone()[0]
+
+    # 2. Generar número definitivo con el ID real
+    numero = _gen_numero_remision(remision_id)
+    cur.execute("UPDATE remisiones SET numero=%s WHERE id=%s", (numero, remision_id))
+
+    # 3. Insertar ítems con lote generado automáticamente
+    for item in data.items:
+        temp_lote = f"TEMP-{uuid.uuid4()}"
+        cur.execute("""
+            INSERT INTO remision_items (remision_id, mp_id, mp_nombre, cantidad, precio_unit, lote)
+            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id
+        """, (remision_id, item.mp_id, item.mp_nombre,
+              item.cantidad, item.precio_unit, temp_lote))
+        item_id = cur.fetchone()[0]
+        lote_item = _gen_lote_item(item_id)
+        cur.execute("UPDATE remision_items SET lote=%s WHERE id=%s", (lote_item, item_id))
+
+    conn.commit(); cur.close(); conn.close()
+    return {"id": remision_id, "numero": numero, "estado": "pendiente", "ok": True}
+
+@router.post("/remisiones/{remision_id}/aprobar")
+def aprobar_remision(remision_id: int, data: AprobarIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE remisiones
+        SET estado='aprobada', aprobado_por=%s, actualizado_en=NOW()
+        WHERE id=%s AND estado='pendiente'
+        RETURNING id
+    """, (data.aprobado_por, remision_id))
+    if not cur.fetchone():
+        conn.rollback(); cur.close(); conn.close()
+        raise HTTPException(400, "La remisión no existe o ya fue procesada")
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True, "estado": "aprobada"}
+
+@router.post("/remisiones/{remision_id}/rechazar")
+def rechazar_remision(remision_id: int, data: RechazarIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE remisiones
+        SET estado='rechazada', aprobado_por=%s, rechazo_motivo=%s, actualizado_en=NOW()
+        WHERE id=%s AND estado='pendiente'
+        RETURNING id
+    """, (data.rechazado_por, data.motivo, remision_id))
+    if not cur.fetchone():
+        conn.rollback(); cur.close(); conn.close()
+        raise HTTPException(400, "La remisión no existe o ya fue procesada")
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True, "estado": "rechazada"}
+
+@router.delete("/remisiones/{remision_id}")
+def eliminar_remision(remision_id: int):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM remisiones WHERE id=%s", (remision_id,))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+# ═══════════════════════════════════════════════════════════════
 # DASHBOARD
 # ═══════════════════════════════════════════════════════════════
 
@@ -525,13 +739,17 @@ def dashboard():
     """)
     alertas_sanitarias = cur.fetchone()[0]
 
+    cur.execute("SELECT COUNT(*) FROM remisiones WHERE estado='pendiente'")
+    remisiones_pendientes = cur.fetchone()[0]
+
     cur.execute("""
-        SELECT p.fecha, r.nombre, p.porciones, p.operario
+        SELECT p.fecha, r.nombre, p.porciones_planeadas, p.porciones, p.operario
         FROM produccion p LEFT JOIN recetas r ON r.id=p.receta_id
         ORDER BY p.fecha DESC, p.id DESC LIMIT 5
     """)
     ultima_produccion = [{"fecha": str(r[0]), "receta": r[1],
-                          "porciones": float(r[2]), "operario": r[3]}
+                          "porciones_planeadas": float(r[2]) if r[2] else 0,
+                          "porciones": float(r[3]), "operario": r[4]}
                          for r in cur.fetchall()]
 
     cur.close(); conn.close()
@@ -542,5 +760,6 @@ def dashboard():
         "gastos_mes": gastos_mes,
         "caja_hoy": caja_hoy,
         "alertas_sanitarias": alertas_sanitarias,
+        "remisiones_pendientes": remisiones_pendientes,
         "ultima_produccion": ultima_produccion
     }
