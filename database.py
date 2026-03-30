@@ -23,15 +23,15 @@ def _create_tables():
             creado_en TIMESTAMP DEFAULT NOW()
         )
     """)
-    # Índice único en codigo (ignora NULLs automáticamente en PostgreSQL)
-    cur.execute("""
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_mp_codigo
-        ON materias_primas(codigo) WHERE codigo IS NOT NULL
-    """)
     # Agregar columna codigo si la tabla ya existía sin ella
     cur.execute("""
         ALTER TABLE materias_primas
         ADD COLUMN IF NOT EXISTS codigo TEXT
+    """)
+    # Índice único en codigo (ignora NULLs automáticamente en PostgreSQL)
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_mp_codigo
+        ON materias_primas(codigo) WHERE codigo IS NOT NULL
     """)
 
     cur.execute("""
