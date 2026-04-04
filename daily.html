@@ -265,11 +265,29 @@ tr:hover .btn-delete { opacity: 1; }
             <span class="nav-link-title">INVIMA / BPM</span>
           </a>
         </li>
-        <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Integraciones</span></li>
+        <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Planificacion</span></li>
+        <li class="nav-item">
+          <a class="nav-link" href="#" onclick="goto('productos-siigo');return false;">
+            <span class="nav-link-icon"><i class="ti ti-package"></i></span>
+            <span class="nav-link-title">Productos Siigo</span>
+          </a>
+        </li>
         <li class="nav-item">
           <a class="nav-link" href="#" onclick="goto('siigo');return false;">
-            <span class="nav-link-icon"><i class="ti ti-cloud-download"></i></span>
-            <span class="nav-link-title">Siigo Ventas</span>
+            <span class="nav-link-icon"><i class="ti ti-chart-bar"></i></span>
+            <span class="nav-link-title">Ventas Siigo</span>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="#" onclick="goto('reglas');return false;">
+            <span class="nav-link-icon"><i class="ti ti-adjustments"></i></span>
+            <span class="nav-link-title">Reglas / Condicionales</span>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="#" onclick="goto('plan-produccion');return false;">
+            <span class="nav-link-icon"><i class="ti ti-calendar-event"></i></span>
+            <span class="nav-link-title">Plan Semanal</span>
           </a>
         </li>
         <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Analitica</span></li>
@@ -786,6 +804,162 @@ tr:hover .btn-delete { opacity: 1; }
           <table class="table table-vcenter card-table table-sm">
             <thead><tr><th>Fecha</th><th>Programa</th><th>Descripcion</th><th>Resultado</th><th>Responsable</th><th></th></tr></thead>
             <tbody id="invima-registros-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ PRODUCTOS SIIGO (ligado a recetas) ════ -->
+<div id="s-productos-siigo" class="section">
+  <div class="page-header d-print-none mb-3">
+    <div class="row align-items-center">
+      <div class="col-auto">
+        <div class="page-pretitle">Planificacion</div>
+        <h2 class="page-title">Productos Siigo</h2>
+      </div>
+      <div class="col-auto ms-auto">
+        <button class="btn btn-primary" onclick="syncProductosSiigo()"><i class="ti ti-refresh me-1"></i>Sincronizar desde Siigo</button>
+      </div>
+    </div>
+  </div>
+  <div class="mb-3"><div class="input-icon"><span class="input-icon-addon"><i class="ti ti-search"></i></span><input class="form-control" placeholder="Buscar producto..." oninput="filterTable('prod-siigo-body', this.value)"></div></div>
+  <div class="card">
+    <div class="card-header"><h3 class="card-title">Producto terminado ↔ Receta</h3><div class="card-actions text-secondary small">Selecciona la receta que produce cada producto</div></div>
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead><tr><th>Codigo Siigo</th><th>Producto</th><th>Grupo</th><th>Receta ligada</th><th></th></tr></thead>
+        <tbody id="prod-siigo-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ════ REGLAS / CONDICIONALES ════ -->
+<div id="s-reglas" class="section">
+  <div class="page-header d-print-none mb-3">
+    <div class="row align-items-center">
+      <div class="col-auto">
+        <div class="page-pretitle">Planificacion</div>
+        <h2 class="page-title">Reglas y Condicionales</h2>
+      </div>
+      <div class="col-auto ms-auto">
+        <button class="btn btn-primary" onclick="openModal('modal-regla')"><i class="ti ti-plus me-1"></i>Nueva regla</button>
+      </div>
+    </div>
+  </div>
+  <div class="row row-cards mb-3">
+    <div class="col-md-4"><div class="card bg-azure-lt"><div class="card-body py-3"><i class="ti ti-truck me-2"></i><strong>Dias de recepcion</strong><div class="small text-secondary mt-1">Que dias llega cada MP</div></div></div></div>
+    <div class="col-md-4"><div class="card bg-yellow-lt"><div class="card-body py-3"><i class="ti ti-clock me-2"></i><strong>Vida util / Lead time</strong><div class="small text-secondary mt-1">Cuanto dura, cuanto tarda en llegar</div></div></div></div>
+    <div class="col-md-4"><div class="card bg-red-lt"><div class="card-body py-3"><i class="ti ti-alert-triangle me-2"></i><strong>Restricciones</strong><div class="small text-secondary mt-1">No pedir finde, produccion solo ciertos dias</div></div></div></div>
+  </div>
+  <div class="card">
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead><tr><th>Tipo</th><th>Aplica a</th><th>Parametro</th><th>Valor</th><th>Descripcion</th><th></th></tr></thead>
+        <tbody id="reglas-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Modal nueva regla -->
+<div id="modal-regla" class="modal-bg">
+  <div class="card" style="width:100%;max-width:620px;max-height:90vh;overflow-y:auto">
+    <div class="card-header">
+      <h3 class="card-title">Nueva Regla / Condicional</h3>
+      <button type="button" class="btn-close" onclick="closeModal('modal-regla')"></button>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Tipo de regla *</label>
+          <select class="form-select" id="regla-tipo" onchange="actualizarCamposRegla()">
+            <option value="dias_recepcion">Dias de recepcion de MP</option>
+            <option value="vida_util">Vida util (dias)</option>
+            <option value="dias_entrega">Lead time proveedor (dias)</option>
+            <option value="no_fin_semana">No pedir para fin de semana</option>
+            <option value="stock_seguridad">Stock de seguridad</option>
+            <option value="produccion_dia">Produccion solo ciertos dias</option>
+            <option value="capacidad_max">Capacidad maxima diaria planta</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" id="regla-entidad-label">Aplica a (MP / Proveedor / Receta)</label>
+          <input class="form-control" id="regla-entidad" placeholder="Ej: Cebolla, Plaza, Sopa de costilla">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label" id="regla-valor-label">Valor *</label>
+          <input class="form-control" id="regla-valor" placeholder="Ej: martes,jueves  o  3  o  true">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Descripcion</label>
+          <input class="form-control" id="regla-desc" placeholder="Explicacion de la regla">
+        </div>
+      </div>
+      <div class="mt-3 p-2 bg-light rounded small text-secondary" id="regla-ayuda">
+        <strong>Ejemplos:</strong><br>
+        Dias recepcion: valor = <code>martes,jueves</code> — MP solo llega esos dias<br>
+        Vida util: valor = <code>3</code> — la MP dura 3 dias<br>
+        No fin semana: valor = <code>true</code> — no pedir para sabado/domingo<br>
+        Lead time: valor = <code>2</code> — pedido tarda 2 dias en llegar<br>
+        Capacidad max: valor = <code>200</code> — max 200 porciones/dia
+      </div>
+    </div>
+    <div class="card-footer text-end">
+      <button class="btn btn-link me-2" onclick="closeModal('modal-regla')">Cancelar</button>
+      <button class="btn btn-primary" onclick="crearRegla()">Guardar regla</button>
+    </div>
+  </div>
+</div>
+
+<!-- ════ PLAN DE PRODUCCIÓN SEMANAL ════ -->
+<div id="s-plan-produccion" class="section">
+  <div class="page-header d-print-none mb-3">
+    <div class="row align-items-center">
+      <div class="col-auto">
+        <div class="page-pretitle">Planificacion</div>
+        <h2 class="page-title"><i class="ti ti-calendar-event me-2"></i>Plan de Produccion Semanal</h2>
+      </div>
+      <div class="col-auto ms-auto d-flex gap-2">
+        <select class="form-select" id="plan-semanas" onchange="loadPlanProduccion()" style="width:auto">
+          <option value="4" selected>Basado en 4 semanas</option>
+          <option value="6">Basado en 6 semanas</option>
+          <option value="8">Basado en 8 semanas</option>
+        </select>
+        <button class="btn btn-outline-secondary" onclick="loadPlanProduccion()"><i class="ti ti-refresh me-1"></i>Recalcular</button>
+      </div>
+    </div>
+  </div>
+  <div class="row row-cards mb-3">
+    <div class="col-lg-3"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val" id="plan-total-prod">--</div><div class="text-secondary small mt-1">Productos a producir</div></div></div></div>
+    <div class="col-lg-3"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val" id="plan-total-porc">--</div><div class="text-secondary small mt-1">Porciones totales</div></div></div></div>
+    <div class="col-lg-3"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val" id="plan-total-mp">--</div><div class="text-secondary small mt-1">MPs a comprar</div></div></div></div>
+    <div class="col-lg-3"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val text-primary" id="plan-total-costo">--</div><div class="text-secondary small mt-1">Costo semanal est.</div></div></div></div>
+  </div>
+
+  <div class="row row-cards mb-3" style="align-items:start">
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title"><i class="ti ti-building-factory-2 me-2"></i>Plan de Produccion</h3></div>
+        <div class="table-responsive">
+          <table class="table table-vcenter card-table table-sm">
+            <thead><tr><th>Producto</th><th>Receta</th><th class="num">Venta/sem</th><th class="num">Producir</th><th class="num">Batches</th></tr></thead>
+            <tbody id="plan-prod-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <div class="col-lg-6">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title"><i class="ti ti-shopping-cart me-2"></i>Plan de Compras</h3>
+          <div class="card-actions"><button class="btn btn-sm btn-warning" onclick="crearOrdenDesdePlan()"><i class="ti ti-shopping-cart me-1"></i>Generar OC</button></div>
+        </div>
+        <div class="table-responsive">
+          <table class="table table-vcenter card-table table-sm">
+            <thead><tr><th>Materia Prima</th><th class="num">Necesario</th><th class="num">Stock</th><th class="num">Pedir</th><th class="num">Costo</th><th>Reglas</th></tr></thead>
+            <tbody id="plan-compras-body"></tbody>
           </table>
         </div>
       </div>
@@ -1649,7 +1823,10 @@ function goto(sec) {
     'ordenes-compra': loadOrdenes,
     invima: loadInvima,
     proyecciones: loadProyecciones,
-    siigo: loadSiigoVentas
+    siigo: loadSiigoVentas,
+    'productos-siigo': loadProductosSiigo,
+    reglas: loadReglas,
+    'plan-produccion': loadPlanProduccion
   };
   if(loaders[sec]) loaders[sec]();
 }
@@ -3034,6 +3211,183 @@ async function loadProyecciones() {
   }
 }
 
+// ── PRODUCTOS SIIGO (ligado a recetas) ──────────────────────────
+async function loadProductosSiigo() {
+  showSkeleton('prod-siigo-body', 5);
+  var data = await api('/producto-receta','GET',null,true).catch(function(){return [];});
+  if(!data.length) {
+    $('prod-siigo-body').innerHTML = emptyState('package','Sin productos sincronizados','Sincroniza productos desde Siigo primero','Sincronizar',"syncProductosSiigo()");
+    return;
+  }
+  // Need recetas list for the select
+  var recs = await api('/recetas','GET',null,true).catch(function(){return [];});
+  var optsHtml = '<option value="">-- Sin ligar --</option>' + recs.map(function(r){return '<option value="'+r.id+'">'+r.nombre+' ('+r.categoria+')</option>';}).join('');
+  $('prod-siigo-body').innerHTML = data.map(function(p,i){
+    var linked = p.receta_id ? '<span class="badge bg-green-lt"><i class="ti ti-link me-1"></i>'+p.receta_nombre+'</span>' : '<span class="badge bg-secondary-lt">Sin ligar</span>';
+    return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+      '<td><span class="badge bg-blue-lt" style="font-family:monospace">'+p.siigo_code+'</span></td>' +
+      '<td><strong>'+p.siigo_name+'</strong></td>' +
+      '<td><span class="badge bg-azure-lt">'+(p.siigo_group||'')+'</span></td>' +
+      '<td>'+linked+'</td>' +
+      '<td><select class="form-select form-select-sm" style="width:200px" onchange="ligarReceta('+p.id+',this.value)">' +
+        optsHtml.replace('value="'+p.receta_id+'"','value="'+p.receta_id+'" selected') +
+      '</select></td>' +
+    '</tr>';
+  }).join('');
+}
+
+async function syncProductosSiigo() {
+  notyf.success('Sincronizando con Siigo...');
+  var res = await api('/producto-receta/sync','POST').catch(function(e){notyf.error('Error: '+e);return null;});
+  if(res && res.ok) {
+    notyf.success(res.synced + ' productos sincronizados');
+    loadProductosSiigo();
+  }
+}
+
+async function ligarReceta(prId, recetaId) {
+  var rid = recetaId ? parseInt(recetaId) : null;
+  await api('/producto-receta/'+prId+'/receta?receta_id='+(rid||''),'PUT').catch(function(){});
+  notyf.success(rid ? 'Receta ligada' : 'Receta desligada');
+}
+
+// ── REGLAS / CONDICIONALES ──────────────────────────────────────
+async function loadReglas() {
+  showSkeleton('reglas-body', 6);
+  var data = await api('/reglas','GET',null,true).catch(function(){return [];});
+  if(!data.length) {
+    $('reglas-body').innerHTML = emptyState('adjustments','Sin reglas configuradas','Agrega condicionales para la planificacion','Nueva regla',"openModal('modal-regla')");
+    return;
+  }
+  var tipoIcons = {dias_recepcion:'ti-truck',vida_util:'ti-clock',dias_entrega:'ti-clock-hour-4',no_fin_semana:'ti-calendar-off',stock_seguridad:'ti-shield',produccion_dia:'ti-calendar',capacidad_max:'ti-gauge'};
+  var tipoBadges = {dias_recepcion:'bg-azure-lt',vida_util:'bg-yellow-lt',dias_entrega:'bg-orange-lt',no_fin_semana:'bg-red-lt',stock_seguridad:'bg-green-lt',produccion_dia:'bg-purple-lt',capacidad_max:'bg-pink-lt'};
+  var tipoLabels = {dias_recepcion:'Dias recepcion',vida_util:'Vida util',dias_entrega:'Lead time',no_fin_semana:'No fin semana',stock_seguridad:'Stock seguridad',produccion_dia:'Dias produccion',capacidad_max:'Capacidad max'};
+  $('reglas-body').innerHTML = data.map(function(r,i){
+    return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+      '<td><span class="badge '+(tipoBadges[r.tipo]||'bg-secondary-lt')+'"><i class="'+(tipoIcons[r.tipo]||'ti-settings')+' me-1"></i>'+(tipoLabels[r.tipo]||r.tipo)+'</span></td>' +
+      '<td><strong>'+(r.entidad||'Global')+'</strong></td>' +
+      '<td>'+r.parametro+'</td>' +
+      '<td><code>'+r.valor+'</code></td>' +
+      '<td class="text-secondary" style="font-size:12px">'+(r.descripcion||'')+'</td>' +
+      '<td><button class="btn btn-outline-danger btn-sm btn-delete" onclick="eliminarRegla('+r.id+')"><i class="ti ti-x"></i></button></td>' +
+    '</tr>';
+  }).join('');
+}
+
+function actualizarCamposRegla() {
+  var tipo = $('regla-tipo').value;
+  var labels = {dias_recepcion:['MP','Dias (ej: martes,jueves)'],vida_util:['MP','Dias de vida util'],dias_entrega:['Proveedor','Dias de entrega'],no_fin_semana:['MP','true'],stock_seguridad:['MP','Cantidad minima'],produccion_dia:['Receta','Dias (ej: lunes,miercoles)'],capacidad_max:['planta','Porciones/dia']};
+  var l = labels[tipo] || ['Entidad','Valor'];
+  $('regla-entidad-label').textContent = 'Aplica a (' + l[0] + ')';
+  $('regla-valor-label').textContent = 'Valor: ' + l[1];
+  if(tipo === 'capacidad_max') $('regla-entidad').value = 'planta';
+  if(tipo === 'no_fin_semana') $('regla-valor').value = 'true';
+}
+
+async function crearRegla() {
+  var tipo = $('regla-tipo').value;
+  var entidad = $('regla-entidad').value.trim();
+  var valor = $('regla-valor').value.trim();
+  if(!valor) return notyf.error('Ingresa el valor de la regla');
+  await api('/reglas','POST',{tipo:tipo,entidad:entidad||null,entidad_id:null,parametro:tipo,valor:valor,descripcion:$('regla-desc').value||null});
+  closeModal('modal-regla');
+  $('regla-entidad').value=''; $('regla-valor').value=''; $('regla-desc').value='';
+  notyf.success('Regla creada');
+  loadReglas();
+}
+
+async function eliminarRegla(id) {
+  confirmAction('Eliminar esta regla?', async function(){
+    await api('/reglas/'+id,'DELETE');
+    notyf.success('Regla eliminada');
+    loadReglas();
+  });
+}
+
+// ── PLAN DE PRODUCCIÓN SEMANAL ──────────────────────────────────
+let lastPlanData = null;
+
+async function loadPlanProduccion() {
+  var semanas = parseInt($('plan-semanas').value) || 4;
+  showSkeleton('plan-prod-body', 5);
+  showSkeleton('plan-compras-body', 6);
+  $('plan-total-prod').textContent = '...';
+  $('plan-total-porc').textContent = '...';
+  $('plan-total-mp').textContent = '...';
+  $('plan-total-costo').textContent = '...';
+
+  var data = await api('/plan-produccion?semanas_historico='+semanas,'GET',null,true).catch(function(e){return null;});
+  if(!data) {
+    $('plan-prod-body').innerHTML = emptyState('calendar-off','Error generando plan','Verifica que hay productos ligados a recetas y ventas en Siigo','Reintentar',"loadPlanProduccion()");
+    $('plan-compras-body').innerHTML = '';
+    return;
+  }
+  lastPlanData = data;
+
+  // KPIs
+  var pp = data.plan_produccion;
+  var pc = data.plan_compras;
+  $('plan-total-prod').textContent = pp.length;
+  $('plan-total-porc').textContent = fmtD(pp.reduce(function(s,p){return s+p.porciones_producir;},0),0);
+  $('plan-total-mp').textContent = pc.filter(function(m){return m.a_pedir>0;}).length;
+  $('plan-total-costo').textContent = '$'+fmt(data.total_costo_semanal);
+
+  // Plan produccion table
+  if(!pp.length) {
+    $('plan-prod-body').innerHTML = emptyState('link-off','Sin productos ligados','Liga productos Siigo a recetas primero','Ir a Productos',"goto('productos-siigo')");
+  } else {
+    $('plan-prod-body').innerHTML = pp.map(function(p,i){
+      return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+        '<td><strong>'+p.producto+'</strong><div class="small text-secondary">'+p.siigo_code+'</div></td>' +
+        '<td>'+p.receta+'</td>' +
+        '<td class="num">'+fmtD(p.venta_semanal_promedio,1)+'</td>' +
+        '<td class="num"><strong>'+fmtD(p.porciones_producir,0)+'</strong></td>' +
+        '<td class="num">'+fmtD(p.batches_semana,1)+'</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  // Plan compras table
+  if(!pc.length) {
+    $('plan-compras-body').innerHTML = '<tr><td colspan="6" class="text-center text-secondary py-3">Sin MP necesaria</td></tr>';
+  } else {
+    $('plan-compras-body').innerHTML = pc.map(function(m,i){
+      var pedirClass = m.a_pedir > 0 ? 'fw-bold text-danger' : 'text-success';
+      var reglasHtml = m.reglas.length ? m.reglas.map(function(r){return '<span class="badge bg-yellow-lt me-1" style="font-size:10px">'+r+'</span>';}).join('') : '<span class="text-secondary" style="font-size:11px">--</span>';
+      return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+        '<td><strong>'+m.nombre+'</strong><div class="small text-secondary">'+(m.proveedor||'')+'</div></td>' +
+        '<td class="num">'+fmtD(m.necesario_semanal,1)+' '+m.unidad+'</td>' +
+        '<td class="num">'+fmtD(m.stock_actual,1)+'</td>' +
+        '<td class="num '+pedirClass+'">'+fmtD(m.a_pedir,1)+'</td>' +
+        '<td class="num">$'+fmt(m.costo_estimado)+'</td>' +
+        '<td>'+reglasHtml+'</td>' +
+      '</tr>';
+    }).join('');
+  }
+}
+
+async function crearOrdenDesdePlan() {
+  if(!lastPlanData || !lastPlanData.plan_compras.length) return notyf.error('No hay plan de compras');
+  var items = lastPlanData.plan_compras.filter(function(m){return m.a_pedir > 0;});
+  if(!items.length) return notyf.success('No hay MP que pedir, stock suficiente');
+  // Group by proveedor
+  var porProv = {};
+  items.forEach(function(m){
+    var p = m.proveedor || 'Sin proveedor';
+    if(!porProv[p]) porProv[p] = [];
+    porProv[p].push(m);
+  });
+  var provs = Object.keys(porProv);
+  // Create OC for first provider, open modal
+  goto('ordenes-compra');
+  openModal('modal-orden');
+  var prov = provs[0];
+  $('oc-proveedor').value = prov === 'Sin proveedor' ? '' : prov;
+  ordenItems = porProv[prov].map(function(m){return {mp_id:m.mp_id,mp_nombre:m.nombre,unidad:m.unidad,cantidad:m.a_pedir,precio_est:m.costo_estimado/m.necesario_semanal};});
+  renderOrdenItems();
+  if(provs.length > 1) notyf.success('Hay '+provs.length+' proveedores. Se cargo: '+prov);
+}
+
 // ── SIIGO ────────────────────────────────────────────────────────
 let chartSiigoVentas = null;
 
@@ -3150,7 +3504,10 @@ var cmdCommands = [
   {icon:'ti-chart-line', label:'Ir a Proyecciones', action:function(){goto('proyecciones');}},
   {icon:'ti-plus', label:'Nueva Orden de Compra', hint:'Crear', action:function(){goto('ordenes-compra');openModal('modal-orden');}},
   {icon:'ti-plus', label:'Nuevo Registro INVIMA', hint:'Crear', action:function(){goto('invima');openModal('modal-invima-registro');}},
-  {icon:'ti-cloud-download', label:'Ir a Siigo Ventas', action:function(){goto('siigo');}},
+  {icon:'ti-package', label:'Ir a Productos Siigo', action:function(){goto('productos-siigo');}},
+  {icon:'ti-chart-bar', label:'Ir a Ventas Siigo', action:function(){goto('siigo');}},
+  {icon:'ti-adjustments', label:'Ir a Reglas / Condicionales', action:function(){goto('reglas');}},
+  {icon:'ti-calendar-event', label:'Ir a Plan Semanal', action:function(){goto('plan-produccion');}},
   {icon:'ti-alert-triangle', label:'Generar orden desde stock bajo', hint:'Automatico', action:function(){goto('ordenes-compra');generarOrdenDesdeStock();}},
   {icon:'ti-sun', label:'Cambiar tema claro/oscuro', action:function(){toggleTheme();}}
 ];

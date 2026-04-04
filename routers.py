@@ -1469,3 +1469,293 @@ def siigo_ventas_semana(semanas: int = 8):
         return sales_by_product_weekly(semanas)
     except Exception as e:
         raise HTTPException(500, f"Error Siigo: {str(e)}")
+
+# ═══════════════════════════════════════════════════════════════
+# PRODUCTO ↔ RECETA (ligado Siigo → Daily)
+# ═══════════════════════════════════════════════════════════════
+
+class ProductoRecetaIn(BaseModel):
+    siigo_code: str
+    siigo_name: str
+    siigo_group: Optional[str] = None
+    receta_id: Optional[int] = None
+
+@router.get("/producto-receta")
+def listar_producto_receta():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT pr.id, pr.siigo_code, pr.siigo_name, pr.siigo_group, pr.receta_id,
+               r.nombre AS receta_nombre, pr.activo
+        FROM producto_receta pr
+        LEFT JOIN recetas r ON r.id = pr.receta_id
+        WHERE pr.activo = TRUE
+        ORDER BY pr.siigo_group, pr.siigo_name
+    """)
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return [{"id": r[0], "siigo_code": r[1], "siigo_name": r[2], "siigo_group": r[3],
+             "receta_id": r[4], "receta_nombre": r[5], "activo": r[6]} for r in rows]
+
+@router.post("/producto-receta")
+def crear_producto_receta(data: ProductoRecetaIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            INSERT INTO producto_receta (siigo_code, siigo_name, siigo_group, receta_id)
+            VALUES (%s,%s,%s,%s)
+            ON CONFLICT (siigo_code) WHERE siigo_code IS NOT NULL
+            DO UPDATE SET siigo_name=%s, siigo_group=%s, receta_id=%s
+            RETURNING id
+        """, (data.siigo_code, data.siigo_name, data.siigo_group, data.receta_id,
+              data.siigo_name, data.siigo_group, data.receta_id))
+        new_id = cur.fetchone()[0]
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(500, str(e))
+    finally:
+        cur.close(); conn.close()
+    return {"id": new_id, "ok": True}
+
+@router.put("/producto-receta/{pr_id}/receta")
+def ligar_receta(pr_id: int, receta_id: Optional[int] = None):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE producto_receta SET receta_id=%s WHERE id=%s", (receta_id, pr_id))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+@router.post("/producto-receta/sync")
+def sync_productos_siigo():
+    """Sincroniza productos terminados de Siigo con la tabla producto_receta."""
+    try:
+        from siigo import fetch_products
+        productos = fetch_products(tipo="terminado")
+    except Exception as e:
+        raise HTTPException(500, f"Error Siigo: {str(e)}")
+    conn = get_conn()
+    cur = conn.cursor()
+    synced = 0
+    for p in productos:
+        cur.execute("""
+            INSERT INTO producto_receta (siigo_code, siigo_name, siigo_group)
+            VALUES (%s, %s, %s)
+            ON CONFLICT (siigo_code) WHERE siigo_code IS NOT NULL
+            DO UPDATE SET siigo_name=%s, siigo_group=%s
+        """, (p["code"], p["name"], p["group"], p["name"], p["group"]))
+        synced += 1
+    conn.commit(); cur.close(); conn.close()
+    return {"synced": synced, "ok": True}
+
+# ═══════════════════════════════════════════════════════════════
+# REGLAS DE PRODUCCIÓN (condicionales)
+# ═══════════════════════════════════════════════════════════════
+
+class ReglaIn(BaseModel):
+    tipo: str          # dias_recepcion, vida_util, no_fin_semana, lead_time, stock_seguridad, produccion_dia, capacidad_max
+    entidad: Optional[str] = None   # nombre de MP, proveedor, receta, o 'planta'
+    entidad_id: Optional[int] = None
+    parametro: str
+    valor: str
+    descripcion: Optional[str] = None
+
+@router.get("/reglas")
+def listar_reglas():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, tipo, entidad, entidad_id, parametro, valor, descripcion, activo
+        FROM reglas_produccion WHERE activo=TRUE ORDER BY tipo, entidad
+    """)
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return [{"id": r[0], "tipo": r[1], "entidad": r[2], "entidad_id": r[3],
+             "parametro": r[4], "valor": r[5], "descripcion": r[6], "activo": r[7]} for r in rows]
+
+@router.post("/reglas")
+def crear_regla(data: ReglaIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO reglas_produccion (tipo, entidad, entidad_id, parametro, valor, descripcion)
+        VALUES (%s,%s,%s,%s,%s,%s) RETURNING id
+    """, (data.tipo, data.entidad, data.entidad_id, data.parametro, data.valor, data.descripcion))
+    new_id = cur.fetchone()[0]
+    conn.commit(); cur.close(); conn.close()
+    return {"id": new_id, "ok": True}
+
+@router.put("/reglas/{regla_id}")
+def editar_regla(regla_id: int, data: ReglaIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE reglas_produccion SET tipo=%s, entidad=%s, entidad_id=%s,
+               parametro=%s, valor=%s, descripcion=%s WHERE id=%s
+    """, (data.tipo, data.entidad, data.entidad_id, data.parametro, data.valor, data.descripcion, regla_id))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+@router.delete("/reglas/{regla_id}")
+def eliminar_regla(regla_id: int):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE reglas_produccion SET activo=FALSE WHERE id=%s", (regla_id,))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+# ═══════════════════════════════════════════════════════════════
+# PLAN DE PRODUCCIÓN SEMANAL (motor de planificación)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/plan-produccion")
+def plan_produccion(semanas_historico: int = 4):
+    """
+    Genera plan de producción semanal basado en:
+    1. Ventas reales de Siigo (últimas N semanas) → demanda promedio
+    2. Producto ↔ Receta → ingredientes necesarios
+    3. Reglas/condicionales → restricciones de compra y producción
+    """
+    # 1. Obtener ventas por producto
+    try:
+        from siigo import sales_by_product_weekly
+        ventas = sales_by_product_weekly(semanas_historico)
+    except Exception as e:
+        raise HTTPException(500, f"Error Siigo: {str(e)}")
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # 2. Obtener ligados producto ↔ receta
+    cur.execute("""
+        SELECT pr.siigo_code, pr.siigo_name, pr.receta_id, r.nombre, r.porciones
+        FROM producto_receta pr
+        LEFT JOIN recetas r ON r.id = pr.receta_id
+        WHERE pr.activo = TRUE AND pr.receta_id IS NOT NULL
+    """)
+    ligados = {r[0]: {"siigo_name": r[1], "receta_id": r[2], "receta_nombre": r[3],
+                       "porciones_base": float(r[4]) if r[4] else 1} for r in cur.fetchall()}
+
+    # 3. Obtener reglas
+    cur.execute("SELECT tipo, entidad, parametro, valor FROM reglas_produccion WHERE activo=TRUE")
+    reglas_raw = cur.fetchall()
+    reglas = {}
+    for tipo, entidad, param, valor in reglas_raw:
+        key = f"{tipo}:{entidad or 'global'}"
+        reglas[key] = {"tipo": tipo, "entidad": entidad, "parametro": param, "valor": valor}
+
+    # Capacidad máxima diaria
+    cap_max = float(reglas.get("capacidad_max:planta", {}).get("valor", "9999"))
+
+    # 4. Calcular demanda promedio semanal por producto
+    num_weeks = len(ventas.get("weeks", [])) or 1
+    plan_productos = []
+    total_mp_necesaria = {}  # mp_id -> {nombre, unidad, cantidad_total, proveedores, reglas}
+
+    for prod_venta in ventas.get("products", []):
+        code = prod_venta["code"]
+        if code not in ligados:
+            continue
+        lig = ligados[code]
+        avg_qty_semana = prod_venta["total_qty"] / num_weeks
+        avg_revenue = prod_venta["total_revenue"] / num_weeks
+
+        # Factor: porciones que rinde la receta vs unidades vendidas
+        # Si la receta rinde 10 porciones y se venden 30/semana → 3 batches
+        porciones_base = lig["porciones_base"]
+        batches_semana = avg_qty_semana / porciones_base if porciones_base > 0 else avg_qty_semana
+
+        # Obtener ingredientes de la receta
+        cur.execute("""
+            SELECT ri.mp_id, mp.nombre, mp.unidad, ri.cantidad,
+                   COALESCE(lc.precio_unit, 0) AS precio,
+                   COALESCE(lc.proveedor, '') AS proveedor
+            FROM receta_ingredientes ri
+            JOIN materias_primas mp ON mp.id = ri.mp_id
+            LEFT JOIN LATERAL (
+                SELECT precio_unit, proveedor FROM compras_mp WHERE mp_id=ri.mp_id ORDER BY fecha DESC, id DESC LIMIT 1
+            ) lc ON TRUE
+            WHERE ri.receta_id = %s
+        """, (lig["receta_id"],))
+        ingredientes = []
+        for ing in cur.fetchall():
+            mp_id, mp_nombre, mp_unidad, cant_base, precio, proveedor = ing
+            cant_necesaria = float(cant_base) * batches_semana
+
+            # Aplicar reglas de esta MP
+            mp_reglas = []
+            dias_recepcion = reglas.get(f"dias_recepcion:{mp_nombre}", {}).get("valor", "")
+            vida_util = reglas.get(f"vida_util:{mp_nombre}", {}).get("valor", "")
+            no_finde = reglas.get(f"no_fin_semana:{mp_nombre}", {}).get("valor", "")
+            lead_time = reglas.get(f"dias_entrega:{proveedor}", {}).get("valor", "") if proveedor else ""
+
+            if dias_recepcion:
+                mp_reglas.append(f"Solo llega: {dias_recepcion}")
+            if vida_util:
+                mp_reglas.append(f"Vida util: {vida_util} dias")
+            if no_finde:
+                mp_reglas.append("No pedir para fin de semana")
+            if lead_time:
+                mp_reglas.append(f"Lead time: {lead_time} dias ({proveedor})")
+
+            ingredientes.append({
+                "mp_id": mp_id, "mp_nombre": mp_nombre, "unidad": mp_unidad,
+                "cantidad_semanal": round(cant_necesaria, 2),
+                "costo_semanal": round(cant_necesaria * float(precio), 2),
+                "proveedor": proveedor,
+                "reglas": mp_reglas
+            })
+
+            # Acumular MP total
+            if mp_id not in total_mp_necesaria:
+                total_mp_necesaria[mp_id] = {"nombre": mp_nombre, "unidad": mp_unidad,
+                                              "cantidad": 0, "costo": 0, "proveedor": proveedor,
+                                              "reglas": mp_reglas}
+            total_mp_necesaria[mp_id]["cantidad"] += cant_necesaria
+            total_mp_necesaria[mp_id]["costo"] += cant_necesaria * float(precio)
+
+        plan_productos.append({
+            "siigo_code": code,
+            "producto": prod_venta["name"],
+            "receta": lig["receta_nombre"],
+            "venta_semanal_promedio": round(avg_qty_semana, 1),
+            "revenue_semanal": round(avg_revenue, 2),
+            "batches_semana": round(batches_semana, 2),
+            "porciones_producir": round(avg_qty_semana, 0),
+            "ingredientes": ingredientes
+        })
+
+    # 5. Plan de compras: agrupar MP necesaria con reglas
+    cur.execute("""
+        SELECT mp.id, COALESCE(inv.cantidad_actual, 0)
+        FROM materias_primas mp LEFT JOIN inventario inv ON inv.mp_id = mp.id
+        WHERE mp.activo = TRUE
+    """)
+    stock_actual = {r[0]: float(r[1]) for r in cur.fetchall()}
+
+    plan_compras = []
+    for mp_id, mp_data in sorted(total_mp_necesaria.items(), key=lambda x: -x[1]["costo"]):
+        stock = stock_actual.get(mp_id, 0)
+        necesita = round(mp_data["cantidad"], 2)
+        a_pedir = max(0, round(necesita - stock, 2))
+        plan_compras.append({
+            "mp_id": mp_id,
+            "nombre": mp_data["nombre"],
+            "unidad": mp_data["unidad"],
+            "necesario_semanal": necesita,
+            "stock_actual": stock,
+            "a_pedir": a_pedir,
+            "costo_estimado": round(mp_data["costo"], 2),
+            "proveedor": mp_data["proveedor"],
+            "reglas": mp_data["reglas"]
+        })
+
+    cur.close(); conn.close()
+    return {
+        "semanas_analizadas": num_weeks,
+        "plan_produccion": plan_productos,
+        "plan_compras": plan_compras,
+        "capacidad_diaria": cap_max,
+        "total_costo_semanal": round(sum(m["costo_estimado"] for m in plan_compras), 2)
+    }

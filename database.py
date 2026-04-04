@@ -228,6 +228,46 @@ def _create_tables():
         )
     """)
 
+    # ── Producto Siigo ↔ Receta (ligado) ───────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS producto_receta (
+            id             SERIAL PRIMARY KEY,
+            siigo_code     TEXT NOT NULL,
+            siigo_name     TEXT NOT NULL,
+            siigo_group    TEXT,
+            receta_id      INTEGER REFERENCES recetas(id) ON DELETE SET NULL,
+            activo         BOOLEAN DEFAULT TRUE,
+            creado_en      TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_prod_receta_siigo
+        ON producto_receta(siigo_code) WHERE siigo_code IS NOT NULL
+    """)
+
+    # ── Reglas de Producción (condicionales) ─────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS reglas_produccion (
+            id          SERIAL PRIMARY KEY,
+            tipo        TEXT NOT NULL,
+            entidad     TEXT,
+            entidad_id  INTEGER,
+            parametro   TEXT NOT NULL,
+            valor       TEXT NOT NULL,
+            descripcion TEXT,
+            activo      BOOLEAN DEFAULT TRUE,
+            creado_en   TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    # Tipos de regla:
+    # 'dias_entrega'    entidad='proveedor'  parametro='lead_time_dias'   valor='2'
+    # 'dias_recepcion'  entidad='mp'         parametro='dias_disponibles' valor='martes,jueves'
+    # 'vida_util'       entidad='mp'         parametro='dias_vida_util'   valor='3'
+    # 'no_fin_semana'   entidad='mp'         parametro='no_pedir_finde'   valor='true'
+    # 'stock_seguridad' entidad='mp'         parametro='stock_seguridad'  valor='5'
+    # 'produccion_dia'  entidad='receta'     parametro='solo_dias'        valor='lunes,miercoles'
+    # 'capacidad_max'   entidad='planta'     parametro='porciones_dia'    valor='200'
+
     # ── INVIMA Programas Sanitarios ──────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS invima_programas (
