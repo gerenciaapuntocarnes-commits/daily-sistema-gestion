@@ -1225,13 +1225,20 @@ tr:hover .btn-delete { opacity: 1; }
     </div>
     <div class="card-body">
       <div class="row g-3">
+        <div class="col-12">
+          <label class="form-label"><i class="ti ti-link me-1"></i>Ligar a producto Siigo <span class="text-secondary">(opcional)</span></label>
+          <select class="form-select" id="rec-producto-siigo" onchange="autoFillFromProducto()">
+            <option value="">-- No ligar a producto --</option>
+          </select>
+          <div class="form-text">Solo muestra productos sin receta asignada</div>
+        </div>
         <div class="col-md-6">
           <label class="form-label">Nombre de la receta</label>
           <input class="form-control" id="rec-nombre" placeholder="Ej: Sopa de costilla">
         </div>
         <div class="col-md-6">
           <label class="form-label">Categoria</label>
-          <select class="form-select" id="rec-categoria"><option>Sopas</option><option>Proteinas</option><option>Salsas</option><option>Procesos</option><option>General</option></select>
+          <select class="form-select" id="rec-categoria"><option>Sopas</option><option>Proteinas</option><option>Salsas</option><option>Acompañamientos</option><option>Navidad</option><option>Procesos</option><option>General</option></select>
         </div>
         <div class="col-md-6">
           <label class="form-label">Porciones que rinde</label>
@@ -1834,6 +1841,7 @@ function goto(sec) {
 // ── Modales ────────────────────────────────────────────────────────
 function openModal(id) {
   $(id).classList.add('open');
+  if(id === 'modal-receta')   { fillSelectProductosSinReceta(); $('rec-nombre').value=''; $('rec-descripcion').value=''; $('rec-porciones').value='1'; $('rec-precio').value='0'; }
   if(id === 'modal-compra')   { fillSelectMP('compra-mp'); $('compra-fecha').value = today(); }
   if(id === 'modal-prod')     { fillSelectRecetas(); $('prod-fecha').value = today(); }
   if(id === 'modal-gasto')    { $('gasto-fecha').value = today(); }
@@ -2173,18 +2181,56 @@ async function loadRecetas() {
     '</tr>';}).join('');
 }
 
+let productosSinRecetaCache = [];
+
+async function fillSelectProductosSinReceta() {
+  var sel = $('rec-producto-siigo');
+  sel.innerHTML = '<option value="">-- No ligar a producto --</option><option disabled>Cargando...</option>';
+  try {
+    var all = await api('/producto-receta','GET',null,true);
+    productosSinRecetaCache = all.filter(function(p){ return !p.receta_id; });
+    sel.innerHTML = '<option value="">-- No ligar a producto --</option>' +
+      productosSinRecetaCache.map(function(p){
+        return '<option value="'+p.id+'" data-name="'+p.siigo_name.replace(/"/g,'&quot;')+'" data-group="'+(p.siigo_group||'')+'" data-code="'+p.siigo_code+'">'+ p.siigo_code+' — '+p.siigo_name+'</option>';
+      }).join('');
+  } catch(e) {
+    sel.innerHTML = '<option value="">-- No ligar (error cargando) --</option>';
+  }
+}
+
+function autoFillFromProducto() {
+  var sel = $('rec-producto-siigo');
+  var opt = sel.options[sel.selectedIndex];
+  if(!opt || !opt.value) return;
+  var name = opt.getAttribute('data-name') || '';
+  var group = opt.getAttribute('data-group') || '';
+  $('rec-nombre').value = name;
+  // Map Siigo group to receta category
+  var catMap = {'Proteinas':'Proteinas','Sopas':'Sopas','Salsas':'Salsas','Acompañamientos':'Acompañamientos','Navidad':'Navidad'};
+  var cat = catMap[group] || 'General';
+  var catSel = $('rec-categoria');
+  for(var i=0;i<catSel.options.length;i++){
+    if(catSel.options[i].value === cat) { catSel.selectedIndex = i; break; }
+  }
+}
+
 async function crearReceta() {
   var nombre = $('rec-nombre').value.trim();
   if(!nombre) return notyf.error('Ingresa el nombre de la receta');
+  var productoId = $('rec-producto-siigo').value;
   var res = await api('/recetas','POST',{
     nombre:nombre, categoria:$('rec-categoria').value,
     descripcion:$('rec-descripcion').value||null,
     porciones:parseFloat($('rec-porciones').value)||1,
     precio_venta:parseFloat($('rec-precio').value)||0
   });
+  // Auto-ligar al producto Siigo si se seleccionó
+  if(productoId && res.id) {
+    await api('/producto-receta/'+productoId+'/receta?receta_id='+res.id,'PUT').catch(function(){});
+  }
   closeModal('modal-receta');
   $('rec-nombre').value=''; $('rec-descripcion').value='';
-  notyf.success('Receta creada');
+  notyf.success(productoId ? 'Receta creada y ligada a producto Siigo' : 'Receta creada');
   await loadRecetas();
   verReceta(res.id);
   goto('recetas');
