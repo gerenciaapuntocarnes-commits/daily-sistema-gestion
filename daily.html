@@ -2285,26 +2285,26 @@ async function verReceta(id) {
 
   var costoDesglose = r.costo_fijo_batch > 0 ?
     '<div class="small text-secondary mt-1">MP: $'+fmt(r.costo_mp_und)+' + MO: $'+fmt(r.costo_mano_obra/r.batch_maximo)+' + Serv: $'+fmt(r.costo_servicios/r.batch_maximo)+'</div>' : '';
-  var configHtml = r.batch_maximo > 0 ?
-    '<div class="mt-2 p-2 rounded" style="background:var(--tblr-bg-surface-secondary);font-size:12px">' +
-      '<div class="fw-bold mb-1"><i class="ti ti-settings me-1"></i>Config produccion</div>' +
-      '<div class="d-flex gap-3 flex-wrap">' +
-        '<span><i class="ti ti-box me-1"></i>Batch: <strong>'+fmtD(r.batch_maximo,0)+'</strong> und</span>' +
-        '<span><i class="ti ti-clock me-1"></i>Tiempo: <strong>'+r.tiempo_batch_min+'</strong> min</span>' +
-        '<span><i class="ti ti-calendar me-1"></i>Vida util: <strong>'+r.vida_util_dias+'</strong> dias</span>' +
-        '<span><i class="ti ti-user me-1"></i>MO: <strong>$'+fmt(r.costo_mano_obra)+'</strong>/batch</span>' +
-        '<span><i class="ti ti-bolt me-1"></i>Serv: <strong>$'+fmt(r.costo_servicios)+'</strong>/batch</span>' +
-      '</div>' +
-    '</div>' : '<div class="mt-2 p-2 rounded text-warning" style="background:var(--tblr-bg-surface-secondary);font-size:12px"><i class="ti ti-alert-triangle me-1"></i>Sin config de produccion — configura batch, tiempo y costos para habilitar planificacion</div>';
+
+  // Build category options
+  var cats = ['Sopas','Proteinas','Salsas','Acompañamientos','Navidad','Procesos','General'];
+  var catOpts = cats.map(function(c){return '<option'+(c===r.categoria?' selected':'')+'>'+c+'</option>';}).join('');
 
   $('receta-detalle-panel').innerHTML =
     '<div class="card">' +
-      '<div class="card-header">' +
-        '<div>' +
-          '<h3 class="card-title">'+r.nombre+'</h3>' +
-          '<div class="text-secondary small">'+r.categoria+' -- Rinde '+r.porciones+' porciones</div>' +
-          (r.descripcion?'<div class="text-secondary mt-1" style="font-size:13px">'+r.descripcion+'</div>':'') +
+      '<div class="card-header d-flex justify-content-between align-items-center">' +
+        '<div style="flex:1">' +
+          '<input class="form-control form-control-sm fw-bold" id="edit-nombre" value="'+r.nombre.replace(/"/g,'&quot;')+'" style="font-size:16px;border:none;padding:0;background:transparent" onfocus="this.style.background=\'var(--tblr-bg-surface-secondary)\';this.style.padding=\'4px 8px\'" onblur="this.style.background=\'transparent\';this.style.padding=\'0\'">' +
+          '<div class="d-flex gap-2 mt-1 align-items-center">' +
+            '<select class="form-select form-select-sm" id="edit-categoria" style="width:auto;font-size:12px">'+catOpts+'</select>' +
+            '<span class="text-secondary small">Rinde</span>' +
+            '<input class="form-control form-control-sm" type="number" id="edit-porciones" value="'+r.porciones+'" step="0.5" style="width:70px;font-size:12px">' +
+            '<span class="text-secondary small">porciones</span>' +
+            '<span class="text-secondary small ms-2">Precio $</span>' +
+            '<input class="form-control form-control-sm" type="number" id="edit-precio" value="'+r.precio_venta+'" step="100" style="width:100px;font-size:12px">' +
+          '</div>' +
         '</div>' +
+        '<button class="btn btn-primary btn-sm ms-2" onclick="guardarReceta('+r.id+')"><i class="ti ti-check me-1"></i>Guardar</button>' +
       '</div>' +
       '<div class="card-body">' +
         '<div class="row row-cards mb-3">' +
@@ -2319,7 +2319,17 @@ async function verReceta(id) {
             '<div class="fw-bold fs-3 '+margenClass+'">'+fmtD(r.margen_pct,1)+'%</div><div class="text-secondary small">Margen ($'+fmt(r.margen)+')</div>' +
           '</div></div></div>' +
         '</div>' +
-        configHtml +
+        // Config produccion editable
+        '<div class="mt-2 mb-3 p-3 rounded" style="background:var(--tblr-bg-surface-secondary)">' +
+          '<div class="fw-bold small mb-2"><i class="ti ti-settings me-1"></i>Configuracion de produccion</div>' +
+          '<div class="row g-2">' +
+            '<div class="col-md-4"><label class="form-label" style="font-size:11px">Batch maximo (und)</label><input class="form-control form-control-sm" type="number" id="edit-batch" value="'+r.batch_maximo+'" step="1"></div>' +
+            '<div class="col-md-4"><label class="form-label" style="font-size:11px">Tiempo / batch (min)</label><input class="form-control form-control-sm" type="number" id="edit-tiempo" value="'+r.tiempo_batch_min+'" step="5"></div>' +
+            '<div class="col-md-4"><label class="form-label" style="font-size:11px">Vida util (dias)</label><input class="form-control form-control-sm" type="number" id="edit-vida" value="'+r.vida_util_dias+'" step="1"></div>' +
+            '<div class="col-md-6"><label class="form-label" style="font-size:11px">Mano de obra / batch ($)</label><input class="form-control form-control-sm" type="number" id="edit-mo" value="'+r.costo_mano_obra+'" step="1000"></div>' +
+            '<div class="col-md-6"><label class="form-label" style="font-size:11px">Servicios / batch ($)</label><input class="form-control form-control-sm" type="number" id="edit-sv" value="'+r.costo_servicios+'" step="1000"></div>' +
+          '</div>' +
+        '</div>' +
         '<div class="d-flex justify-content-between align-items-center mb-2">' +
           '<span class="text-secondary text-uppercase small fw-bold" style="letter-spacing:.4px">Ingredientes</span>' +
           '<button class="btn btn-outline-primary btn-sm" onclick="openModal(\'modal-ing\')"><i class="ti ti-plus me-1"></i>Agregar</button>' +
@@ -2327,9 +2337,6 @@ async function verReceta(id) {
         ingsHtml +
       '</div>' +
       '<div class="card-footer">' +
-        '<div class="d-flex justify-content-between align-items-center mb-2">' +
-          '<span class="text-secondary small">Venta: <strong class="text-body">$'+fmt(r.precio_venta)+'</strong> -- Costo: <strong class="text-body">$'+fmt(r.costo_porcion)+'</strong> -- Margen: <strong class="'+margenClass+'">$'+fmt(r.margen)+'</strong></span>' +
-        '</div>' +
         '<div class="scale-calc">' +
           '<div class="d-flex align-items-center gap-2 mb-2">' +
             '<i class="ti ti-calculator text-primary"></i>' +
@@ -2342,6 +2349,26 @@ async function verReceta(id) {
       '</div>' +
     '</div>';
   escalarReceta(r.id, r.porciones);
+}
+
+async function guardarReceta(id) {
+  var nombre = $('edit-nombre').value.trim();
+  if(!nombre) return notyf.error('El nombre no puede estar vacio');
+  await api('/recetas/'+id,'PUT',{
+    nombre: nombre,
+    categoria: $('edit-categoria').value,
+    porciones: parseFloat($('edit-porciones').value)||1,
+    precio_venta: parseFloat($('edit-precio').value)||0,
+    descripcion: null,
+    batch_maximo: parseFloat($('edit-batch').value)||0,
+    tiempo_batch_min: parseInt($('edit-tiempo').value)||0,
+    vida_util_dias: parseInt($('edit-vida').value)||30,
+    costo_mano_obra: parseFloat($('edit-mo').value)||0,
+    costo_servicios: parseFloat($('edit-sv').value)||0
+  });
+  notyf.success('Receta actualizada');
+  loadRecetas();
+  verReceta(id);
 }
 
 async function agregarIngrediente() {
