@@ -162,7 +162,18 @@ def registrar_compra(data: CompraIn):
     """, (data.mp_id, data.fecha, data.proveedor, data.cantidad,
           data.precio_unit, data.factura, data.notas))
     new_id = cur.fetchone()[0]
-    conn.commit(); cur.close(); conn.close()
+    conn.commit()
+    # Auto-update inventory
+    try:
+        cur.execute("""
+            INSERT INTO inventario (mp_id, cantidad_actual, updated_at)
+            VALUES (%s, %s, NOW())
+            ON CONFLICT (mp_id) DO UPDATE SET cantidad_actual = inventario.cantidad_actual + %s, updated_at = NOW()
+        """, (data.mp_id, data.cantidad, data.cantidad))
+        conn.commit()
+    except:
+        pass
+    cur.close(); conn.close()
     return {"id": new_id, "ok": True}
 
 @router.delete("/compras-mp/{compra_id}")
@@ -742,6 +753,32 @@ def dashboard():
     cur.execute("SELECT COUNT(*) FROM remisiones WHERE estado='pendiente'")
     remisiones_pendientes = cur.fetchone()[0]
 
+    # Stock bajo / critico / agotado count
+    cur.execute("""
+        SELECT COUNT(*) FROM inventario inv
+        JOIN materias_primas mp ON mp.id = inv.mp_id AND mp.activo = TRUE
+        WHERE inv.stock_minimo > 0
+          AND inv.cantidad_actual <= inv.stock_minimo
+    """)
+    stock_bajo = cur.fetchone()[0]
+
+    # Items con stock bajo (para mini-tabla dashboard)
+    cur.execute("""
+        SELECT mp.nombre, mp.unidad, inv.cantidad_actual, inv.stock_minimo,
+               lc.proveedor AS ultimo_proveedor
+        FROM inventario inv
+        JOIN materias_primas mp ON mp.id = inv.mp_id AND mp.activo = TRUE
+        LEFT JOIN LATERAL (
+            SELECT proveedor FROM compras_mp WHERE mp_id = mp.id ORDER BY fecha DESC, id DESC LIMIT 1
+        ) lc ON TRUE
+        WHERE inv.stock_minimo > 0 AND inv.cantidad_actual <= inv.stock_minimo
+        ORDER BY (inv.cantidad_actual / NULLIF(inv.stock_minimo, 0)) ASC
+        LIMIT 8
+    """)
+    items_stock_bajo = [{"nombre": r[0], "unidad": r[1],
+                         "cantidad_actual": float(r[2]), "stock_minimo": float(r[3]),
+                         "proveedor": r[4]} for r in cur.fetchall()]
+
     cur.execute("""
         SELECT p.fecha, r.nombre, p.porciones_planeadas, p.porciones, p.operario
         FROM produccion p LEFT JOIN recetas r ON r.id=p.receta_id
@@ -761,5 +798,619 @@ def dashboard():
         "caja_hoy": caja_hoy,
         "alertas_sanitarias": alertas_sanitarias,
         "remisiones_pendientes": remisiones_pendientes,
+        "stock_bajo": stock_bajo,
+        "items_stock_bajo": items_stock_bajo,
         "ultima_produccion": ultima_produccion
+    }
+
+@router.get("/dashboard/charts")
+def dashboard_charts():
+    """Data for dashboard charts: production trend, expense breakdown, monthly costs, recipe margins."""
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # Production daily last 30 days
+    cur.execute("""
+        SELECT fecha, COALESCE(SUM(porciones),0)
+        FROM produccion
+        WHERE fecha >= CURRENT_DATE - INTERVAL '30 days'
+        GROUP BY fecha ORDER BY fecha
+    """)
+    produccion_30d = [{"fecha": str(r[0]), "porciones": float(r[1])} for r in cur.fetchall()]
+
+    # Expenses by category current month
+    cur.execute("""
+        SELECT categoria, COALESCE(SUM(monto),0) as total
+        FROM gastos
+        WHERE DATE_TRUNC('month',fecha)=DATE_TRUNC('month',CURRENT_DATE)
+        GROUP BY categoria ORDER BY total DESC
+    """)
+    gastos_categorias = [{"categoria": r[0], "total": float(r[1])} for r in cur.fetchall()]
+
+    # Monthly expenses last 6 months
+    cur.execute("""
+        SELECT DATE_TRUNC('month', fecha) as mes, COALESCE(SUM(monto),0) as total
+        FROM gastos
+        WHERE fecha >= CURRENT_DATE - INTERVAL '6 months'
+        GROUP BY mes ORDER BY mes
+    """)
+    gastos_mensuales = [{"mes": r[0].strftime('%Y-%m'), "total": float(r[1])} for r in cur.fetchall()]
+
+    # Top 5 recipes by margin
+    cur.execute("""
+        SELECT r.nombre, r.precio_venta,
+               COALESCE(SUM(ri.cantidad * COALESCE(lc.precio_unit, 0)), 0) / NULLIF(r.porciones, 0) as costo_porcion
+        FROM recetas r
+        LEFT JOIN receta_ingredientes ri ON ri.receta_id = r.id
+        LEFT JOIN LATERAL (
+            SELECT precio_unit FROM compras_mp WHERE mp_id = ri.mp_id ORDER BY fecha DESC, id DESC LIMIT 1
+        ) lc ON TRUE
+        WHERE r.activo = TRUE AND r.precio_venta > 0
+        GROUP BY r.id, r.nombre, r.precio_venta, r.porciones
+        ORDER BY (r.precio_venta - COALESCE(SUM(ri.cantidad * COALESCE(lc.precio_unit, 0)), 0) / NULLIF(r.porciones, 0)) DESC
+        LIMIT 5
+    """)
+    top_recetas = []
+    for r in cur.fetchall():
+        costo = float(r[2]) if r[2] else 0
+        venta = float(r[1])
+        margen_pct = ((venta - costo) / venta * 100) if venta > 0 else 0
+        top_recetas.append({"nombre": r[0], "precio_venta": venta, "costo_porcion": costo, "margen_pct": round(margen_pct, 1)})
+
+    # KPI comparisons (current month vs previous month)
+    cur.execute("""
+        SELECT
+            COALESCE(SUM(CASE WHEN DATE_TRUNC('month',fecha)=DATE_TRUNC('month',CURRENT_DATE) THEN porciones END),0) as prod_mes,
+            COALESCE(SUM(CASE WHEN DATE_TRUNC('month',fecha)=DATE_TRUNC('month',CURRENT_DATE - INTERVAL '1 month') THEN porciones END),0) as prod_mes_ant
+        FROM produccion
+        WHERE fecha >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+    """)
+    r = cur.fetchone()
+    prod_mes = float(r[0]); prod_mes_ant = float(r[1])
+
+    cur.execute("""
+        SELECT
+            COALESCE(SUM(CASE WHEN DATE_TRUNC('month',fecha)=DATE_TRUNC('month',CURRENT_DATE) THEN monto END),0) as gastos_mes,
+            COALESCE(SUM(CASE WHEN DATE_TRUNC('month',fecha)=DATE_TRUNC('month',CURRENT_DATE - INTERVAL '1 month') THEN monto END),0) as gastos_mes_ant
+        FROM gastos
+        WHERE fecha >= DATE_TRUNC('month', CURRENT_DATE - INTERVAL '1 month')
+    """)
+    r = cur.fetchone()
+    gastos_mes = float(r[0]); gastos_mes_ant = float(r[1])
+
+    # Production last 7 days for sparkline
+    cur.execute("""
+        SELECT d::date, COALESCE(SUM(p.porciones),0)
+        FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') d
+        LEFT JOIN produccion p ON p.fecha = d::date
+        GROUP BY d::date ORDER BY d::date
+    """)
+    sparkline_prod = [float(r[1]) for r in cur.fetchall()]
+
+    # Expenses last 7 days for sparkline
+    cur.execute("""
+        SELECT d::date, COALESCE(SUM(g.monto),0)
+        FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, '1 day') d
+        LEFT JOIN gastos g ON g.fecha = d::date
+        GROUP BY d::date ORDER BY d::date
+    """)
+    sparkline_gastos = [float(r[1]) for r in cur.fetchall()]
+
+    cur.close(); conn.close()
+    return {
+        "produccion_30d": produccion_30d,
+        "gastos_categorias": gastos_categorias,
+        "gastos_mensuales": gastos_mensuales,
+        "top_recetas": top_recetas,
+        "comparaciones": {
+            "prod_mes": prod_mes, "prod_mes_ant": prod_mes_ant,
+            "gastos_mes": gastos_mes, "gastos_mes_ant": gastos_mes_ant
+        },
+        "sparklines": {
+            "produccion": sparkline_prod,
+            "gastos": sparkline_gastos
+        }
+    }
+
+# ═══════════════════════════════════════════════════════════════
+# INVENTARIO
+# ═══════════════════════════════════════════════════════════════
+
+class InventarioAjusteIn(BaseModel):
+    mp_id: int
+    stock_minimo: float = 0
+
+@router.get("/inventario")
+def listar_inventario():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT mp.id, mp.codigo, mp.nombre, mp.unidad, mp.categoria,
+               COALESCE(inv.cantidad_actual, 0) as cantidad_actual,
+               COALESCE(inv.stock_minimo, 0) as stock_minimo,
+               inv.updated_at
+        FROM materias_primas mp
+        LEFT JOIN inventario inv ON inv.mp_id = mp.id
+        WHERE mp.activo = TRUE
+        ORDER BY mp.categoria, mp.nombre
+    """)
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    result = []
+    for r in rows:
+        cant = float(r[5])
+        minimo = float(r[6])
+        if minimo > 0:
+            status = 'ok' if cant > minimo * 1.5 else ('bajo' if cant > minimo else ('critico' if cant > 0 else 'agotado'))
+        else:
+            status = 'ok' if cant > 0 else 'sin_stock'
+        result.append({
+            "id": r[0], "codigo": r[1], "nombre": r[2], "unidad": r[3], "categoria": r[4],
+            "cantidad_actual": cant, "stock_minimo": minimo,
+            "updated_at": str(r[7]) if r[7] else None,
+            "status": status
+        })
+    return result
+
+@router.post("/inventario/ajuste")
+def ajustar_inventario(data: InventarioAjusteIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO inventario (mp_id, cantidad_actual, stock_minimo, updated_at)
+        VALUES (%s, 0, %s, NOW())
+        ON CONFLICT (mp_id) DO UPDATE SET stock_minimo=%s, updated_at=NOW()
+    """, (data.mp_id, data.stock_minimo, data.stock_minimo))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+@router.post("/inventario/entrada")
+def inventario_entrada(mp_id: int, cantidad: float):
+    """Adds stock (called after purchase registration)"""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO inventario (mp_id, cantidad_actual, updated_at)
+        VALUES (%s, %s, NOW())
+        ON CONFLICT (mp_id) DO UPDATE SET cantidad_actual = inventario.cantidad_actual + %s, updated_at = NOW()
+    """, (mp_id, cantidad, cantidad))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+@router.put("/inventario/{mp_id}/stock-minimo")
+def update_stock_minimo(mp_id: int, data: InventarioAjusteIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO inventario (mp_id, cantidad_actual, stock_minimo, updated_at)
+        VALUES (%s, 0, %s, NOW())
+        ON CONFLICT (mp_id) DO UPDATE SET stock_minimo=%s, updated_at=NOW()
+    """, (mp_id, data.stock_minimo, data.stock_minimo))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+# ═══════════════════════════════════════════════════════════════
+# RECETA — Escalar (calculadora de ingredientes)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/recetas/{receta_id}/escalar")
+def escalar_receta(receta_id: int, porciones: float = 1):
+    """Calcula ingredientes necesarios para N porciones."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT porciones FROM recetas WHERE id=%s", (receta_id,))
+    r = cur.fetchone()
+    if not r:
+        raise HTTPException(404, "Receta no encontrada")
+    porciones_base = float(r[0]) if r[0] else 1
+    factor = porciones / porciones_base if porciones_base > 0 else 1
+
+    cur.execute("""
+        SELECT mp.nombre, mp.unidad, ri.cantidad,
+               COALESCE(ult.precio_unit, 0) AS precio_unit,
+               COALESCE(inv.cantidad_actual, 0) AS stock
+        FROM receta_ingredientes ri
+        JOIN materias_primas mp ON mp.id = ri.mp_id
+        LEFT JOIN LATERAL (
+            SELECT precio_unit FROM compras_mp WHERE mp_id = ri.mp_id ORDER BY fecha DESC, id DESC LIMIT 1
+        ) ult ON TRUE
+        LEFT JOIN inventario inv ON inv.mp_id = ri.mp_id
+        WHERE ri.receta_id = %s
+    """, (receta_id,))
+    ingredientes = []
+    for i in cur.fetchall():
+        cant_necesaria = float(i[2]) * factor
+        precio = float(i[3])
+        stock = float(i[4])
+        ingredientes.append({
+            "nombre": i[0], "unidad": i[1],
+            "cantidad_base": float(i[2]),
+            "cantidad_necesaria": round(cant_necesaria, 4),
+            "costo": round(cant_necesaria * precio, 2),
+            "stock_disponible": stock,
+            "alcanza": stock >= cant_necesaria
+        })
+    cur.close(); conn.close()
+    costo_total = sum(i["costo"] for i in ingredientes)
+    return {
+        "porciones_solicitadas": porciones,
+        "factor": round(factor, 4),
+        "ingredientes": ingredientes,
+        "costo_total": costo_total,
+        "costo_porcion": round(costo_total / porciones, 2) if porciones > 0 else 0
+    }
+
+# ═══════════════════════════════════════════════════════════════
+# TRAZABILIDAD — Rastreo de lotes
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/trazabilidad/produccion/{lote}")
+def trazar_produccion(lote: str):
+    """Traza un lote de producción hasta sus materias primas y proveedores."""
+    conn = get_conn()
+    cur = conn.cursor()
+    # Buscar producción por lote
+    cur.execute("""
+        SELECT p.id, p.fecha, p.porciones, p.operario, p.notas,
+               r.nombre AS receta, r.id AS receta_id
+        FROM produccion p
+        LEFT JOIN recetas r ON r.id = p.receta_id
+        WHERE p.lote = %s
+    """, (lote,))
+    prod = cur.fetchone()
+    if not prod:
+        raise HTTPException(404, "Lote de producción no encontrado")
+
+    # Ingredientes de la receta con sus últimas compras/lotes
+    cur.execute("""
+        SELECT mp.nombre, mp.unidad, ri.cantidad,
+               c.fecha AS compra_fecha, c.proveedor, c.precio_unit,
+               ri_rem.lote AS lote_mp, rem.numero AS remision_numero, rem.proveedor AS rem_proveedor
+        FROM receta_ingredientes ri
+        JOIN materias_primas mp ON mp.id = ri.mp_id
+        LEFT JOIN LATERAL (
+            SELECT fecha, proveedor, precio_unit FROM compras_mp
+            WHERE mp_id = ri.mp_id AND fecha <= %s
+            ORDER BY fecha DESC, id DESC LIMIT 1
+        ) c ON TRUE
+        LEFT JOIN LATERAL (
+            SELECT ri2.lote, ri2.remision_id FROM remision_items ri2
+            WHERE ri2.mp_id = ri.mp_id
+            ORDER BY ri2.id DESC LIMIT 1
+        ) ri_rem ON TRUE
+        LEFT JOIN remisiones rem ON rem.id = ri_rem.remision_id
+        WHERE ri.receta_id = %s
+    """, (prod[1], prod[6]))
+    ingredientes = [{"mp_nombre": i[0], "unidad": i[1], "cantidad": float(i[2]),
+                     "compra_fecha": str(i[3]) if i[3] else None,
+                     "proveedor": i[4], "precio_unit": float(i[5]) if i[5] else 0,
+                     "lote_mp": i[6], "remision": i[7],
+                     "rem_proveedor": i[8]} for i in cur.fetchall()]
+    cur.close(); conn.close()
+    return {
+        "lote": lote,
+        "fecha": str(prod[1]),
+        "receta": prod[5],
+        "porciones": float(prod[2]),
+        "operario": prod[3],
+        "notas": prod[4],
+        "ingredientes": ingredientes
+    }
+
+@router.get("/trazabilidad/buscar")
+def buscar_lotes(q: str = ""):
+    """Busca lotes de producción por texto."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT p.lote, p.fecha, r.nombre, p.porciones, p.operario
+        FROM produccion p LEFT JOIN recetas r ON r.id = p.receta_id
+        WHERE p.lote ILIKE %s OR r.nombre ILIKE %s
+        ORDER BY p.fecha DESC LIMIT 20
+    """, (f"%{q}%", f"%{q}%"))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return [{"lote": r[0], "fecha": str(r[1]), "receta": r[2],
+             "porciones": float(r[3]), "operario": r[4]} for r in rows]
+
+# ═══════════════════════════════════════════════════════════════
+# ÓRDENES DE COMPRA
+# ═══════════════════════════════════════════════════════════════
+
+class OrdenItemIn(BaseModel):
+    mp_id: int
+    mp_nombre: str
+    cantidad: float
+    precio_est: float = 0
+    notas: Optional[str] = None
+
+class OrdenCompraIn(BaseModel):
+    fecha: date
+    proveedor: str
+    notas: Optional[str] = None
+    creado_por: Optional[str] = None
+    items: List[OrdenItemIn]
+
+def _gen_numero_orden(new_id: int) -> str:
+    return f"OC-{datetime.now().strftime('%Y%m%d')}-{new_id:06d}"
+
+@router.get("/ordenes-compra")
+def listar_ordenes(estado: Optional[str] = None, limit: int = 100):
+    conn = get_conn()
+    cur = conn.cursor()
+    if estado:
+        cur.execute("""
+            SELECT id, numero, fecha, proveedor, estado, notas, creado_por, creado_en
+            FROM ordenes_compra WHERE estado=%s ORDER BY creado_en DESC LIMIT %s
+        """, (estado, limit))
+    else:
+        cur.execute("""
+            SELECT id, numero, fecha, proveedor, estado, notas, creado_por, creado_en
+            FROM ordenes_compra ORDER BY creado_en DESC LIMIT %s
+        """, (limit,))
+    rows = cur.fetchall()
+    result = []
+    for r in rows:
+        cur.execute("SELECT mp_nombre, cantidad, precio_est FROM orden_items WHERE orden_id=%s ORDER BY id", (r[0],))
+        items = [{"mp_nombre": i[0], "cantidad": float(i[1]), "precio_est": float(i[2]) if i[2] else 0} for i in cur.fetchall()]
+        total = sum(i["cantidad"] * i["precio_est"] for i in items)
+        result.append({"id": r[0], "numero": r[1], "fecha": str(r[2]), "proveedor": r[3],
+                       "estado": r[4], "notas": r[5], "creado_por": r[6],
+                       "creado_en": str(r[7]), "items": items, "total": total})
+    cur.close(); conn.close()
+    return result
+
+@router.post("/ordenes-compra")
+def crear_orden(data: OrdenCompraIn):
+    if not data.items:
+        raise HTTPException(400, "Debe agregar al menos un ítem")
+    conn = get_conn()
+    cur = conn.cursor()
+    temp = f"TEMP-{uuid.uuid4()}"
+    cur.execute("""
+        INSERT INTO ordenes_compra (numero, fecha, proveedor, notas, creado_por)
+        VALUES (%s,%s,%s,%s,%s) RETURNING id
+    """, (temp, data.fecha, data.proveedor, data.notas, data.creado_por))
+    orden_id = cur.fetchone()[0]
+    numero = _gen_numero_orden(orden_id)
+    cur.execute("UPDATE ordenes_compra SET numero=%s WHERE id=%s", (numero, orden_id))
+    for item in data.items:
+        cur.execute("""
+            INSERT INTO orden_items (orden_id, mp_id, mp_nombre, cantidad, precio_est, notas)
+            VALUES (%s,%s,%s,%s,%s,%s)
+        """, (orden_id, item.mp_id, item.mp_nombre, item.cantidad, item.precio_est, item.notas))
+    conn.commit(); cur.close(); conn.close()
+    return {"id": orden_id, "numero": numero, "ok": True}
+
+@router.put("/ordenes-compra/{orden_id}/estado")
+def cambiar_estado_orden(orden_id: int, estado: str):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE ordenes_compra SET estado=%s, actualizado_en=NOW() WHERE id=%s", (estado, orden_id))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+@router.delete("/ordenes-compra/{orden_id}")
+def eliminar_orden(orden_id: int):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM ordenes_compra WHERE id=%s", (orden_id,))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+@router.get("/ordenes-compra/generar-desde-inventario")
+def generar_orden_desde_inventario():
+    """Sugiere items para orden de compra basado en stock bajo."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT mp.id, mp.nombre, mp.unidad, inv.cantidad_actual, inv.stock_minimo,
+               COALESCE(lc.precio_unit, 0) AS precio_est,
+               COALESCE(lc.proveedor, '') AS proveedor
+        FROM inventario inv
+        JOIN materias_primas mp ON mp.id = inv.mp_id AND mp.activo = TRUE
+        LEFT JOIN LATERAL (
+            SELECT precio_unit, proveedor FROM compras_mp WHERE mp_id = mp.id ORDER BY fecha DESC, id DESC LIMIT 1
+        ) lc ON TRUE
+        WHERE inv.stock_minimo > 0 AND inv.cantidad_actual <= inv.stock_minimo
+        ORDER BY mp.nombre
+    """)
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    # Agrupar por proveedor
+    por_proveedor = {}
+    for r in rows:
+        prov = r[6] or 'Sin proveedor'
+        faltante = float(r[4]) * 2 - float(r[3])  # Pedir hasta 2x el mínimo
+        if faltante < 0: faltante = float(r[4])
+        item = {"mp_id": r[0], "mp_nombre": r[1], "unidad": r[2],
+                "stock_actual": float(r[3]), "stock_minimo": float(r[4]),
+                "cantidad_sugerida": round(faltante, 2),
+                "precio_est": float(r[5])}
+        if prov not in por_proveedor:
+            por_proveedor[prov] = []
+        por_proveedor[prov].append(item)
+    return por_proveedor
+
+# ═══════════════════════════════════════════════════════════════
+# INVIMA — Programas Sanitarios
+# ═══════════════════════════════════════════════════════════════
+
+class InvimaProgramaIn(BaseModel):
+    nombre: str
+    codigo: Optional[str] = None
+    descripcion: Optional[str] = None
+    responsable: Optional[str] = None
+    frecuencia: str = "Mensual"
+
+class InvimaRegistroIn(BaseModel):
+    programa_id: int
+    fecha: date
+    descripcion: str
+    resultado: str = "Conforme"
+    responsable: Optional[str] = None
+    observaciones: Optional[str] = None
+    proxima_revision: Optional[date] = None
+
+@router.get("/invima/programas")
+def listar_invima_programas():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT p.id, p.codigo, p.nombre, p.descripcion, p.responsable, p.frecuencia, p.activo,
+               (SELECT COUNT(*) FROM invima_registros WHERE programa_id=p.id) AS total_registros,
+               (SELECT MAX(fecha) FROM invima_registros WHERE programa_id=p.id) AS ultimo_registro,
+               (SELECT MIN(proxima_revision) FROM invima_registros
+                WHERE programa_id=p.id AND proxima_revision >= CURRENT_DATE) AS prox_revision
+        FROM invima_programas p WHERE p.activo=TRUE
+        ORDER BY p.codigo, p.nombre
+    """)
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return [{"id": r[0], "codigo": r[1], "nombre": r[2], "descripcion": r[3],
+             "responsable": r[4], "frecuencia": r[5], "activo": r[6],
+             "total_registros": r[7],
+             "ultimo_registro": str(r[8]) if r[8] else None,
+             "prox_revision": str(r[9]) if r[9] else None} for r in rows]
+
+@router.post("/invima/programas")
+def crear_invima_programa(data: InvimaProgramaIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO invima_programas (codigo, nombre, descripcion, responsable, frecuencia)
+        VALUES (%s,%s,%s,%s,%s) RETURNING id
+    """, (data.codigo, data.nombre, data.descripcion, data.responsable, data.frecuencia))
+    new_id = cur.fetchone()[0]
+    conn.commit(); cur.close(); conn.close()
+    return {"id": new_id, "ok": True}
+
+@router.put("/invima/programas/{prog_id}")
+def editar_invima_programa(prog_id: int, data: InvimaProgramaIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE invima_programas SET codigo=%s, nombre=%s, descripcion=%s,
+               responsable=%s, frecuencia=%s WHERE id=%s
+    """, (data.codigo, data.nombre, data.descripcion, data.responsable, data.frecuencia, prog_id))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+@router.delete("/invima/programas/{prog_id}")
+def eliminar_invima_programa(prog_id: int):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("UPDATE invima_programas SET activo=FALSE WHERE id=%s", (prog_id,))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+@router.get("/invima/registros")
+def listar_invima_registros(programa_id: Optional[int] = None, limit: int = 100):
+    conn = get_conn()
+    cur = conn.cursor()
+    if programa_id:
+        cur.execute("""
+            SELECT r.id, r.fecha, p.nombre AS programa, p.codigo, r.descripcion,
+                   r.resultado, r.responsable, r.observaciones, r.proxima_revision
+            FROM invima_registros r JOIN invima_programas p ON p.id=r.programa_id
+            WHERE r.programa_id=%s ORDER BY r.fecha DESC LIMIT %s
+        """, (programa_id, limit))
+    else:
+        cur.execute("""
+            SELECT r.id, r.fecha, p.nombre AS programa, p.codigo, r.descripcion,
+                   r.resultado, r.responsable, r.observaciones, r.proxima_revision
+            FROM invima_registros r JOIN invima_programas p ON p.id=r.programa_id
+            ORDER BY r.fecha DESC LIMIT %s
+        """, (limit,))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return [{"id": r[0], "fecha": str(r[1]), "programa": r[2], "codigo": r[3],
+             "descripcion": r[4], "resultado": r[5], "responsable": r[6],
+             "observaciones": r[7],
+             "proxima_revision": str(r[8]) if r[8] else None} for r in rows]
+
+@router.post("/invima/registros")
+def crear_invima_registro(data: InvimaRegistroIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO invima_registros (programa_id, fecha, descripcion, resultado, responsable, observaciones, proxima_revision)
+        VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id
+    """, (data.programa_id, data.fecha, data.descripcion, data.resultado,
+          data.responsable, data.observaciones, data.proxima_revision))
+    new_id = cur.fetchone()[0]
+    conn.commit(); cur.close(); conn.close()
+    return {"id": new_id, "ok": True}
+
+@router.delete("/invima/registros/{reg_id}")
+def eliminar_invima_registro(reg_id: int):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM invima_registros WHERE id=%s", (reg_id,))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+# ═══════════════════════════════════════════════════════════════
+# PROYECCIONES DE DEMANDA
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/proyecciones")
+def proyecciones(dias: int = 30):
+    """Forecast simple basado en producción histórica por receta."""
+    conn = get_conn()
+    cur = conn.cursor()
+    # Producción por receta últimos 90 días (para calcular promedio)
+    cur.execute("""
+        SELECT r.id, r.nombre, r.categoria,
+               COUNT(p.id) AS veces_producido,
+               COALESCE(SUM(p.porciones), 0) AS total_porciones,
+               COALESCE(AVG(p.porciones), 0) AS promedio_porciones,
+               MAX(p.fecha) AS ultima_produccion,
+               COALESCE(SUM(ri.cantidad * COALESCE(lc.precio_unit, 0)), 0) / NULLIF(r.porciones, 0) AS costo_porcion
+        FROM recetas r
+        LEFT JOIN produccion p ON p.receta_id = r.id AND p.fecha >= CURRENT_DATE - INTERVAL '90 days'
+        LEFT JOIN receta_ingredientes ri ON ri.receta_id = r.id
+        LEFT JOIN LATERAL (
+            SELECT precio_unit FROM compras_mp WHERE mp_id = ri.mp_id ORDER BY fecha DESC, id DESC LIMIT 1
+        ) lc ON TRUE
+        WHERE r.activo = TRUE
+        GROUP BY r.id, r.nombre, r.categoria, r.porciones
+        HAVING COUNT(p.id) > 0
+        ORDER BY total_porciones DESC
+    """)
+    rows = cur.fetchall()
+
+    # Producción por semana últimas 12 semanas para tendencia
+    cur.execute("""
+        SELECT DATE_TRUNC('week', fecha) AS semana, COALESCE(SUM(porciones), 0)
+        FROM produccion
+        WHERE fecha >= CURRENT_DATE - INTERVAL '12 weeks'
+        GROUP BY semana ORDER BY semana
+    """)
+    tendencia_semanal = [{"semana": r[0].strftime('%Y-%m-%d'), "porciones": float(r[1])} for r in cur.fetchall()]
+
+    cur.close(); conn.close()
+
+    recetas_forecast = []
+    for r in rows:
+        veces = r[3]
+        total = float(r[4])
+        promedio = float(r[5])
+        # Proyección simple: (promedio diario) * días
+        promedio_diario = total / 90.0
+        proyeccion = round(promedio_diario * dias, 1)
+        recetas_forecast.append({
+            "id": r[0], "nombre": r[1], "categoria": r[2],
+            "veces_90d": veces, "total_90d": total,
+            "promedio_produccion": round(promedio, 1),
+            "ultima_produccion": str(r[6]) if r[6] else None,
+            "costo_porcion": round(float(r[7]), 2) if r[7] else 0,
+            "proyeccion_porciones": proyeccion,
+            "proyeccion_costo": round(proyeccion * (float(r[7]) if r[7] else 0), 2)
+        })
+
+    return {
+        "dias_proyeccion": dias,
+        "recetas": recetas_forecast,
+        "tendencia_semanal": tendencia_semanal
     }

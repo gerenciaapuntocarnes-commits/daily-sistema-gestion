@@ -169,6 +169,96 @@ def _create_tables():
         )
     """)
 
+    # ── Inventario ──────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS inventario (
+            id             SERIAL PRIMARY KEY,
+            mp_id          INTEGER REFERENCES materias_primas(id) ON DELETE CASCADE UNIQUE,
+            cantidad_actual NUMERIC(12,4) NOT NULL DEFAULT 0,
+            stock_minimo   NUMERIC(12,4) NOT NULL DEFAULT 0,
+            updated_at     TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+    # ── Órdenes de Compra ────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ordenes_compra (
+            id             SERIAL PRIMARY KEY,
+            numero         TEXT UNIQUE NOT NULL,
+            fecha          DATE NOT NULL DEFAULT CURRENT_DATE,
+            proveedor      TEXT NOT NULL,
+            estado         TEXT NOT NULL DEFAULT 'borrador',
+            notas          TEXT,
+            creado_por     TEXT,
+            creado_en      TIMESTAMP DEFAULT NOW(),
+            actualizado_en TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS orden_items (
+            id        SERIAL PRIMARY KEY,
+            orden_id  INTEGER REFERENCES ordenes_compra(id) ON DELETE CASCADE,
+            mp_id     INTEGER REFERENCES materias_primas(id),
+            mp_nombre TEXT,
+            cantidad  NUMERIC(12,4) NOT NULL,
+            precio_est NUMERIC(12,2) DEFAULT 0,
+            notas     TEXT
+        )
+    """)
+
+    # ── INVIMA Programas Sanitarios ──────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS invima_programas (
+            id          SERIAL PRIMARY KEY,
+            nombre      TEXT NOT NULL,
+            codigo      TEXT,
+            descripcion TEXT,
+            responsable TEXT,
+            frecuencia  TEXT DEFAULT 'Mensual',
+            activo      BOOLEAN DEFAULT TRUE,
+            creado_en   TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS invima_registros (
+            id               SERIAL PRIMARY KEY,
+            programa_id      INTEGER REFERENCES invima_programas(id) ON DELETE CASCADE,
+            fecha            DATE NOT NULL DEFAULT CURRENT_DATE,
+            descripcion      TEXT NOT NULL,
+            resultado        TEXT DEFAULT 'Conforme',
+            responsable      TEXT,
+            observaciones    TEXT,
+            proxima_revision DATE,
+            creado_en        TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
+    # ── Seed INVIMA programs if empty ──────────────────────────
+    cur.execute("SELECT COUNT(*) FROM invima_programas")
+    if cur.fetchone()[0] == 0:
+        programas_invima = [
+            ('L&D', 'Limpieza y Desinfeccion', 'Protocolos de limpieza de superficies, equipos e instalaciones', 'Diario'),
+            ('MIP', 'Manejo Integrado de Plagas', 'Control y prevencion de plagas en la planta', 'Mensual'),
+            ('RSL', 'Manejo de Residuos Solidos y Liquidos', 'Disposicion adecuada de residuos generados', 'Diario'),
+            ('AGU', 'Abastecimiento y Calidad de Agua', 'Control de potabilidad y abastecimiento de agua', 'Semanal'),
+            ('CAP', 'Capacitacion del Personal', 'Plan de formacion en BPM e higiene para todo el personal', 'Mensual'),
+            ('TRZ', 'Plan de Trazabilidad', 'Rastreo de productos desde materia prima hasta producto final', 'Cada lote'),
+            ('CAL', 'Calibracion de Equipos e Instrumentos', 'Verificacion y calibracion de balanzas, termometros, etc.', 'Mensual'),
+            ('MNT', 'Mantenimiento de Instalaciones y Equipos', 'Plan preventivo y correctivo de mantenimiento', 'Mensual'),
+            ('PRV', 'Control de Proveedores', 'Evaluacion y seguimiento de proveedores de MP', 'Trimestral'),
+            ('ALM', 'Almacenamiento', 'Control de condiciones de almacenamiento (temp, humedad, PEPS)', 'Diario'),
+            ('DST', 'Distribucion y Transporte', 'Control de cadena de frio y condiciones de transporte', 'Cada despacho'),
+            ('RCL', 'Plan de Recall / Recuperacion de Producto', 'Procedimiento para retiro de producto del mercado', 'Anual'),
+            ('HPE', 'Higiene y Proteccion del Personal', 'Control de indumentaria, lavado de manos, estado de salud', 'Diario'),
+        ]
+        for codigo, nombre, desc, freq in programas_invima:
+            cur.execute(
+                "INSERT INTO invima_programas (codigo, nombre, descripcion, frecuencia) VALUES (%s,%s,%s,%s)",
+                (codigo, nombre, desc, freq)
+            )
+
     conn.commit()
     cur.close()
     conn.close()

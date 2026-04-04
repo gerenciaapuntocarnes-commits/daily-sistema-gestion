@@ -3,7 +3,7 @@
   "configurations": [
     {
       "name": "Daily Sistema Gestión (FastAPI dev)",
-      "runtimeExecutable": "/Users/cav/daily-sistema-gestion/venv/bin/uvicorn",
+      "runtimeExecutable": "/Users/cav/Proyectos/daily-sistema-gestion/venv/bin/uvicorn",
       "runtimeArgs": ["main:app", "--reload", "--port", "8000"],
       "port": 8000
     }
