@@ -155,6 +155,13 @@ def _create_tables():
         )
     """)
 
+    # Migraciones — columnas que pueden faltar en tablas existentes
+    for col, tbl, default in [
+        ('fecha', 'remisiones', "DATE NOT NULL DEFAULT CURRENT_DATE"),
+        ('actualizado_en', 'remisiones', "TIMESTAMP DEFAULT NOW()"),
+    ]:
+        cur.execute(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS {col} {default}")
+
     # ── Ítems de Remisión ────────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS remision_items (
