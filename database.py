@@ -62,6 +62,16 @@ def _create_tables():
         )
     """)
 
+    # Campos de configuración de producción en recetas
+    for col, defn in [
+        ('batch_maximo',       'NUMERIC(10,2) DEFAULT 0'),
+        ('tiempo_batch_min',   'INTEGER DEFAULT 0'),
+        ('vida_util_dias',     'INTEGER DEFAULT 30'),
+        ('costo_mano_obra',    'NUMERIC(12,2) DEFAULT 0'),
+        ('costo_servicios',    'NUMERIC(12,2) DEFAULT 0'),
+    ]:
+        cur.execute(f"ALTER TABLE recetas ADD COLUMN IF NOT EXISTS {col} {defn}")
+
     cur.execute("""
         CREATE TABLE IF NOT EXISTS receta_ingredientes (
             id        SERIAL PRIMARY KEY,
@@ -227,6 +237,25 @@ def _create_tables():
             notas     TEXT
         )
     """)
+
+    # ── Configuración de Planta ────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS config_planta (
+            id            SERIAL PRIMARY KEY,
+            parametro     TEXT UNIQUE NOT NULL,
+            valor         TEXT NOT NULL,
+            descripcion   TEXT
+        )
+    """)
+    # Seed defaults if empty
+    cur.execute("SELECT COUNT(*) FROM config_planta")
+    if cur.fetchone()[0] == 0:
+        for param, val, desc in [
+            ('horas_productivas_dia', '8', 'Horas de produccion disponibles por dia'),
+            ('dias_produccion', 'lunes,martes,miercoles,jueves,viernes', 'Dias de la semana en que se produce'),
+            ('factor_stock_minimo', '2', 'Multiplicador de venta semanal para stock minimo (2 = 2 semanas)'),
+        ]:
+            cur.execute("INSERT INTO config_planta (parametro, valor, descripcion) VALUES (%s,%s,%s)", (param, val, desc))
 
     # ── Producto Siigo ↔ Receta (ligado) ───────────────────────────
     cur.execute("""

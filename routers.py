@@ -229,6 +229,11 @@ class RecetaIn(BaseModel):
     descripcion: Optional[str] = None
     porciones: float = 1
     precio_venta: float = 0
+    batch_maximo: float = 0
+    tiempo_batch_min: int = 0
+    vida_util_dias: int = 30
+    costo_mano_obra: float = 0
+    costo_servicios: float = 0
 
 class IngredienteIn(BaseModel):
     mp_id: int
@@ -239,7 +244,10 @@ def listar_recetas():
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT r.id, r.nombre, r.categoria, r.descripcion, r.porciones, r.precio_venta, r.activo
+        SELECT r.id, r.nombre, r.categoria, r.descripcion, r.porciones, r.precio_venta, r.activo,
+               COALESCE(r.batch_maximo, 0), COALESCE(r.tiempo_batch_min, 0),
+               COALESCE(r.vida_util_dias, 30), COALESCE(r.costo_mano_obra, 0),
+               COALESCE(r.costo_servicios, 0)
         FROM recetas r WHERE r.activo=TRUE ORDER BY r.categoria, r.nombre
     """)
     recetas = cur.fetchall()
@@ -257,12 +265,20 @@ def listar_recetas():
         costo = float(cur.fetchone()[0])
         porciones = float(r[4]) if r[4] else 1
         precio_venta = float(r[5]) if r[5] else 0
-        costo_porcion = costo / porciones if porciones > 0 else 0
+        costo_mp = costo / porciones if porciones > 0 else 0
+        batch_max = float(r[7])
+        costo_mo = float(r[10])
+        costo_sv = float(r[11])
+        costo_fijo_und = (costo_mo + costo_sv) / batch_max if batch_max > 0 else 0
+        costo_porcion = costo_mp + costo_fijo_und
         margen = precio_venta - costo_porcion
         margen_pct = (margen / precio_venta * 100) if precio_venta > 0 else 0
         result.append({
             "id": r[0], "nombre": r[1], "categoria": r[2], "descripcion": r[3],
             "porciones": porciones, "precio_venta": precio_venta, "activo": r[6],
+            "batch_maximo": batch_max, "tiempo_batch_min": int(r[8]),
+            "vida_util_dias": int(r[9]), "costo_mano_obra": costo_mo,
+            "costo_servicios": costo_sv, "costo_fijo_batch": costo_mo + costo_sv,
             "costo_total": costo, "costo_porcion": costo_porcion,
             "margen": margen, "margen_pct": margen_pct
         })
@@ -273,7 +289,13 @@ def listar_recetas():
 def detalle_receta(receta_id: int):
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("SELECT id,nombre,categoria,descripcion,porciones,precio_venta FROM recetas WHERE id=%s", (receta_id,))
+    cur.execute("""
+        SELECT id, nombre, categoria, descripcion, porciones, precio_venta,
+               COALESCE(batch_maximo,0), COALESCE(tiempo_batch_min,0),
+               COALESCE(vida_util_dias,30), COALESCE(costo_mano_obra,0),
+               COALESCE(costo_servicios,0)
+        FROM recetas WHERE id=%s
+    """, (receta_id,))
     r = cur.fetchone()
     if not r:
         raise HTTPException(404, "Receta no encontrada")
@@ -295,15 +317,26 @@ def detalle_receta(receta_id: int):
     cur.close(); conn.close()
     porciones = float(r[4]) if r[4] else 1
     precio_venta = float(r[5]) if r[5] else 0
-    costo_total = sum(i["costo_linea"] for i in ingredientes)
-    costo_porcion = costo_total / porciones if porciones > 0 else 0
+    costo_mp_total = sum(i["costo_linea"] for i in ingredientes)
+    batch_max = float(r[6])
+    costo_mo = float(r[9])
+    costo_sv = float(r[10])
+    costo_fijo = costo_mo + costo_sv
+    costo_fijo_und = costo_fijo / batch_max if batch_max > 0 else 0
+    costo_mp_und = costo_mp_total / porciones if porciones > 0 else 0
+    costo_porcion = costo_mp_und + costo_fijo_und
+    margen = precio_venta - costo_porcion
     return {
         "id": r[0], "nombre": r[1], "categoria": r[2], "descripcion": r[3],
         "porciones": porciones, "precio_venta": precio_venta,
-        "ingredientes": ingredientes, "costo_total": costo_total,
+        "batch_maximo": batch_max, "tiempo_batch_min": int(r[7]),
+        "vida_util_dias": int(r[8]), "costo_mano_obra": costo_mo,
+        "costo_servicios": costo_sv, "costo_fijo_batch": costo_fijo,
+        "ingredientes": ingredientes, "costo_total": costo_mp_total,
+        "costo_mp_und": costo_mp_und, "costo_fijo_und": costo_fijo_und,
         "costo_porcion": costo_porcion,
-        "margen": precio_venta - costo_porcion,
-        "margen_pct": ((precio_venta - costo_porcion) / precio_venta * 100) if precio_venta > 0 else 0
+        "margen": margen,
+        "margen_pct": (margen / precio_venta * 100) if precio_venta > 0 else 0
     }
 
 @router.post("/recetas")
@@ -311,9 +344,11 @@ def crear_receta(data: RecetaIn):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        INSERT INTO recetas (nombre, categoria, descripcion, porciones, precio_venta)
-        VALUES (%s,%s,%s,%s,%s) RETURNING id
-    """, (data.nombre, data.categoria, data.descripcion, data.porciones, data.precio_venta))
+        INSERT INTO recetas (nombre, categoria, descripcion, porciones, precio_venta,
+                             batch_maximo, tiempo_batch_min, vida_util_dias, costo_mano_obra, costo_servicios)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+    """, (data.nombre, data.categoria, data.descripcion, data.porciones, data.precio_venta,
+          data.batch_maximo, data.tiempo_batch_min, data.vida_util_dias, data.costo_mano_obra, data.costo_servicios))
     new_id = cur.fetchone()[0]
     conn.commit(); cur.close(); conn.close()
     return {"id": new_id, "ok": True}
@@ -324,9 +359,14 @@ def editar_receta(receta_id: int, data: RecetaIn):
     cur = conn.cursor()
     cur.execute("""
         UPDATE recetas SET nombre=%s, categoria=%s, descripcion=%s,
-               porciones=%s, precio_venta=%s WHERE id=%s
+               porciones=%s, precio_venta=%s,
+               batch_maximo=%s, tiempo_batch_min=%s, vida_util_dias=%s,
+               costo_mano_obra=%s, costo_servicios=%s
+        WHERE id=%s
     """, (data.nombre, data.categoria, data.descripcion,
-          data.porciones, data.precio_venta, receta_id))
+          data.porciones, data.precio_venta,
+          data.batch_maximo, data.tiempo_batch_min, data.vida_util_dias,
+          data.costo_mano_obra, data.costo_servicios, receta_id))
     conn.commit(); cur.close(); conn.close()
     return {"ok": True}
 
@@ -1651,18 +1691,51 @@ def eliminar_regla(regla_id: int):
     return {"ok": True}
 
 # ═══════════════════════════════════════════════════════════════
-# PLAN DE PRODUCCIÓN SEMANAL (motor de planificación)
+# CONFIGURACIÓN DE PLANTA
 # ═══════════════════════════════════════════════════════════════
+
+@router.get("/config-planta")
+def get_config_planta():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT parametro, valor, descripcion FROM config_planta ORDER BY parametro")
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return {r[0]: {"valor": r[1], "descripcion": r[2]} for r in rows}
+
+class ConfigPlantaIn(BaseModel):
+    parametro: str
+    valor: str
+
+@router.put("/config-planta")
+def update_config_planta(data: ConfigPlantaIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO config_planta (parametro, valor) VALUES (%s, %s)
+        ON CONFLICT (parametro) DO UPDATE SET valor=%s
+    """, (data.parametro, data.valor, data.valor))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+# ═══════════════════════════════════════════════════════════════
+# PLAN DE PRODUCCIÓN SEMANAL (motor de planificación v2)
+# ═══════════════════════════════════════════════════════════════
+
+import math
 
 @router.get("/plan-produccion")
 def plan_produccion(semanas_historico: int = 4):
     """
-    Genera plan de producción semanal basado en:
-    1. Ventas reales de Siigo (últimas N semanas) → demanda promedio
-    2. Producto ↔ Receta → ingredientes necesarios
-    3. Reglas/condicionales → restricciones de compra y producción
+    Motor MRP:
+    1. Ventas Siigo → demanda semanal promedio
+    2. Stock mínimo = demanda × factor (default 2)
+    3. Necesidad = stock_mínimo - stock_actual
+    4. Decisión batch: completo vs parcial basado en vida útil y velocidad de venta
+    5. Costo por unidad: MP + (mano_obra + servicios) / batch_size
+    6. Cascada a MP → plan de compras con reglas
     """
-    # 1. Obtener ventas por producto
+    # 1. Ventas Siigo
     try:
         from siigo import sales_by_product_weekly
         ventas = sales_by_product_weekly(semanas_historico)
@@ -1672,31 +1745,46 @@ def plan_produccion(semanas_historico: int = 4):
     conn = get_conn()
     cur = conn.cursor()
 
-    # 2. Obtener ligados producto ↔ receta
+    # Config planta
+    cur.execute("SELECT parametro, valor FROM config_planta")
+    config = {r[0]: r[1] for r in cur.fetchall()}
+    horas_dia = float(config.get("horas_productivas_dia", "8"))
+    minutos_dia = horas_dia * 60
+    factor_stock = float(config.get("factor_stock_minimo", "2"))
+
+    # 2. Ligados producto ↔ receta con config de producción
     cur.execute("""
-        SELECT pr.siigo_code, pr.siigo_name, pr.receta_id, r.nombre, r.porciones
+        SELECT pr.siigo_code, pr.siigo_name, pr.receta_id,
+               r.nombre, r.porciones,
+               COALESCE(r.batch_maximo, 0), COALESCE(r.tiempo_batch_min, 0),
+               COALESCE(r.vida_util_dias, 30), COALESCE(r.costo_mano_obra, 0),
+               COALESCE(r.costo_servicios, 0)
         FROM producto_receta pr
-        LEFT JOIN recetas r ON r.id = pr.receta_id
+        JOIN recetas r ON r.id = pr.receta_id
         WHERE pr.activo = TRUE AND pr.receta_id IS NOT NULL
     """)
-    ligados = {r[0]: {"siigo_name": r[1], "receta_id": r[2], "receta_nombre": r[3],
-                       "porciones_base": float(r[4]) if r[4] else 1} for r in cur.fetchall()}
+    ligados = {}
+    for r in cur.fetchall():
+        ligados[r[0]] = {
+            "siigo_name": r[1], "receta_id": r[2], "receta_nombre": r[3],
+            "porciones_base": float(r[4]) if r[4] else 1,
+            "batch_maximo": float(r[5]), "tiempo_batch_min": int(r[6]),
+            "vida_util_dias": int(r[7]), "costo_mano_obra": float(r[8]),
+            "costo_servicios": float(r[9])
+        }
 
-    # 3. Obtener reglas
+    # 3. Reglas
     cur.execute("SELECT tipo, entidad, parametro, valor FROM reglas_produccion WHERE activo=TRUE")
-    reglas_raw = cur.fetchall()
     reglas = {}
-    for tipo, entidad, param, valor in reglas_raw:
+    for tipo, entidad, param, valor in cur.fetchall():
         key = f"{tipo}:{entidad or 'global'}"
-        reglas[key] = {"tipo": tipo, "entidad": entidad, "parametro": param, "valor": valor}
+        reglas[key] = valor
 
-    # Capacidad máxima diaria
-    cap_max = float(reglas.get("capacidad_max:planta", {}).get("valor", "9999"))
-
-    # 4. Calcular demanda promedio semanal por producto
-    num_weeks = len(ventas.get("weeks", [])) or 1
+    # 4. Calcular plan por producto
+    num_weeks = max(len(ventas.get("weeks", [])), 1)
     plan_productos = []
-    total_mp_necesaria = {}  # mp_id -> {nombre, unidad, cantidad_total, proveedores, reglas}
+    total_mp_necesaria = {}
+    tiempo_total_min = 0
 
     for prod_venta in ventas.get("products", []):
         code = prod_venta["code"]
@@ -1706,16 +1794,65 @@ def plan_produccion(semanas_historico: int = 4):
         avg_qty_semana = prod_venta["total_qty"] / num_weeks
         avg_revenue = prod_venta["total_revenue"] / num_weeks
 
-        # Factor: porciones que rinde la receta vs unidades vendidas
-        # Si la receta rinde 10 porciones y se venden 30/semana → 3 batches
-        porciones_base = lig["porciones_base"]
-        batches_semana = avg_qty_semana / porciones_base if porciones_base > 0 else avg_qty_semana
+        # Stock mínimo = venta semanal × factor
+        stock_minimo = avg_qty_semana * factor_stock
+        # TODO: stock_actual de producto terminado (por ahora = 0)
+        stock_actual_pt = 0
+        necesidad = max(0, stock_minimo - stock_actual_pt)
 
-        # Obtener ingredientes de la receta
+        if necesidad <= 0:
+            continue
+
+        # Decisión batch completo vs parcial
+        batch_max = lig["batch_maximo"]
+        vida_util = lig["vida_util_dias"]
+        venta_diaria = avg_qty_semana / 7 if avg_qty_semana > 0 else 0.1
+        costo_mo = lig["costo_mano_obra"]
+        costo_sv = lig["costo_servicios"]
+        costo_fijo = costo_mo + costo_sv
+        tiempo_batch = lig["tiempo_batch_min"]
+
+        if batch_max > 0:
+            batches_necesarios = math.ceil(necesidad / batch_max)
+            produccion_batch_completo = batches_necesarios * batch_max
+            sobrante = produccion_batch_completo - necesidad
+            dias_para_vender_sobrante = sobrante / venta_diaria if venta_diaria > 0 else 999
+
+            if dias_para_vender_sobrante <= vida_util:
+                # Batch completo conviene — sobrante se vende a tiempo
+                producir = produccion_batch_completo
+                batches = batches_necesarios
+                decision = "batch_completo"
+                razon = f"Sobrante ({round(sobrante)}) se vende en {round(dias_para_vender_sobrante,1)} dias (vida util: {vida_util}d)"
+            else:
+                # Sobrante se daña — producir solo lo necesario
+                producir = round(necesidad)
+                batches = necesidad / batch_max
+                decision = "parcial"
+                razon = f"Batch completo dejaria {round(sobrante)} sobrantes que tardan {round(dias_para_vender_sobrante,1)} dias en venderse (vida util: {vida_util}d)"
+
+            # Costo por unidad
+            costo_fijo_und = costo_fijo / batch_max  # Diluido en batch completo
+            if decision == "parcial" and necesidad > 0:
+                costo_fijo_und = costo_fijo / necesidad  # Menos diluido
+        else:
+            # Sin batch configurado — producir exacto
+            producir = round(necesidad)
+            batches = 1
+            decision = "sin_config"
+            razon = "Sin batch maximo configurado"
+            costo_fijo_und = 0
+
+        tiempo_produccion = round(batches * tiempo_batch) if tiempo_batch > 0 else 0
+        tiempo_total_min += tiempo_produccion
+
+        # Ingredientes necesarios (basado en producción real)
+        porciones_base = lig["porciones_base"]
+        factor_mp = producir / porciones_base if porciones_base > 0 else producir
+
         cur.execute("""
             SELECT ri.mp_id, mp.nombre, mp.unidad, ri.cantidad,
-                   COALESCE(lc.precio_unit, 0) AS precio,
-                   COALESCE(lc.proveedor, '') AS proveedor
+                   COALESCE(lc.precio_unit, 0), COALESCE(lc.proveedor, '')
             FROM receta_ingredientes ri
             JOIN materias_primas mp ON mp.id = ri.mp_id
             LEFT JOIN LATERAL (
@@ -1726,33 +1863,24 @@ def plan_produccion(semanas_historico: int = 4):
         ingredientes = []
         for ing in cur.fetchall():
             mp_id, mp_nombre, mp_unidad, cant_base, precio, proveedor = ing
-            cant_necesaria = float(cant_base) * batches_semana
+            cant_necesaria = float(cant_base) * factor_mp
 
-            # Aplicar reglas de esta MP
             mp_reglas = []
-            dias_recepcion = reglas.get(f"dias_recepcion:{mp_nombre}", {}).get("valor", "")
-            vida_util = reglas.get(f"vida_util:{mp_nombre}", {}).get("valor", "")
-            no_finde = reglas.get(f"no_fin_semana:{mp_nombre}", {}).get("valor", "")
-            lead_time = reglas.get(f"dias_entrega:{proveedor}", {}).get("valor", "") if proveedor else ""
-
-            if dias_recepcion:
-                mp_reglas.append(f"Solo llega: {dias_recepcion}")
-            if vida_util:
-                mp_reglas.append(f"Vida util: {vida_util} dias")
-            if no_finde:
-                mp_reglas.append("No pedir para fin de semana")
-            if lead_time:
-                mp_reglas.append(f"Lead time: {lead_time} dias ({proveedor})")
+            dr = reglas.get(f"dias_recepcion:{mp_nombre}", "")
+            vu = reglas.get(f"vida_util:{mp_nombre}", "")
+            nf = reglas.get(f"no_fin_semana:{mp_nombre}", "")
+            lt = reglas.get(f"dias_entrega:{proveedor}", "") if proveedor else ""
+            if dr: mp_reglas.append(f"Solo llega: {dr}")
+            if vu: mp_reglas.append(f"Vida util: {vu} dias")
+            if nf: mp_reglas.append("No pedir para finde")
+            if lt: mp_reglas.append(f"Lead time: {lt}d ({proveedor})")
 
             ingredientes.append({
                 "mp_id": mp_id, "mp_nombre": mp_nombre, "unidad": mp_unidad,
                 "cantidad_semanal": round(cant_necesaria, 2),
                 "costo_semanal": round(cant_necesaria * float(precio), 2),
-                "proveedor": proveedor,
-                "reglas": mp_reglas
+                "proveedor": proveedor, "reglas": mp_reglas
             })
-
-            # Acumular MP total
             if mp_id not in total_mp_necesaria:
                 total_mp_necesaria[mp_id] = {"nombre": mp_nombre, "unidad": mp_unidad,
                                               "cantidad": 0, "costo": 0, "proveedor": proveedor,
@@ -1761,46 +1889,57 @@ def plan_produccion(semanas_historico: int = 4):
             total_mp_necesaria[mp_id]["costo"] += cant_necesaria * float(precio)
 
         plan_productos.append({
-            "siigo_code": code,
-            "producto": prod_venta["name"],
+            "siigo_code": code, "producto": prod_venta["name"],
             "receta": lig["receta_nombre"],
-            "venta_semanal_promedio": round(avg_qty_semana, 1),
+            "venta_semanal": round(avg_qty_semana, 1),
+            "stock_minimo": round(stock_minimo, 0),
+            "stock_actual": stock_actual_pt,
+            "necesidad": round(necesidad, 0),
+            "producir": producir,
+            "batches": round(batches, 1) if isinstance(batches, float) else batches,
+            "batch_maximo": batch_max,
+            "decision": decision, "razon": razon,
+            "tiempo_min": tiempo_produccion,
+            "costo_mp_und": round(sum(i["costo_semanal"] for i in ingredientes) / producir, 2) if producir > 0 else 0,
+            "costo_mo_und": round(costo_mo / batch_max, 2) if batch_max > 0 else 0,
+            "costo_sv_und": round(costo_sv / batch_max, 2) if batch_max > 0 else 0,
+            "costo_total_und": round((sum(i["costo_semanal"] for i in ingredientes) / producir if producir > 0 else 0) + costo_fijo_und, 2),
             "revenue_semanal": round(avg_revenue, 2),
-            "batches_semana": round(batches_semana, 2),
-            "porciones_producir": round(avg_qty_semana, 0),
             "ingredientes": ingredientes
         })
 
-    # 5. Plan de compras: agrupar MP necesaria con reglas
+    # 5. Plan de compras
     cur.execute("""
         SELECT mp.id, COALESCE(inv.cantidad_actual, 0)
         FROM materias_primas mp LEFT JOIN inventario inv ON inv.mp_id = mp.id
         WHERE mp.activo = TRUE
     """)
-    stock_actual = {r[0]: float(r[1]) for r in cur.fetchall()}
+    stock_mp = {r[0]: float(r[1]) for r in cur.fetchall()}
 
     plan_compras = []
-    for mp_id, mp_data in sorted(total_mp_necesaria.items(), key=lambda x: -x[1]["costo"]):
-        stock = stock_actual.get(mp_id, 0)
-        necesita = round(mp_data["cantidad"], 2)
+    for mp_id, d in sorted(total_mp_necesaria.items(), key=lambda x: -x[1]["costo"]):
+        stock = stock_mp.get(mp_id, 0)
+        necesita = round(d["cantidad"], 2)
         a_pedir = max(0, round(necesita - stock, 2))
         plan_compras.append({
-            "mp_id": mp_id,
-            "nombre": mp_data["nombre"],
-            "unidad": mp_data["unidad"],
-            "necesario_semanal": necesita,
-            "stock_actual": stock,
+            "mp_id": mp_id, "nombre": d["nombre"], "unidad": d["unidad"],
+            "necesario_semanal": necesita, "stock_actual": stock,
             "a_pedir": a_pedir,
-            "costo_estimado": round(mp_data["costo"], 2),
-            "proveedor": mp_data["proveedor"],
-            "reglas": mp_data["reglas"]
+            "costo_estimado": round(d["costo"], 2),
+            "proveedor": d["proveedor"], "reglas": d["reglas"]
         })
 
     cur.close(); conn.close()
+
+    dias_produccion = len(config.get("dias_produccion", "lunes,martes,miercoles,jueves,viernes").split(","))
     return {
         "semanas_analizadas": num_weeks,
+        "factor_stock_minimo": factor_stock,
         "plan_produccion": plan_productos,
         "plan_compras": plan_compras,
-        "capacidad_diaria": cap_max,
-        "total_costo_semanal": round(sum(m["costo_estimado"] for m in plan_compras), 2)
+        "tiempo_total_min": tiempo_total_min,
+        "minutos_disponibles_semana": minutos_dia * dias_produccion,
+        "capacidad_usada_pct": round(tiempo_total_min / (minutos_dia * dias_produccion) * 100, 1) if minutos_dia > 0 else 0,
+        "total_costo_mp": round(sum(m["costo_estimado"] for m in plan_compras), 2),
+        "total_costo_fijos": round(sum(p.get("costo_mo_und", 0) * p["producir"] + p.get("costo_sv_und", 0) * p["producir"] for p in plan_productos), 2),
     }

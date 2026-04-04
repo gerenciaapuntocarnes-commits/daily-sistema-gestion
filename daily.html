@@ -941,7 +941,7 @@ tr:hover .btn-delete { opacity: 1; }
         <div class="card-header"><h3 class="card-title"><i class="ti ti-building-factory-2 me-2"></i>Plan de Produccion</h3></div>
         <div class="table-responsive">
           <table class="table table-vcenter card-table table-sm">
-            <thead><tr><th>Producto</th><th>Receta</th><th class="num">Venta/sem</th><th class="num">Producir</th><th class="num">Batches</th></tr></thead>
+            <thead><tr><th>Producto</th><th class="num">Venta/sem</th><th class="num">Stock min</th><th class="num">Necesidad</th><th class="num">Producir</th><th>Batch</th><th class="num">Costo/und</th><th class="num">Tiempo</th></tr></thead>
             <tbody id="plan-prod-body"></tbody>
           </table>
         </div>
@@ -1247,6 +1247,30 @@ tr:hover .btn-delete { opacity: 1; }
         <div class="col-12">
           <label class="form-label">Descripcion</label>
           <textarea class="form-control" id="rec-descripcion" rows="2" placeholder="Descripcion breve de la receta"></textarea>
+        </div>
+      </div>
+      <hr class="my-3">
+      <div class="text-uppercase text-secondary small fw-bold mb-2" style="letter-spacing:.4px"><i class="ti ti-settings me-1"></i>Configuracion de produccion</div>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Batch maximo (unidades por tanda)</label>
+          <input class="form-control" type="number" id="rec-batch" step="1" value="0" placeholder="Ej: 50">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Tiempo por batch (minutos)</label>
+          <input class="form-control" type="number" id="rec-tiempo" step="5" value="0" placeholder="Ej: 90">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Vida util (dias)</label>
+          <input class="form-control" type="number" id="rec-vida" step="1" value="30" placeholder="Ej: 30">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Mano de obra / batch ($)</label>
+          <input class="form-control" type="number" id="rec-costo-mo" step="1000" value="0" placeholder="Ej: 30000">
+        </div>
+        <div class="col-md-4">
+          <label class="form-label">Servicios / batch ($)</label>
+          <input class="form-control" type="number" id="rec-costo-sv" step="1000" value="0" placeholder="Ej: 10000">
         </div>
       </div>
     </div>
@@ -2220,7 +2244,12 @@ async function crearReceta() {
     nombre:nombre, categoria:$('rec-categoria').value,
     descripcion:$('rec-descripcion').value||null,
     porciones:parseFloat($('rec-porciones').value)||1,
-    precio_venta:parseFloat($('rec-precio').value)||0
+    precio_venta:parseFloat($('rec-precio').value)||0,
+    batch_maximo:parseFloat($('rec-batch').value)||0,
+    tiempo_batch_min:parseInt($('rec-tiempo').value)||0,
+    vida_util_dias:parseInt($('rec-vida').value)||30,
+    costo_mano_obra:parseFloat($('rec-costo-mo').value)||0,
+    costo_servicios:parseFloat($('rec-costo-sv').value)||0
   });
   // Auto-ligar al producto Siigo si se seleccionó
   if(productoId && res.id) {
@@ -2254,6 +2283,20 @@ async function verReceta(id) {
     '<button class="step-del" onclick="eliminarIngrediente('+i.id+')" title="Quitar"><i class="ti ti-x"></i></button>' +
     '</div>';}).join('') : '<p class="text-secondary" style="padding:8px">Sin ingredientes aun.</p>';
 
+  var costoDesglose = r.costo_fijo_batch > 0 ?
+    '<div class="small text-secondary mt-1">MP: $'+fmt(r.costo_mp_und)+' + MO: $'+fmt(r.costo_mano_obra/r.batch_maximo)+' + Serv: $'+fmt(r.costo_servicios/r.batch_maximo)+'</div>' : '';
+  var configHtml = r.batch_maximo > 0 ?
+    '<div class="mt-2 p-2 rounded" style="background:var(--tblr-bg-surface-secondary);font-size:12px">' +
+      '<div class="fw-bold mb-1"><i class="ti ti-settings me-1"></i>Config produccion</div>' +
+      '<div class="d-flex gap-3 flex-wrap">' +
+        '<span><i class="ti ti-box me-1"></i>Batch: <strong>'+fmtD(r.batch_maximo,0)+'</strong> und</span>' +
+        '<span><i class="ti ti-clock me-1"></i>Tiempo: <strong>'+r.tiempo_batch_min+'</strong> min</span>' +
+        '<span><i class="ti ti-calendar me-1"></i>Vida util: <strong>'+r.vida_util_dias+'</strong> dias</span>' +
+        '<span><i class="ti ti-user me-1"></i>MO: <strong>$'+fmt(r.costo_mano_obra)+'</strong>/batch</span>' +
+        '<span><i class="ti ti-bolt me-1"></i>Serv: <strong>$'+fmt(r.costo_servicios)+'</strong>/batch</span>' +
+      '</div>' +
+    '</div>' : '<div class="mt-2 p-2 rounded text-warning" style="background:var(--tblr-bg-surface-secondary);font-size:12px"><i class="ti ti-alert-triangle me-1"></i>Sin config de produccion — configura batch, tiempo y costos para habilitar planificacion</div>';
+
   $('receta-detalle-panel').innerHTML =
     '<div class="card">' +
       '<div class="card-header">' +
@@ -2266,15 +2309,17 @@ async function verReceta(id) {
       '<div class="card-body">' +
         '<div class="row row-cards mb-3">' +
           '<div class="col-4"><div class="card card-sm bg-primary-lt"><div class="card-body py-2 text-center">' +
-            '<div class="fw-bold fs-3">$'+fmt(r.costo_total)+'</div><div class="text-secondary small">Costo total</div>' +
+            '<div class="fw-bold fs-3">$'+fmt(r.costo_porcion)+'</div><div class="text-secondary small">Costo / und</div>' +
+            costoDesglose +
           '</div></div></div>' +
           '<div class="col-4"><div class="card card-sm bg-primary-lt"><div class="card-body py-2 text-center">' +
-            '<div class="fw-bold fs-3">$'+fmt(r.costo_porcion)+'</div><div class="text-secondary small">Costo / porcion</div>' +
+            '<div class="fw-bold fs-3">$'+fmt(r.precio_venta)+'</div><div class="text-secondary small">Precio venta</div>' +
           '</div></div></div>' +
           '<div class="col-4"><div class="card card-sm"><div class="card-body py-2 text-center">' +
-            '<div class="fw-bold fs-3 '+margenClass+'">'+fmtD(r.margen_pct,1)+'%</div><div class="text-secondary small">Margen</div>' +
+            '<div class="fw-bold fs-3 '+margenClass+'">'+fmtD(r.margen_pct,1)+'%</div><div class="text-secondary small">Margen ($'+fmt(r.margen)+')</div>' +
           '</div></div></div>' +
         '</div>' +
+        configHtml +
         '<div class="d-flex justify-content-between align-items-center mb-2">' +
           '<span class="text-secondary text-uppercase small fw-bold" style="letter-spacing:.4px">Ingredientes</span>' +
           '<button class="btn btn-outline-primary btn-sm" onclick="openModal(\'modal-ing\')"><i class="ti ti-plus me-1"></i>Agregar</button>' +
@@ -3384,21 +3429,38 @@ async function loadPlanProduccion() {
   var pp = data.plan_produccion;
   var pc = data.plan_compras;
   $('plan-total-prod').textContent = pp.length;
-  $('plan-total-porc').textContent = fmtD(pp.reduce(function(s,p){return s+p.porciones_producir;},0),0);
+  $('plan-total-porc').textContent = fmtD(pp.reduce(function(s,p){return s+p.producir;},0),0);
   $('plan-total-mp').textContent = pc.filter(function(m){return m.a_pedir>0;}).length;
-  $('plan-total-costo').textContent = '$'+fmt(data.total_costo_semanal);
+  $('plan-total-costo').textContent = '$'+fmt(data.total_costo_mp + data.total_costo_fijos);
+
+  // Capacidad
+  var capHtml = data.tiempo_total_min > 0 ?
+    '<div class="mb-3 p-2 rounded" style="background:var(--tblr-bg-surface-secondary)">' +
+      '<div class="d-flex justify-content-between align-items-center small">' +
+        '<span><i class="ti ti-clock me-1"></i>Tiempo total: <strong>'+data.tiempo_total_min+' min</strong> de '+data.minutos_disponibles_semana+' min/semana</span>' +
+        '<span class="badge '+(data.capacidad_usada_pct>90?'bg-red-lt':data.capacidad_usada_pct>70?'bg-yellow-lt':'bg-green-lt')+'">'+data.capacidad_usada_pct+'% capacidad</span>' +
+      '</div>' +
+      '<div class="stock-bar mt-1" style="width:100%"><div class="stock-fill" style="width:'+Math.min(100,data.capacidad_usada_pct)+'%;background:'+(data.capacidad_usada_pct>90?'#d63939':data.capacidad_usada_pct>70?'#f76707':'#2fb344')+'"></div></div>' +
+    '</div>' : '';
 
   // Plan produccion table
   if(!pp.length) {
     $('plan-prod-body').innerHTML = emptyState('link-off','Sin productos ligados','Liga productos Siigo a recetas primero','Ir a Productos',"goto('productos-siigo')");
   } else {
-    $('plan-prod-body').innerHTML = pp.map(function(p,i){
+    $('plan-prod-body').innerHTML = (capHtml ? '<tr><td colspan="8" class="p-0"><div class="px-3 py-2">'+capHtml+'</div></td></tr>' : '') +
+    pp.map(function(p,i){
+      var decBadge = p.decision==='batch_completo'?'<span class="badge bg-green-lt" title="'+p.razon+'">Batch completo</span>':
+                     p.decision==='parcial'?'<span class="badge bg-yellow-lt" title="'+p.razon+'">Parcial</span>':
+                     '<span class="badge bg-secondary-lt">Sin config</span>';
       return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
-        '<td><strong>'+p.producto+'</strong><div class="small text-secondary">'+p.siigo_code+'</div></td>' +
-        '<td>'+p.receta+'</td>' +
-        '<td class="num">'+fmtD(p.venta_semanal_promedio,1)+'</td>' +
-        '<td class="num"><strong>'+fmtD(p.porciones_producir,0)+'</strong></td>' +
-        '<td class="num">'+fmtD(p.batches_semana,1)+'</td>' +
+        '<td><strong>'+p.producto+'</strong></td>' +
+        '<td class="num">'+fmtD(p.venta_semanal,1)+'</td>' +
+        '<td class="num">'+fmtD(p.stock_minimo,0)+'</td>' +
+        '<td class="num">'+fmtD(p.necesidad,0)+'</td>' +
+        '<td class="num"><strong>'+fmtD(p.producir,0)+'</strong></td>' +
+        '<td>'+decBadge+'</td>' +
+        '<td class="num" style="font-size:11px">$'+fmt(p.costo_total_und)+'<div class="text-secondary">MP:$'+fmt(p.costo_mp_und)+' MO:$'+fmt(p.costo_mo_und)+' SV:$'+fmt(p.costo_sv_und)+'</div></td>' +
+        '<td class="num">'+(p.tiempo_min>0?p.tiempo_min+'m':'--')+'</td>' +
       '</tr>';
     }).join('');
   }
