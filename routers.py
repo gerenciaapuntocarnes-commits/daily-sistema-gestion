@@ -1448,3 +1448,23 @@ def proyecciones(dias: int = 30):
         "recetas": recetas_forecast,
         "tendencia_semanal": tendencia_semanal
     }
+
+# ═══════════════════════════════════════════════════════════════
+# SIIGO — Productos y Ventas
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/siigo/productos")
+def siigo_productos(todos: bool = False):
+    try:
+        from siigo import fetch_products
+        return fetch_products(include_all=todos)
+    except Exception as e:
+        raise HTTPException(500, f"Error Siigo: {str(e)}")
+
+@router.get("/siigo/ventas-semana")
+def siigo_ventas_semana(semanas: int = 8):
+    try:
+        from siigo import sales_by_product_weekly
+        return sales_by_product_weekly(semanas)
+    except Exception as e:
+        raise HTTPException(500, f"Error Siigo: {str(e)}")

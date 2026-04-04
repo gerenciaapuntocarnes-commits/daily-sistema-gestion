@@ -265,6 +265,13 @@ tr:hover .btn-delete { opacity: 1; }
             <span class="nav-link-title">INVIMA / BPM</span>
           </a>
         </li>
+        <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Integraciones</span></li>
+        <li class="nav-item">
+          <a class="nav-link" href="#" onclick="goto('siigo');return false;">
+            <span class="nav-link-icon"><i class="ti ti-cloud-download"></i></span>
+            <span class="nav-link-title">Siigo Ventas</span>
+          </a>
+        </li>
         <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Analitica</span></li>
         <li class="nav-item">
           <a class="nav-link" href="#" onclick="goto('proyecciones');return false;">
@@ -781,6 +788,73 @@ tr:hover .btn-delete { opacity: 1; }
             <tbody id="invima-registros-body"></tbody>
           </table>
         </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ SIIGO VENTAS ════ -->
+<div id="s-siigo" class="section">
+  <div class="page-header d-print-none mb-3">
+    <div class="row align-items-center">
+      <div class="col-auto">
+        <div class="page-pretitle">Integraciones</div>
+        <h2 class="page-title"><i class="ti ti-cloud-download me-2"></i>Siigo — Ventas por Producto</h2>
+      </div>
+      <div class="col-auto ms-auto d-flex gap-2">
+        <select class="form-select" id="siigo-semanas" onchange="loadSiigoVentas()" style="width:auto">
+          <option value="4">Ultimas 4 semanas</option>
+          <option value="8" selected>Ultimas 8 semanas</option>
+          <option value="12">Ultimas 12 semanas</option>
+        </select>
+        <button class="btn btn-outline-secondary" onclick="loadSiigoProductos()"><i class="ti ti-package me-1"></i>Ver productos</button>
+      </div>
+    </div>
+  </div>
+  <div class="row row-cards mb-3">
+    <div class="col-lg-4">
+      <div class="card"><div class="card-body py-3 text-center"><div class="kpi-val" id="siigo-total-prod">--</div><div class="text-secondary small mt-1">Productos vendidos</div></div></div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card"><div class="card-body py-3 text-center"><div class="kpi-val" id="siigo-total-qty">--</div><div class="text-secondary small mt-1">Unidades vendidas</div></div></div>
+    </div>
+    <div class="col-lg-4">
+      <div class="card"><div class="card-body py-3 text-center"><div class="kpi-val text-primary" id="siigo-total-rev">--</div><div class="text-secondary small mt-1">Ingresos totales</div></div></div>
+    </div>
+  </div>
+  <div class="row row-cards mb-3">
+    <div class="col-12">
+      <div class="card">
+        <div class="card-header"><h3 class="card-title"><i class="ti ti-chart-bar me-2"></i>Ventas semanales por producto (top 10)</h3></div>
+        <div class="card-body" id="chart-siigo-ventas" style="min-height:300px"></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-header"><h3 class="card-title">Detalle por producto</h3></div>
+    <div class="table-responsive">
+      <table class="table table-vcenter card-table">
+        <thead><tr><th>Codigo</th><th>Producto</th><th class="num">Und. totales</th><th class="num">Ingresos</th><th>Ventas por semana</th></tr></thead>
+        <tbody id="siigo-ventas-body"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- Siigo Productos Modal -->
+<div id="modal-siigo-productos" class="modal-bg">
+  <div class="card" style="width:100%;max-width:900px;max-height:90vh;overflow-y:auto">
+    <div class="card-header">
+      <h3 class="card-title"><i class="ti ti-package me-2"></i>Productos en Siigo (147)</h3>
+      <button type="button" class="btn-close" onclick="closeModal('modal-siigo-productos')"></button>
+    </div>
+    <div class="card-body p-0">
+      <div class="p-3"><div class="input-icon"><span class="input-icon-addon"><i class="ti ti-search"></i></span><input class="form-control" placeholder="Buscar producto..." oninput="filterTable('siigo-prod-body', this.value)"></div></div>
+      <div class="table-responsive">
+        <table class="table table-vcenter card-table table-sm">
+          <thead><tr><th>Codigo</th><th>Producto</th><th>Grupo</th><th>Unidad</th><th class="num">Stock</th><th>Estado</th></tr></thead>
+          <tbody id="siigo-prod-body"></tbody>
+        </table>
       </div>
     </div>
   </div>
@@ -1574,7 +1648,8 @@ function goto(sec) {
     trazabilidad: loadTrazabilidad,
     'ordenes-compra': loadOrdenes,
     invima: loadInvima,
-    proyecciones: loadProyecciones
+    proyecciones: loadProyecciones,
+    siigo: loadSiigoVentas
   };
   if(loaders[sec]) loaders[sec]();
 }
@@ -2959,6 +3034,93 @@ async function loadProyecciones() {
   }
 }
 
+// ── SIIGO ────────────────────────────────────────────────────────
+let chartSiigoVentas = null;
+
+async function loadSiigoVentas() {
+  var semanas = parseInt($('siigo-semanas').value) || 8;
+  showSkeleton('siigo-ventas-body', 5);
+  $('siigo-total-prod').textContent = '...';
+  $('siigo-total-qty').textContent = '...';
+  $('siigo-total-rev').textContent = '...';
+  var data = await api('/siigo/ventas-semana?semanas='+semanas,'GET',null,true).catch(function(e){return null;});
+  if(!data || !data.products) {
+    $('siigo-ventas-body').innerHTML = emptyState('cloud-off','Error de conexion con Siigo','Verifica las credenciales de Siigo','Reintentar',"loadSiigoVentas()");
+    $('siigo-total-prod').textContent = '--';
+    $('siigo-total-qty').textContent = '--';
+    $('siigo-total-rev').textContent = '--';
+    return;
+  }
+  var prods = data.products;
+  var weeks = data.weeks;
+
+  // KPIs
+  $('siigo-total-prod').textContent = prods.length;
+  var totalQty = prods.reduce(function(s,p){return s+p.total_qty;},0);
+  var totalRev = prods.reduce(function(s,p){return s+p.total_revenue;},0);
+  $('siigo-total-qty').textContent = fmtD(totalQty,0);
+  $('siigo-total-rev').textContent = '$'+fmt(totalRev);
+
+  // Table
+  $('siigo-ventas-body').innerHTML = prods.map(function(p,i){
+    var maxQty = Math.max.apply(null, p.weekly.map(function(w){return w.qty;})) || 1;
+    var sparkHtml = p.weekly.map(function(w){
+      var h = Math.max(2, Math.round((w.qty / maxQty) * 24));
+      return '<div style="width:6px;height:'+h+'px;background:var(--tblr-primary);border-radius:2px;opacity:'+(w.qty>0?'1':'0.2')+'" title="'+w.week+': '+w.qty+' und"></div>';
+    }).join('');
+    return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+      '<td><span class="badge bg-blue-lt" style="font-family:monospace">'+p.code+'</span></td>' +
+      '<td><strong>'+p.name+'</strong></td>' +
+      '<td class="num">'+fmtD(p.total_qty,0)+'</td>' +
+      '<td class="num">$'+fmt(p.total_revenue)+'</td>' +
+      '<td><div style="display:flex;align-items:flex-end;gap:2px;height:26px">'+sparkHtml+'</div></td>' +
+    '</tr>';
+  }).join('');
+
+  // Chart — top 10 stacked bar
+  var top10 = prods.slice(0, 10);
+  var chartEl = $('chart-siigo-ventas');
+  if(top10.length && weeks.length) {
+    var themeMode = document.documentElement.getAttribute('data-bs-theme') || 'light';
+    var series = top10.map(function(p){
+      return {name: p.name, data: p.weekly.map(function(w){return w.qty;})};
+    });
+    if(chartSiigoVentas) chartSiigoVentas.destroy();
+    chartSiigoVentas = new ApexCharts(chartEl, {
+      chart:{type:'bar',height:280,stacked:true,toolbar:{show:false},theme:{mode:themeMode},background:'transparent'},
+      series: series,
+      xaxis:{categories: weeks},
+      plotOptions:{bar:{horizontal:false,columnWidth:'70%',borderRadius:2}},
+      legend:{position:'bottom',fontSize:'11px'},
+      grid:{borderColor:'var(--tblr-border-color)'}
+    });
+    chartSiigoVentas.render();
+  } else {
+    chartEl.innerHTML = '<div class="text-center text-secondary py-4">Sin datos de ventas</div>';
+  }
+}
+
+async function loadSiigoProductos() {
+  openModal('modal-siigo-productos');
+  showSkeleton('siigo-prod-body', 6);
+  var prods = await api('/siigo/productos','GET',null,true).catch(function(){return [];});
+  if(!prods.length) {
+    $('siigo-prod-body').innerHTML = emptyState('package','Sin productos','No se pudieron cargar productos de Siigo','','');
+    return;
+  }
+  $('siigo-prod-body').innerHTML = prods.map(function(p,i){
+    var statusBadge = p.active ? '<span class="badge bg-green-lt">Activo</span>' : '<span class="badge bg-secondary-lt">Inactivo</span>';
+    return '<tr class="animate-row" style="animation-delay:'+i*0.02+'s">' +
+      '<td><span class="badge bg-blue-lt" style="font-family:monospace">'+p.code+'</span></td>' +
+      '<td><strong>'+p.name+'</strong></td>' +
+      '<td>'+p.group+'</td>' +
+      '<td>'+p.unit+'</td>' +
+      '<td class="num">'+(p.stock_control ? fmtD(p.available_quantity,0) : '--')+'</td>' +
+      '<td>'+statusBadge+'</td>' +
+    '</tr>';
+  }).join('');
+}
+
 // ── COMMAND PALETTE ──────────────────────────────────────────────
 var cmdSelectedIdx = 0;
 var cmdFiltered = [];
@@ -2988,6 +3150,7 @@ var cmdCommands = [
   {icon:'ti-chart-line', label:'Ir a Proyecciones', action:function(){goto('proyecciones');}},
   {icon:'ti-plus', label:'Nueva Orden de Compra', hint:'Crear', action:function(){goto('ordenes-compra');openModal('modal-orden');}},
   {icon:'ti-plus', label:'Nuevo Registro INVIMA', hint:'Crear', action:function(){goto('invima');openModal('modal-invima-registro');}},
+  {icon:'ti-cloud-download', label:'Ir a Siigo Ventas', action:function(){goto('siigo');}},
   {icon:'ti-alert-triangle', label:'Generar orden desde stock bajo', hint:'Automatico', action:function(){goto('ordenes-compra');generarOrdenDesdeStock();}},
   {icon:'ti-sun', label:'Cambiar tema claro/oscuro', action:function(){toggleTheme();}}
 ];
