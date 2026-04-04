@@ -580,33 +580,49 @@ class RechazarIn(BaseModel):
 def listar_remisiones(estado: Optional[str] = None, limit: int = 200):
     conn = get_conn()
     cur = conn.cursor()
+    # Detect available columns
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='remisiones'")
+    rem_cols = {r[0] for r in cur.fetchall()}
+    has_proveedor = 'proveedor' in rem_cols
+    has_operario = 'operario' in rem_cols
+
+    prov_col = "proveedor" if has_proveedor else "NULL"
+    oper_col = "operario" if has_operario else "NULL"
+    base_q = f"""
+        SELECT id, numero,
+               COALESCE(fecha, creado_en::date) as fecha,
+               {prov_col} as proveedor, {oper_col} as operario,
+               notas, estado, aprobado_por, rechazo_motivo, creado_en
+        FROM remisiones
+    """
     if estado:
-        cur.execute("""
-            SELECT id, numero, fecha, proveedor, operario, notas, estado,
-                   aprobado_por, rechazo_motivo, creado_en
-            FROM remisiones WHERE estado=%s
-            ORDER BY creado_en DESC LIMIT %s
-        """, (estado, limit))
+        cur.execute(base_q + " WHERE estado=%s ORDER BY creado_en DESC LIMIT %s", (estado, limit))
     else:
-        cur.execute("""
-            SELECT id, numero, fecha, proveedor, operario, notas, estado,
-                   aprobado_por, rechazo_motivo, creado_en
-            FROM remisiones ORDER BY creado_en DESC LIMIT %s
-        """, (limit,))
+        cur.execute(base_q + " ORDER BY creado_en DESC LIMIT %s", (limit,))
     rows = cur.fetchall()
+
+    # Detect remision_items columns
+    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='remision_items'")
+    ri_cols = {r[0] for r in cur.fetchall()}
+    has_lote = 'lote' in ri_cols
+    has_mp_nombre = 'mp_nombre' in ri_cols
+    has_precio = 'precio_unit' in ri_cols
 
     result = []
     for r in rows:
-        cur.execute("""
-            SELECT mp_nombre, cantidad, precio_unit, lote
+        lote_col = "lote" if has_lote else "NULL"
+        nombre_col = "mp_nombre" if has_mp_nombre else "NULL"
+        precio_col = "precio_unit" if has_precio else "0"
+        cur.execute(f"""
+            SELECT {nombre_col}, cantidad, {precio_col}, {lote_col}
             FROM remision_items WHERE remision_id=%s ORDER BY id
         """, (r[0],))
-        items = [{"mp_nombre": i[0], "cantidad": float(i[1]),
+        items = [{"mp_nombre": i[0] or '', "cantidad": float(i[1]),
                   "precio_unit": float(i[2]) if i[2] else 0,
                   "lote": i[3]} for i in cur.fetchall()]
         result.append({
-            "id": r[0], "numero": r[1], "fecha": str(r[2]),
-            "proveedor": r[3], "operario": r[4], "notas": r[5],
+            "id": r[0], "numero": r[1], "fecha": str(r[2]) if r[2] else '',
+            "proveedor": r[3] or '', "operario": r[4] or '', "notas": r[5],
             "estado": r[6], "aprobado_por": r[7], "rechazo_motivo": r[8],
             "creado_en": str(r[9]), "items": items
         })
@@ -1061,11 +1077,10 @@ def trazar_produccion(lote: str):
     if not prod:
         raise HTTPException(404, "Lote de producción no encontrado")
 
-    # Ingredientes de la receta con sus últimas compras/lotes
+    # Ingredientes de la receta con sus últimas compras
     cur.execute("""
-        SELECT mp.nombre, mp.unidad, ri.cantidad,
-               c.fecha AS compra_fecha, c.proveedor, c.precio_unit,
-               ri_rem.lote AS lote_mp, rem.numero AS remision_numero, rem.proveedor AS rem_proveedor
+        SELECT mp.id, mp.nombre, mp.unidad, ri.cantidad,
+               c.fecha AS compra_fecha, c.proveedor, c.precio_unit
         FROM receta_ingredientes ri
         JOIN materias_primas mp ON mp.id = ri.mp_id
         LEFT JOIN LATERAL (
@@ -1073,19 +1088,38 @@ def trazar_produccion(lote: str):
             WHERE mp_id = ri.mp_id AND fecha <= %s
             ORDER BY fecha DESC, id DESC LIMIT 1
         ) c ON TRUE
-        LEFT JOIN LATERAL (
-            SELECT ri2.lote, ri2.remision_id FROM remision_items ri2
-            WHERE ri2.mp_id = ri.mp_id
-            ORDER BY ri2.id DESC LIMIT 1
-        ) ri_rem ON TRUE
-        LEFT JOIN remisiones rem ON rem.id = ri_rem.remision_id
         WHERE ri.receta_id = %s
     """, (prod[1], prod[6]))
-    ingredientes = [{"mp_nombre": i[0], "unidad": i[1], "cantidad": float(i[2]),
-                     "compra_fecha": str(i[3]) if i[3] else None,
-                     "proveedor": i[4], "precio_unit": float(i[5]) if i[5] else 0,
-                     "lote_mp": i[6], "remision": i[7],
-                     "rem_proveedor": i[8]} for i in cur.fetchall()]
+    ingredientes_base = cur.fetchall()
+
+    # Try to get lote info from remision_items (column may not exist in older DBs)
+    lote_info = {}
+    try:
+        mp_ids = [i[0] for i in ingredientes_base]
+        if mp_ids:
+            cur.execute("""
+                SELECT ri2.mp_id, ri2.lote, rem.numero
+                FROM remision_items ri2
+                LEFT JOIN remisiones rem ON rem.id = ri2.remision_id
+                WHERE ri2.mp_id = ANY(%s)
+                ORDER BY ri2.id DESC
+            """, (mp_ids,))
+            for row in cur.fetchall():
+                if row[0] not in lote_info:
+                    lote_info[row[0]] = {"lote_mp": row[1], "remision": row[2]}
+    except Exception:
+        conn.rollback()
+
+    ingredientes = []
+    for i in ingredientes_base:
+        li = lote_info.get(i[0], {})
+        ingredientes.append({
+            "mp_nombre": i[1], "unidad": i[2], "cantidad": float(i[3]),
+            "compra_fecha": str(i[4]) if i[4] else None,
+            "proveedor": i[5], "precio_unit": float(i[6]) if i[6] else 0,
+            "lote_mp": li.get("lote_mp"), "remision": li.get("remision"),
+            "rem_proveedor": None
+        })
     cur.close(); conn.close()
     return {
         "lote": lote,
