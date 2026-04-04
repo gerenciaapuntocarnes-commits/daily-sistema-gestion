@@ -1454,10 +1454,11 @@ def proyecciones(dias: int = 30):
 # ═══════════════════════════════════════════════════════════════
 
 @router.get("/siigo/productos")
-def siigo_productos(todos: bool = False):
+def siigo_productos(tipo: str = "terminado"):
+    """tipo: terminado | mp | todos"""
     try:
         from siigo import fetch_products
-        return fetch_products(include_all=todos)
+        return fetch_products(tipo=tipo)
     except Exception as e:
         raise HTTPException(500, f"Error Siigo: {str(e)}")
 

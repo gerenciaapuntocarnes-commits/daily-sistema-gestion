@@ -73,27 +73,39 @@ def _paginate(endpoint: str, params: dict = None, max_pages: int = 50) -> list:
 
 # ─── PUBLIC API ──────────────────────────────────────────────────
 
-# Groups that are NOT finished products (excluded from sales view)
-_EXCLUDED_GROUPS = {"Materia Prima", "Ingredientes", "Servicios", "Productos"}
+# Generic/system products to always skip
+_SKIP_CODES = {"productogenericonube", "1", "2", "RegistroManual"}
+# Groups that are raw materials, not finished products
+_MP_GROUPS = {"Materia Prima", "Ingredientes"}
+_EXCLUDED_GROUPS = {"Servicios", "Productos"}
 
 
-def fetch_products(include_all: bool = False) -> list:
-    """Get products from Siigo. By default excludes MP/Ingredientes/Servicios."""
+def fetch_products(tipo: str = "terminado") -> list:
+    """
+    Get products from Siigo.
+    tipo='terminado' -> only finished products (Proteinas, Sopas, Salsas, etc.)
+    tipo='mp' -> only MP + Ingredientes
+    tipo='todos' -> everything
+    """
     raw = _paginate("/products")
     result = []
     for p in raw:
-        group = p.get("account_group", {}).get("name", "")
-        if not include_all and group in _EXCLUDED_GROUPS:
-            continue
-        # Skip generic products
         code = p.get("code", "")
-        if not include_all and code in ("productogenericonube", "1", "2", "RegistroManual"):
+        if code in _SKIP_CODES:
+            continue
+        grp = p.get("account_group", {}).get("name", "")
+        if grp in _EXCLUDED_GROUPS:
+            continue
+        is_mp = grp in _MP_GROUPS
+        if tipo == "terminado" and is_mp:
+            continue
+        if tipo == "mp" and not is_mp:
             continue
         result.append({
             "id": p["id"],
             "code": code,
             "name": p.get("name", ""),
-            "group": group,
+            "group": grp,
             "type": p.get("type", ""),
             "unit": p.get("unit_label") or p.get("unit", {}).get("name", ""),
             "active": p.get("active", True),
@@ -149,10 +161,10 @@ def sales_by_product_weekly(weeks: int = 8) -> dict:
 
         for item in inv.get("items", []):
             code = item.get("code", "NOCODE")
-            # Skip MP, ingredients, services, generics
-            if code.startswith("MP") or code.startswith("ING") or code.startswith("SV"):
+            if code in _SKIP_CODES:
                 continue
-            if code in ("productogenericonube", "1", "2", "RegistroManual"):
+            # Only count finished product sales (not MP/ING/SV)
+            if code.startswith("MP") or code.startswith("ING") or code.startswith("SV"):
                 continue
             name = item.get("description", code)
             qty = float(item.get("quantity", 0))
