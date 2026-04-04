@@ -126,6 +126,41 @@ def eliminar_mp(mp_id: int):
     conn.commit(); cur.close(); conn.close()
     return {"ok": True}
 
+@router.post("/materias-primas/sync-siigo")
+def sync_mp_desde_siigo():
+    """Importa MP e Ingredientes de Siigo a la tabla materias_primas."""
+    try:
+        from siigo import fetch_products
+        mp_siigo = fetch_products(tipo="mp")
+    except Exception as e:
+        raise HTTPException(500, f"Error Siigo: {str(e)}")
+    conn = get_conn()
+    cur = conn.cursor()
+    creados = 0
+    actualizados = 0
+    for p in mp_siigo:
+        code = p["code"]
+        nombre = p["name"]
+        unidad = p["unit"] or "unidad"
+        categoria = p["group"] or "General"
+        # Check if exists by codigo
+        cur.execute("SELECT id FROM materias_primas WHERE codigo=%s", (code,))
+        existing = cur.fetchone()
+        if existing:
+            cur.execute(
+                "UPDATE materias_primas SET nombre=%s, categoria=%s, activo=TRUE WHERE id=%s",
+                (nombre, categoria, existing[0])
+            )
+            actualizados += 1
+        else:
+            cur.execute(
+                "INSERT INTO materias_primas (codigo, nombre, unidad, categoria) VALUES (%s,%s,%s,%s)",
+                (code, nombre, unidad, categoria)
+            )
+            creados += 1
+    conn.commit(); cur.close(); conn.close()
+    return {"creados": creados, "actualizados": actualizados, "total": len(mp_siigo), "ok": True}
+
 @router.get("/compras-mp")
 def listar_compras(mp_id: Optional[int] = None, limit: int = 100):
     conn = get_conn()
@@ -1486,7 +1521,7 @@ def listar_producto_receta():
     cur = conn.cursor()
     cur.execute("""
         SELECT pr.id, pr.siigo_code, pr.siigo_name, pr.siigo_group, pr.receta_id,
-               r.nombre AS receta_nombre, pr.activo
+               r.nombre AS receta_nombre, pr.activo, COALESCE(pr.precio_venta, 0)
         FROM producto_receta pr
         LEFT JOIN recetas r ON r.id = pr.receta_id
         WHERE pr.activo = TRUE
@@ -1495,7 +1530,8 @@ def listar_producto_receta():
     rows = cur.fetchall()
     cur.close(); conn.close()
     return [{"id": r[0], "siigo_code": r[1], "siigo_name": r[2], "siigo_group": r[3],
-             "receta_id": r[4], "receta_nombre": r[5], "activo": r[6]} for r in rows]
+             "receta_id": r[4], "receta_nombre": r[5], "activo": r[6],
+             "precio_venta": float(r[7])} for r in rows]
 
 @router.post("/producto-receta")
 def crear_producto_receta(data: ProductoRecetaIn):
@@ -1529,7 +1565,7 @@ def ligar_receta(pr_id: int, receta_id: Optional[int] = None):
 
 @router.post("/producto-receta/sync")
 def sync_productos_siigo():
-    """Sincroniza productos terminados de Siigo con la tabla producto_receta."""
+    """Sincroniza productos terminados de Siigo con la tabla producto_receta + actualiza precios en recetas."""
     try:
         from siigo import fetch_products
         productos = fetch_products(tipo="terminado")
@@ -1538,16 +1574,25 @@ def sync_productos_siigo():
     conn = get_conn()
     cur = conn.cursor()
     synced = 0
+    precios_actualizados = 0
     for p in productos:
+        precio = p.get("precio_venta", 0)
         cur.execute("""
-            INSERT INTO producto_receta (siigo_code, siigo_name, siigo_group)
-            VALUES (%s, %s, %s)
+            INSERT INTO producto_receta (siigo_code, siigo_name, siigo_group, precio_venta)
+            VALUES (%s, %s, %s, %s)
             ON CONFLICT (siigo_code) WHERE siigo_code IS NOT NULL
-            DO UPDATE SET siigo_name=%s, siigo_group=%s
-        """, (p["code"], p["name"], p["group"], p["name"], p["group"]))
+            DO UPDATE SET siigo_name=%s, siigo_group=%s, precio_venta=%s
+            RETURNING id, receta_id
+        """, (p["code"], p["name"], p["group"], precio,
+              p["name"], p["group"], precio))
+        row = cur.fetchone()
         synced += 1
+        # Si tiene receta ligada, actualizar precio_venta de la receta
+        if row and row[1] and precio > 0:
+            cur.execute("UPDATE recetas SET precio_venta=%s WHERE id=%s", (precio, row[1]))
+            precios_actualizados += 1
     conn.commit(); cur.close(); conn.close()
-    return {"synced": synced, "ok": True}
+    return {"synced": synced, "precios_actualizados": precios_actualizados, "ok": True}
 
 # ═══════════════════════════════════════════════════════════════
 # REGLAS DE PRODUCCIÓN (condicionales)

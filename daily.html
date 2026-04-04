@@ -182,12 +182,7 @@ tr:hover .btn-delete { opacity: 1; }
             <span class="nav-link-title">Materias Primas</span>
           </a>
         </li>
-        <li class="nav-item">
-          <a class="nav-link" href="#" onclick="goto('registro-mp');return false;">
-            <span class="nav-link-icon"><i class="ti ti-package-import"></i></span>
-            <span class="nav-link-title">Registro de MP</span>
-          </a>
-        </li>
+        <!-- Registro MP removido — duplica Remisiones -->
         <li class="nav-item">
           <a class="nav-link" href="#" onclick="goto('recetas');return false;">
             <span class="nav-link-icon"><i class="ti ti-clipboard-list"></i></span>
@@ -431,6 +426,7 @@ tr:hover .btn-delete { opacity: 1; }
             <a class="dropdown-item" href="#" onclick="exportPDF('mp');return false;"><i class="ti ti-file-type-pdf me-2"></i>PDF</a>
           </div>
         </div>
+        <button class="btn btn-outline-secondary" onclick="syncMPSiigo()"><i class="ti ti-cloud-download me-1"></i>Importar de Siigo</button>
         <button class="btn btn-primary" onclick="openModal('modal-mp')"><i class="ti ti-plus me-1"></i>Nueva MP</button>
       </div>
     </div>
@@ -2191,7 +2187,7 @@ async function fillSelectProductosSinReceta() {
     productosSinRecetaCache = all.filter(function(p){ return !p.receta_id; });
     sel.innerHTML = '<option value="">-- No ligar a producto --</option>' +
       productosSinRecetaCache.map(function(p){
-        return '<option value="'+p.id+'" data-name="'+p.siigo_name.replace(/"/g,'&quot;')+'" data-group="'+(p.siigo_group||'')+'" data-code="'+p.siigo_code+'">'+ p.siigo_code+' — '+p.siigo_name+'</option>';
+        return '<option value="'+p.id+'" data-name="'+p.siigo_name.replace(/"/g,'&quot;')+'" data-group="'+(p.siigo_group||'')+'" data-code="'+p.siigo_code+'" data-precio="'+(p.precio_venta||0)+'">'+ p.siigo_code+' — '+p.siigo_name+(p.precio_venta?' ($'+fmt(p.precio_venta)+')':'')+'</option>';
       }).join('');
   } catch(e) {
     sel.innerHTML = '<option value="">-- No ligar (error cargando) --</option>';
@@ -2204,7 +2200,9 @@ function autoFillFromProducto() {
   if(!opt || !opt.value) return;
   var name = opt.getAttribute('data-name') || '';
   var group = opt.getAttribute('data-group') || '';
+  var precio = parseFloat(opt.getAttribute('data-precio')) || 0;
   $('rec-nombre').value = name;
+  if(precio > 0) $('rec-precio').value = precio;
   // Map Siigo group to receta category
   var catMap = {'Proteinas':'Proteinas','Sopas':'Sopas','Salsas':'Salsas','Acompañamientos':'Acompañamientos','Navidad':'Navidad'};
   var cat = catMap[group] || 'General';
@@ -3254,6 +3252,18 @@ async function loadProyecciones() {
     chartTendencia.render();
   } else {
     tendEl.innerHTML = '<div class="text-center text-secondary py-4">Datos insuficientes</div>';
+  }
+}
+
+// ── SYNC MP DESDE SIIGO ─────────────────────────────────────────
+async function syncMPSiigo() {
+  notyf.success('Importando MP e Ingredientes de Siigo...');
+  var res = await api('/materias-primas/sync-siigo','POST').catch(function(e){notyf.error('Error: '+e);return null;});
+  if(res && res.ok) {
+    notyf.success(res.creados + ' nuevas, ' + res.actualizados + ' actualizadas (' + res.total + ' total)');
+    loadMP();
+    // Refresh global mpList
+    mpList = await api('/materias-primas','GET',null,true).catch(function(){return [];});
   }
 }
 

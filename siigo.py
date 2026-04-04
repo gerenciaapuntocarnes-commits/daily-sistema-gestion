@@ -101,6 +101,14 @@ def fetch_products(tipo: str = "terminado") -> list:
             continue
         if tipo == "mp" and not is_mp:
             continue
+        # Extract price from price list
+        precio_venta = 0
+        prices = p.get("prices", [])
+        if prices:
+            pl = prices[0].get("price_list", [])
+            if pl:
+                precio_venta = pl[0].get("value", 0)
+
         result.append({
             "id": p["id"],
             "code": code,
@@ -112,6 +120,7 @@ def fetch_products(tipo: str = "terminado") -> list:
             "stock_control": p.get("stock_control", False),
             "available_quantity": p.get("available_quantity", 0),
             "tax_classification": p.get("tax_classification", ""),
+            "precio_venta": precio_venta,
         })
     return result
 

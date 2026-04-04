@@ -235,11 +235,14 @@ def _create_tables():
             siigo_code     TEXT NOT NULL,
             siigo_name     TEXT NOT NULL,
             siigo_group    TEXT,
+            precio_venta   NUMERIC(12,2) DEFAULT 0,
             receta_id      INTEGER REFERENCES recetas(id) ON DELETE SET NULL,
             activo         BOOLEAN DEFAULT TRUE,
             creado_en      TIMESTAMP DEFAULT NOW()
         )
     """)
+    # Migration for existing table
+    cur.execute("ALTER TABLE producto_receta ADD COLUMN IF NOT EXISTS precio_venta NUMERIC(12,2) DEFAULT 0")
     cur.execute("""
         CREATE UNIQUE INDEX IF NOT EXISTS idx_prod_receta_siigo
         ON producto_receta(siigo_code) WHERE siigo_code IS NOT NULL
