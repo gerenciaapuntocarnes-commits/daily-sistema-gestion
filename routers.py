@@ -1585,8 +1585,8 @@ def indicadores_financieros(anio: int = 2026, mes: int = 3):
 @router.get("/finanzas/tendencia")
 def tendencia_financiera(anio: int = 2026):
     try:
-        from siigo_contabilidad import get_tendencia_mensual
-        return get_tendencia_mensual(anio)
+        from siigo_contabilidad import get_tendencia_mensual_from_invoices
+        return get_tendencia_mensual_from_invoices(anio)
     except Exception as e:
         raise HTTPException(500, f"Error: {str(e)}")
 

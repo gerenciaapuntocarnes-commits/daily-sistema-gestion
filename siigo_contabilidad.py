@@ -54,13 +54,23 @@ def classify_account(code: str):
 
 
 def sync_journals():
-    """Download ALL accounting data from Siigo: journals, vouchers, invoices, purchases, credit notes."""
+    """
+    Download accounting data from Siigo.
+    Strategy:
+    - Journals + Vouchers = real accounting entries with PUC codes (the source of truth)
+    - Invoices = revenue detail (used for sales analytics, NOT for accounting entries —
+      the journals/vouchers already contain the accounting impact of invoices)
+    - Purchases = cost detail (same — already reflected in journals)
+    """
     conn = get_conn()
     cur = conn.cursor()
+
+    # Clear old synthetic entries (INV_, PUR_, CN_ prefixed) from previous bad sync
+    cur.execute("DELETE FROM siigo_journals WHERE id LIKE 'INV_%' OR id LIKE 'PUR_%' OR id LIKE 'CN_%'")
+
     cuentas_seen = {}
     total = 0
 
-    # Helper to process any document with items that have account codes
     def process_doc(doc, source):
         nonlocal total
         jid = f"{source}_{doc['id']}"
@@ -68,140 +78,31 @@ def sync_journals():
         items = doc.get('items', [])
         if not fecha or not items:
             return
-
-        # Normalize items — some endpoints have different structures
-        normalized = []
-        for item in items:
-            if 'account' in item:
-                normalized.append(item)
-            # Invoices/purchases don't have account codes directly — skip
+        # Only items with account codes (real accounting entries)
+        normalized = [item for item in items if 'account' in item and 'code' in item.get('account', {})]
         if not normalized:
             return
-
         cur.execute("""
             INSERT INTO siigo_journals (id, name, fecha, items, synced_at)
             VALUES (%s, %s, %s, %s, NOW())
             ON CONFLICT (id) DO UPDATE SET name=%s, fecha=%s, items=%s, synced_at=NOW()
         """, (jid, doc.get('name', ''), fecha, json.dumps(normalized),
               doc.get('name', ''), fecha, json.dumps(normalized)))
-
         for item in normalized:
             code = item['account']['code']
             if code not in cuentas_seen:
                 cuentas_seen[code] = classify_account(code)
         total += 1
 
-    # 1. Journals (manual entries)
-    print("Syncing journals...")
+    # 1. Journals (manual entries, adjustments, closing entries)
     for doc in _paginate("/journals"):
         process_doc(doc, "JRN")
 
-    # 2. Vouchers (cash receipts — have account codes)
-    print("Syncing vouchers...")
+    # 2. Vouchers (cash receipts — have real account codes)
     for doc in _paginate("/vouchers"):
         process_doc(doc, "VCH")
 
-    # 3. Invoices — NO account codes, but we extract revenue data
-    # We create synthetic journal entries from invoice totals
-    print("Syncing invoices...")
-    all_invoices = _paginate("/invoices")
-    for inv in all_invoices:
-        if inv.get('annulled'):
-            continue
-        fecha = inv.get('date', '')[:10]
-        total_val = float(inv.get('total', 0))
-        if not fecha or total_val <= 0:
-            continue
-        jid = f"INV_{inv['id']}"
-        # Synthetic double-entry: Debit 1305 (Cuentas por cobrar), Credit 4135 (Ingresos)
-        # Extract tax amounts
-        tax_total = 0
-        for item in inv.get('items', []):
-            for tax in item.get('taxes', []):
-                tax_total += float(tax.get('value', 0))
-        revenue = total_val - tax_total
-        synthetic_items = [
-            {"account": {"code": "13050501", "movement": "Debit"}, "value": total_val,
-             "description": f"Factura {inv.get('name', '')}"},
-            {"account": {"code": "41354501", "movement": "Credit"}, "value": revenue,
-             "description": f"Ingreso {inv.get('name', '')}"},
-        ]
-        if tax_total > 0:
-            synthetic_items.append(
-                {"account": {"code": "24080501", "movement": "Credit"}, "value": tax_total,
-                 "description": f"Impoconsumo {inv.get('name', '')}"}
-            )
-        cur.execute("""
-            INSERT INTO siigo_journals (id, name, fecha, items, synced_at)
-            VALUES (%s, %s, %s, %s, NOW())
-            ON CONFLICT (id) DO UPDATE SET name=%s, fecha=%s, items=%s, synced_at=NOW()
-        """, (jid, inv.get('name', ''), fecha, json.dumps(synthetic_items),
-              inv.get('name', ''), fecha, json.dumps(synthetic_items)))
-        for si in synthetic_items:
-            code = si['account']['code']
-            if code not in cuentas_seen:
-                cuentas_seen[code] = classify_account(code)
-        total += 1
-
-    # 4. Purchases — synthetic entries (Debit 6xxx cost, Credit 2205 proveedores)
-    print("Syncing purchases...")
-    all_purchases = _paginate("/purchases")
-    for pur in all_purchases:
-        if pur.get('annulled'):
-            continue
-        fecha = pur.get('date', '')[:10]
-        total_val = float(pur.get('total', 0))
-        if not fecha or total_val <= 0:
-            continue
-        jid = f"PUR_{pur['id']}"
-        synthetic_items = [
-            {"account": {"code": "61350101", "movement": "Debit"}, "value": total_val,
-             "description": f"Compra {pur.get('name', '')}"},
-            {"account": {"code": "22050501", "movement": "Credit"}, "value": total_val,
-             "description": f"Proveedor {pur.get('name', '')}"},
-        ]
-        cur.execute("""
-            INSERT INTO siigo_journals (id, name, fecha, items, synced_at)
-            VALUES (%s, %s, %s, %s, NOW())
-            ON CONFLICT (id) DO UPDATE SET name=%s, fecha=%s, items=%s, synced_at=NOW()
-        """, (jid, pur.get('name', ''), fecha, json.dumps(synthetic_items),
-              pur.get('name', ''), fecha, json.dumps(synthetic_items)))
-        for si in synthetic_items:
-            code = si['account']['code']
-            if code not in cuentas_seen:
-                cuentas_seen[code] = classify_account(code)
-        total += 1
-
-    # 5. Credit notes — reduce revenue
-    print("Syncing credit notes...")
-    all_cn = _paginate("/credit-notes")
-    for cn in all_cn:
-        if cn.get('annulled'):
-            continue
-        fecha = cn.get('date', '')[:10]
-        total_val = float(cn.get('total', 0))
-        if not fecha or total_val <= 0:
-            continue
-        jid = f"CN_{cn['id']}"
-        synthetic_items = [
-            {"account": {"code": "41354501", "movement": "Debit"}, "value": total_val,
-             "description": f"Nota crédito {cn.get('name', '')}"},
-            {"account": {"code": "13050501", "movement": "Credit"}, "value": total_val,
-             "description": f"NC {cn.get('name', '')}"},
-        ]
-        cur.execute("""
-            INSERT INTO siigo_journals (id, name, fecha, items, synced_at)
-            VALUES (%s, %s, %s, %s, NOW())
-            ON CONFLICT (id) DO UPDATE SET name=%s, fecha=%s, items=%s, synced_at=NOW()
-        """, (jid, cn.get('name', ''), fecha, json.dumps(synthetic_items),
-              cn.get('name', ''), fecha, json.dumps(synthetic_items)))
-        for si in synthetic_items:
-            code = si['account']['code']
-            if code not in cuentas_seen:
-                cuentas_seen[code] = classify_account(code)
-        total += 1
-
-    # Upsert all accounts
+    # Upsert accounts
     for code, info in cuentas_seen.items():
         cur.execute("""
             INSERT INTO siigo_cuentas (codigo, clase, grupo_puc, naturaleza)
@@ -214,9 +115,8 @@ def sync_journals():
     _rebuild_saldos_mensuales(cur)
 
     # Log
-    detail = f"{len(cuentas_seen)} cuentas. INV:{len(all_invoices)} VCH:vouchers JRN:journals PUR:{len(all_purchases)} CN:{len(all_cn)}"
-    cur.execute("INSERT INTO sync_log (tipo, registros, detalle) VALUES ('full_sync', %s, %s)", (total, detail))
-
+    cur.execute("INSERT INTO sync_log (tipo, registros, detalle) VALUES ('full_sync', %s, %s)",
+                (total, f"{len(cuentas_seen)} cuentas"))
     conn.commit()
     cur.close()
     conn.close()
@@ -297,7 +197,21 @@ def get_balance_prueba(anio: int, mes: int):
 
 
 def get_estado_resultados(anio: int, mes_inicio: int = 1, mes_fin: int = 12):
-    """P&L from accumulated monthly balances (accounts 4xxx, 5xxx, 6xxx, 7xxx)."""
+    """
+    P&L combining:
+    - Revenue from Siigo invoices (accurate monthly)
+    - Costs/expenses from journal saldos (5xxx, 6xxx)
+    """
+    from siigo import fetch_invoices
+
+    # 1. Revenue from invoices
+    start = f"{anio}-{mes_inicio:02d}-01"
+    last_day = 28 if mes_fin == 2 else 30 if mes_fin in (4,6,9,11) else 31
+    end = f"{anio}-{mes_fin:02d}-{last_day}"
+    invoices = fetch_invoices(start, end)
+    total_ingresos = sum(float(inv.get('total', 0)) for inv in invoices if not inv.get('annulled'))
+
+    # 2. Costs and expenses from accounting saldos
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
@@ -306,38 +220,31 @@ def get_estado_resultados(anio: int, mes_inicio: int = 1, mes_fin: int = 12):
         FROM saldos_mensuales s
         LEFT JOIN siigo_cuentas c ON c.codigo = s.cuenta
         WHERE s.anio = %s AND s.mes BETWEEN %s AND %s
-          AND s.cuenta LIKE ANY(ARRAY['4%%','5%%','6%%','7%%'])
+          AND s.cuenta LIKE ANY(ARRAY['5%%','6%%','7%%'])
         GROUP BY s.cuenta, c.nombre, c.clase, c.grupo_puc
         ORDER BY s.cuenta
     """, (anio, mes_inicio, mes_fin))
     rows = cur.fetchall()
     cur.close(); conn.close()
 
-    ingresos = []
     costos = []
     gastos_admin = []
     gastos_ventas = []
     gastos_no_op = []
-    otros = []
 
     for r in rows:
         item = {"cuenta": r[0], "nombre": r[1] or r[0], "clase": r[2],
                 "grupo_puc": r[3], "saldo": abs(float(r[6]))}
         prefix = r[0][:2]
-        if prefix in ('41', '42'):
-            ingresos.append(item)
-        elif prefix in ('61', '62'):
+        if prefix in ('61', '62'):
             costos.append(item)
         elif prefix == '51':
             gastos_admin.append(item)
         elif prefix == '52':
             gastos_ventas.append(item)
-        elif prefix in ('53', '54'):
+        elif prefix in ('53', '54', '71'):
             gastos_no_op.append(item)
-        else:
-            otros.append(item)
 
-    total_ingresos = sum(i['saldo'] for i in ingresos)
     total_costos = sum(i['saldo'] for i in costos)
     total_gastos_admin = sum(i['saldo'] for i in gastos_admin)
     total_gastos_ventas = sum(i['saldo'] for i in gastos_ventas)
@@ -346,9 +253,13 @@ def get_estado_resultados(anio: int, mes_inicio: int = 1, mes_fin: int = 12):
     utilidad_operacional = utilidad_bruta - total_gastos_admin - total_gastos_ventas
     utilidad_neta = utilidad_operacional - total_gastos_no_op
 
+    ingresos_items = [{"cuenta": "Facturas Siigo", "nombre": "Ingresos por ventas (facturas)",
+                       "clase": "Ingresos", "grupo_puc": "Ingresos operacionales",
+                       "saldo": round(total_ingresos, 2)}]
+
     return {
         "anio": anio, "mes_inicio": mes_inicio, "mes_fin": mes_fin,
-        "ingresos": {"items": ingresos, "total": round(total_ingresos, 2)},
+        "ingresos": {"items": ingresos_items, "total": round(total_ingresos, 2)},
         "costos_ventas": {"items": costos, "total": round(total_costos, 2)},
         "utilidad_bruta": round(utilidad_bruta, 2),
         "margen_bruto_pct": round(utilidad_bruta / total_ingresos * 100, 1) if total_ingresos > 0 else 0,
@@ -363,50 +274,70 @@ def get_estado_resultados(anio: int, mes_inicio: int = 1, mes_fin: int = 12):
 
 
 def get_indicadores(anio: int, mes: int):
-    """Key financial indicators for a given month."""
+    """Key financial indicators combining invoices (revenue) + journals (balance/expenses)."""
+    from siigo import fetch_invoices
+
+    # Revenue from invoices (YTD)
+    start = f"{anio}-01-01"
+    last_day = 28 if mes == 2 else 30 if mes in (4,6,9,11) else 31
+    end = f"{anio}-{mes:02d}-{last_day}"
+    invoices = fetch_invoices(start, end)
+    ingresos = sum(float(inv.get('total', 0)) for inv in invoices if not inv.get('annulled'))
+
+    # Balance and expenses from journal saldos
     conn = get_conn()
     cur = conn.cursor()
 
-    # Get cumulative balances up to this month
+    # Cumulative balance sheet accounts (1xxx, 2xxx, 3xxx)
     cur.execute("""
-        SELECT s.cuenta, SUM(s.saldo) as saldo_acum
+        SELECT s.cuenta, SUM(s.debito) as total_d, SUM(s.credito) as total_c
         FROM saldos_mensuales s
         WHERE (s.anio < %s) OR (s.anio = %s AND s.mes <= %s)
         GROUP BY s.cuenta
     """, (anio, anio, mes))
-    saldos = {r[0]: float(r[1]) for r in cur.fetchall()}
+    raw = {r[0]: {"debito": float(r[1]), "credito": float(r[2])} for r in cur.fetchall()}
+
+    # Expenses YTD from saldos
+    cur.execute("""
+        SELECT SUM(CASE WHEN s.cuenta LIKE '6%%' THEN ABS(s.saldo) ELSE 0 END),
+               SUM(CASE WHEN s.cuenta LIKE '5%%' THEN ABS(s.saldo) ELSE 0 END)
+        FROM saldos_mensuales s
+        WHERE s.anio = %s AND s.mes <= %s
+    """, (anio, mes))
+    row = cur.fetchone()
+    costos = float(row[0] or 0)
+    gastos = float(row[1] or 0)
     cur.close(); conn.close()
 
-    # Aggregate by PUC group (first 2 digits)
-    grupos = defaultdict(float)
-    for code, saldo in saldos.items():
-        grupos[code[:2]] += saldo
-        grupos[code[:1]] += saldo  # Also class level
+    # Calculate balance from raw debits/credits
+    def balance_grupo(prefixes):
+        total = 0
+        for code, vals in raw.items():
+            if any(code.startswith(p) for p in prefixes):
+                info = classify_account(code)
+                if info['naturaleza'] == 'debit':
+                    total += vals['debito'] - vals['credito']
+                else:
+                    total += vals['credito'] - vals['debito']
+        return total
 
-    # Balance indicators
-    activo_corriente = sum(v for k, v in grupos.items() if k in ('11', '12', '13', '14'))
-    pasivo_corriente = sum(v for k, v in grupos.items() if k in ('21', '22', '23', '24', '25'))
-    activo_total = grupos.get('1', 0)
-    pasivo_total = grupos.get('2', 0)
-    patrimonio = grupos.get('3', 0)
-
-    # P&L indicators (current year only)
-    ingresos = abs(sum(v for k, v in saldos.items() if k.startswith('4')))
-    costos = abs(sum(v for k, v in saldos.items() if k.startswith('6')))
-    gastos = abs(sum(v for k, v in saldos.items() if k.startswith('5')))
+    activo_corriente = balance_grupo(['11', '12', '13', '14'])
+    activo_total = balance_grupo(['1'])
+    pasivo_corriente = balance_grupo(['21', '22', '23', '24', '25'])
+    pasivo_total = balance_grupo(['2'])
+    patrimonio = balance_grupo(['3'])
 
     utilidad_bruta = ingresos - costos
     utilidad_operacional = utilidad_bruta - gastos
-    ebitda = utilidad_operacional  # Simplified (no D&A separation available)
 
     return {
         "anio": anio, "mes": mes,
         "balance": {
             "activo_corriente": round(activo_corriente, 2),
-            "pasivo_corriente": round(abs(pasivo_corriente), 2),
+            "pasivo_corriente": round(pasivo_corriente, 2),
             "activo_total": round(activo_total, 2),
-            "pasivo_total": round(abs(pasivo_total), 2),
-            "patrimonio": round(abs(patrimonio), 2),
+            "pasivo_total": round(pasivo_total, 2),
+            "patrimonio": round(patrimonio, 2),
         },
         "resultados": {
             "ingresos": round(ingresos, 2),
@@ -414,18 +345,90 @@ def get_indicadores(anio: int, mes: int):
             "gastos": round(gastos, 2),
             "utilidad_bruta": round(utilidad_bruta, 2),
             "utilidad_operacional": round(utilidad_operacional, 2),
-            "ebitda": round(ebitda, 2),
+            "ebitda": round(utilidad_operacional, 2),
         },
         "ratios": {
-            "liquidez": round(activo_corriente / abs(pasivo_corriente), 2) if pasivo_corriente != 0 else 0,
-            "endeudamiento_pct": round(abs(pasivo_total) / activo_total * 100, 1) if activo_total > 0 else 0,
+            "liquidez": round(activo_corriente / pasivo_corriente, 2) if pasivo_corriente > 0 else 0,
+            "endeudamiento_pct": round(pasivo_total / activo_total * 100, 1) if activo_total > 0 else 0,
             "margen_bruto_pct": round(utilidad_bruta / ingresos * 100, 1) if ingresos > 0 else 0,
             "margen_operacional_pct": round(utilidad_operacional / ingresos * 100, 1) if ingresos > 0 else 0,
-            "margen_neto_pct": round((utilidad_operacional) / ingresos * 100, 1) if ingresos > 0 else 0,
-            "roe_pct": round(utilidad_operacional / abs(patrimonio) * 100, 1) if patrimonio != 0 else 0,
+            "margen_neto_pct": round(utilidad_operacional / ingresos * 100, 1) if ingresos > 0 else 0,
+            "roe_pct": round(utilidad_operacional / patrimonio * 100, 1) if patrimonio > 0 else 0,
             "roa_pct": round(utilidad_operacional / activo_total * 100, 1) if activo_total > 0 else 0,
         }
     }
+
+
+def get_tendencia_mensual_from_invoices(anio: int):
+    """Monthly P&L trend built from invoice/purchase data (more accurate monthly view)."""
+    from siigo import fetch_invoices
+    import time
+
+    meses = {}
+    for mes in range(1, 13):
+        meses[mes] = {"ingresos": 0, "costos": 0, "gastos": 0}
+
+    # Invoices = revenue
+    start = f"{anio}-01-01"
+    end = f"{anio}-12-31"
+    invoices = fetch_invoices(start, end)
+    for inv in invoices:
+        if inv.get('annulled'):
+            continue
+        fecha = inv.get('date', '')
+        if not fecha:
+            continue
+        mes = int(fecha[5:7])
+        meses[mes]["ingresos"] += float(inv.get('total', 0))
+
+    # Gastos from journals (real accounting entries for expenses - 5xxx)
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.mes, SUM(s.saldo)
+        FROM saldos_mensuales s
+        WHERE s.anio = %s AND s.cuenta LIKE '5%%'
+        GROUP BY s.mes
+    """, (anio,))
+    for row in cur.fetchall():
+        meses[row[0]]["gastos"] = abs(float(row[1]))
+
+    # Costos from saldos (6xxx) — but only if they are spread monthly
+    # If not, use purchases as proxy
+    cur.execute("""
+        SELECT s.mes, SUM(s.saldo)
+        FROM saldos_mensuales s
+        WHERE s.anio = %s AND s.cuenta LIKE '6%%'
+        GROUP BY s.mes
+    """, (anio,))
+    has_monthly_costs = False
+    for row in cur.fetchall():
+        val = abs(float(row[1]))
+        if val > 0:
+            meses[row[0]]["costos"] = val
+            has_monthly_costs = True
+
+    cur.close()
+    conn.close()
+
+    result = []
+    for mes in range(1, 13):
+        m = meses[mes]
+        if m["ingresos"] == 0 and m["costos"] == 0 and m["gastos"] == 0:
+            continue
+        utilidad_bruta = m["ingresos"] - m["costos"]
+        utilidad_neta = utilidad_bruta - m["gastos"]
+        result.append({
+            "mes": mes,
+            "ingresos": round(m["ingresos"], 2),
+            "costos": round(m["costos"], 2),
+            "gastos": round(m["gastos"], 2),
+            "utilidad_bruta": round(utilidad_bruta, 2),
+            "utilidad_neta": round(utilidad_neta, 2),
+            "margen_bruto_pct": round(utilidad_bruta / m["ingresos"] * 100, 1) if m["ingresos"] > 0 else 0,
+            "margen_neto_pct": round(utilidad_neta / m["ingresos"] * 100, 1) if m["ingresos"] > 0 else 0,
+        })
+    return {"anio": anio, "meses": result}
 
 
 def get_tendencia_mensual(anio: int):
