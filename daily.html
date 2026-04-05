@@ -267,12 +267,7 @@ tr:hover .btn-delete { opacity: 1; }
             <span class="nav-link-title">Reportes Financieros</span>
           </a>
         </li>
-        <li class="nav-item">
-          <a class="nav-link" href="#" onclick="goto('presupuestos');return false;">
-            <span class="nav-link-icon"><i class="ti ti-calculator"></i></span>
-            <span class="nav-link-title">Presupuestos</span>
-          </a>
-        </li>
+        <!-- Presupuestos ahora es tab dentro de Finanzas -->
         <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Planificación</span></li>
         <li class="nav-item">
           <a class="nav-link" href="#" onclick="goto('productos-siigo');return false;">
@@ -820,7 +815,7 @@ tr:hover .btn-delete { opacity: 1; }
   </div>
 </div>
 
-<!-- ════ REPORTES FINANCIEROS ════ -->
+<!-- ════ REPORTES FINANCIEROS (con tabs) ════ -->
 <div id="s-finanzas" class="section">
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
@@ -829,87 +824,101 @@ tr:hover .btn-delete { opacity: 1; }
         <h2 class="page-title"><i class="ti ti-report-money me-2"></i>Reportes Financieros</h2>
       </div>
       <div class="col-auto ms-auto d-flex gap-2">
-        <select class="form-select" id="fin-anio" onchange="loadFinanzas()" style="width:auto">
-          <option value="2024">2024</option><option value="2025">2025</option><option value="2026" selected>2026</option>
-        </select>
-        <select class="form-select" id="fin-mes" onchange="loadFinanzas()" style="width:auto">
-          <option value="1">Enero</option><option value="2">Febrero</option><option value="3" selected>Marzo</option>
-          <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
-          <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
-          <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
-        </select>
-        <button class="btn btn-primary" onclick="syncFinanzas()"><i class="ti ti-cloud-download me-1"></i>Sincronizar Siigo</button>
+        <button class="btn btn-outline-secondary" onclick="syncFinanzas()"><i class="ti ti-cloud-download me-1"></i>Sincronizar</button>
       </div>
     </div>
   </div>
-  <div id="fin-last-sync" class="text-secondary small mb-3"></div>
-  <!-- KPIs -->
-  <div class="row row-deck row-cards mb-3" id="fin-kpis"></div>
-  <!-- Charts -->
-  <div class="row row-cards mb-3">
-    <div class="col-lg-8">
-      <div class="card"><div class="card-header"><h3 class="card-title"><i class="ti ti-chart-area me-2"></i>Tendencia mensual</h3></div>
-        <div class="card-body" id="chart-fin-tendencia" style="min-height:300px"></div>
-      </div>
-    </div>
-    <div class="col-lg-4">
-      <div class="card"><div class="card-header"><h3 class="card-title">Indicadores</h3></div>
-        <div class="card-body" id="fin-ratios"></div>
-      </div>
-    </div>
-  </div>
-  <!-- P&L -->
-  <div class="row row-cards mb-3">
-    <div class="col-12">
-      <div class="card">
-        <div class="card-header"><h3 class="card-title"><i class="ti ti-file-text me-2"></i>Estado de Resultados (acumulado al mes seleccionado)</h3></div>
-        <div class="table-responsive"><table class="table table-vcenter card-table table-sm">
-          <thead><tr><th>Cuenta</th><th>Concepto</th><th class="num">Valor</th></tr></thead>
-          <tbody id="fin-pl-body"></tbody>
-        </table></div>
-      </div>
-    </div>
-  </div>
-  <!-- Balance de prueba -->
-  <div class="card">
-    <div class="card-header"><h3 class="card-title"><i class="ti ti-table me-2"></i>Balance de Prueba (mes seleccionado)</h3></div>
-    <div class="mb-3 p-3"><div class="input-icon"><span class="input-icon-addon"><i class="ti ti-search"></i></span><input class="form-control" placeholder="Buscar cuenta..." oninput="filterTable('fin-bp-body', this.value)"></div></div>
-    <div class="table-responsive"><table class="table table-vcenter card-table table-sm">
-      <thead><tr><th>Cuenta</th><th>Clase</th><th>Grupo PUC</th><th class="num">Débito</th><th class="num">Crédito</th><th class="num">Saldo</th></tr></thead>
-      <tbody id="fin-bp-body"></tbody>
-    </table></div>
-  </div>
-</div>
+  <div id="fin-last-sync" class="text-secondary small mb-2"></div>
+  <!-- Tabs -->
+  <ul class="nav nav-tabs mb-3">
+    <li class="nav-item"><a class="nav-link active" href="#" onclick="finTab('dashboard');return false;" id="fin-tab-dashboard">Dashboard</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="finTab('pl');return false;" id="fin-tab-pl">Estado de Resultados</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="finTab('balance');return false;" id="fin-tab-balance">Balance General</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="finTab('presupuesto');return false;" id="fin-tab-presupuesto">Presupuestos</a></li>
+  </ul>
 
-<!-- ════ PRESUPUESTOS ════ -->
-<div id="s-presupuestos" class="section">
-  <div class="page-header d-print-none mb-3">
-    <div class="row align-items-center">
-      <div class="col-auto">
-        <div class="page-pretitle">Finanzas Siigo</div>
-        <h2 class="page-title"><i class="ti ti-calculator me-2"></i>Presupuestos</h2>
-      </div>
-      <div class="col-auto ms-auto d-flex gap-2">
-        <select class="form-select" id="ppto-anio" onchange="loadPresupuestos()" style="width:auto">
-          <option value="2025">2025</option><option value="2026" selected>2026</option>
-        </select>
-        <select class="form-select" id="ppto-mes" onchange="loadPresupuestos()" style="width:auto">
-          <option value="1">Enero</option><option value="2">Febrero</option><option value="3" selected>Marzo</option>
-          <option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option>
-          <option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option>
-          <option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option>
-        </select>
-        <button class="btn btn-primary" onclick="openModal('modal-ppto')"><i class="ti ti-plus me-1"></i>Agregar presupuesto</button>
-      </div>
+  <!-- ═══ TAB: DASHBOARD ═══ -->
+  <div id="fin-panel-dashboard">
+    <div class="row g-2 mb-3">
+      <div class="col-auto"><select class="form-select form-select-sm" id="fin-anio" onchange="loadFinDashboard()" style="width:auto"><option value="2024">2024</option><option value="2025">2025</option><option value="2026" selected>2026</option></select></div>
+      <div class="col-auto"><span class="form-text">Acumulado hasta:</span></div>
+      <div class="col-auto"><select class="form-select form-select-sm" id="fin-mes" onchange="loadFinDashboard()" style="width:auto"><option value="1">Ene</option><option value="2">Feb</option><option value="3" selected>Mar</option><option value="4">Abr</option><option value="5">May</option><option value="6">Jun</option><option value="7">Jul</option><option value="8">Ago</option><option value="9">Sep</option><option value="10">Oct</option><option value="11">Nov</option><option value="12">Dic</option></select></div>
+    </div>
+    <div class="row row-deck row-cards mb-3" id="fin-kpis"></div>
+    <div class="row row-cards mb-3">
+      <div class="col-lg-8"><div class="card"><div class="card-header"><h3 class="card-title"><i class="ti ti-chart-area me-2"></i>Tendencia mensual</h3></div><div class="card-body" id="chart-fin-tendencia" style="min-height:300px"></div></div></div>
+      <div class="col-lg-4"><div class="card"><div class="card-header"><h3 class="card-title">Indicadores</h3></div><div class="card-body" id="fin-ratios"></div></div></div>
     </div>
   </div>
-  <div class="row row-cards mb-3" id="ppto-alertas"></div>
-  <div class="card">
-    <div class="card-header"><h3 class="card-title">Presupuesto vs Real</h3></div>
-    <div class="table-responsive"><table class="table table-vcenter card-table">
-      <thead><tr><th>Cuenta</th><th>Concepto</th><th>Clase</th><th class="num">Presupuesto</th><th class="num">Real</th><th class="num">Desviación</th><th class="num">%</th><th>Estado</th></tr></thead>
-      <tbody id="ppto-body"></tbody>
-    </table></div>
+
+  <!-- ═══ TAB: ESTADO DE RESULTADOS ═══ -->
+  <div id="fin-panel-pl" style="display:none">
+    <div class="row g-2 mb-3 align-items-end">
+      <div class="col-auto"><label class="form-label small">Año</label><select class="form-select form-select-sm" id="pl-anio" style="width:auto"><option value="2024">2024</option><option value="2025">2025</option><option value="2026" selected>2026</option></select></div>
+      <div class="col-auto"><label class="form-label small">Desde</label><select class="form-select form-select-sm" id="pl-mes-ini" style="width:auto"><option value="1" selected>Enero</option><option value="2">Febrero</option><option value="3">Marzo</option><option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option><option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option><option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option></select></div>
+      <div class="col-auto"><label class="form-label small">Hasta</label><select class="form-select form-select-sm" id="pl-mes-fin" style="width:auto"><option value="1">Enero</option><option value="2">Febrero</option><option value="3" selected>Marzo</option><option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option><option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option><option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option></select></div>
+      <div class="col-auto"><button class="btn btn-sm btn-primary" onclick="loadFinPL()"><i class="ti ti-refresh me-1"></i>Cargar</button></div>
+      <div class="col-auto"><button class="btn btn-sm btn-outline-secondary" id="btn-comparar-pl" onclick="toggleComparativoPL()"><i class="ti ti-arrows-exchange me-1"></i>Comparar con...</button></div>
+      <div class="col-auto"><button class="btn btn-sm btn-outline-success" onclick="downloadExcelPL()"><i class="ti ti-file-spreadsheet me-1"></i>Excel</button></div>
+    </div>
+    <!-- Comparativo selectors (hidden by default) -->
+    <div id="pl-comparativo-row" class="row g-2 mb-3 align-items-end" style="display:none">
+      <div class="col-auto"><span class="badge bg-blue-lt">Comparar vs</span></div>
+      <div class="col-auto"><select class="form-select form-select-sm" id="pl2-anio" style="width:auto"><option value="2024">2024</option><option value="2025" selected>2025</option><option value="2026">2026</option></select></div>
+      <div class="col-auto"><select class="form-select form-select-sm" id="pl2-mes-ini" style="width:auto"><option value="1" selected>Enero</option><option value="2">Febrero</option><option value="3">Marzo</option><option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option><option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option><option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option></select></div>
+      <div class="col-auto"><select class="form-select form-select-sm" id="pl2-mes-fin" style="width:auto"><option value="1">Enero</option><option value="2">Febrero</option><option value="3" selected>Marzo</option><option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option><option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option><option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option></select></div>
+      <div class="col-auto"><button class="btn btn-sm btn-primary" onclick="loadFinComparativo()"><i class="ti ti-arrows-exchange me-1"></i>Comparar</button></div>
+    </div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title" id="pl-title">Estado de Resultados</h3></div>
+      <div class="table-responsive"><table class="table table-vcenter card-table table-sm">
+        <thead id="pl-thead"><tr><th>Concepto</th><th class="num">Valor</th></tr></thead>
+        <tbody id="fin-pl-body"></tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <!-- ═══ TAB: BALANCE GENERAL ═══ -->
+  <div id="fin-panel-balance" style="display:none">
+    <div class="row g-2 mb-3 align-items-end">
+      <div class="col-auto"><label class="form-label small">Año</label><select class="form-select form-select-sm" id="bg-anio" style="width:auto"><option value="2024">2024</option><option value="2025">2025</option><option value="2026" selected>2026</option></select></div>
+      <div class="col-auto"><label class="form-label small">Corte a</label><select class="form-select form-select-sm" id="bg-mes" style="width:auto"><option value="1">Enero</option><option value="2">Febrero</option><option value="3" selected>Marzo</option><option value="4">Abril</option><option value="5">Mayo</option><option value="6">Junio</option><option value="7">Julio</option><option value="8">Agosto</option><option value="9">Septiembre</option><option value="10">Octubre</option><option value="11">Noviembre</option><option value="12">Diciembre</option></select></div>
+      <div class="col-auto"><button class="btn btn-sm btn-primary" onclick="loadFinBalance()"><i class="ti ti-refresh me-1"></i>Cargar</button></div>
+      <div class="col-auto"><button class="btn btn-sm btn-outline-success" onclick="downloadExcelBG()"><i class="ti ti-file-spreadsheet me-1"></i>Excel</button></div>
+    </div>
+    <div class="row row-cards" style="align-items:start">
+      <div class="col-lg-6">
+        <div class="card mb-3"><div class="card-header bg-primary-lt"><h3 class="card-title">ACTIVOS</h3></div>
+          <div class="table-responsive"><table class="table table-sm card-table"><tbody id="bg-activos"></tbody></table></div>
+        </div>
+      </div>
+      <div class="col-lg-6">
+        <div class="card mb-3"><div class="card-header bg-danger-lt"><h3 class="card-title">PASIVOS</h3></div>
+          <div class="table-responsive"><table class="table table-sm card-table"><tbody id="bg-pasivos"></tbody></table></div>
+        </div>
+        <div class="card"><div class="card-header bg-success-lt"><h3 class="card-title">PATRIMONIO</h3></div>
+          <div class="table-responsive"><table class="table table-sm card-table"><tbody id="bg-patrimonio"></tbody></table></div>
+        </div>
+      </div>
+    </div>
+    <div class="card mt-3"><div class="card-body py-2 d-flex justify-content-between" id="bg-cuadre"></div></div>
+  </div>
+
+  <!-- ═══ TAB: PRESUPUESTOS ═══ -->
+  <div id="fin-panel-presupuesto" style="display:none">
+    <div class="row g-2 mb-3 align-items-end">
+      <div class="col-auto"><select class="form-select form-select-sm" id="ppto-anio" onchange="loadPresupuestos()" style="width:auto"><option value="2025">2025</option><option value="2026" selected>2026</option></select></div>
+      <div class="col-auto"><select class="form-select form-select-sm" id="ppto-mes" onchange="loadPresupuestos()" style="width:auto"><option value="1">Ene</option><option value="2">Feb</option><option value="3" selected>Mar</option><option value="4">Abr</option><option value="5">May</option><option value="6">Jun</option><option value="7">Jul</option><option value="8">Ago</option><option value="9">Sep</option><option value="10">Oct</option><option value="11">Nov</option><option value="12">Dic</option></select></div>
+      <div class="col-auto"><button class="btn btn-sm btn-primary" onclick="openModal('modal-ppto')"><i class="ti ti-plus me-1"></i>Agregar presupuesto</button></div>
+    </div>
+    <div class="row row-cards mb-3" id="ppto-alertas"></div>
+    <div class="card">
+      <div class="card-header"><h3 class="card-title">Presupuesto vs Real</h3></div>
+      <div class="table-responsive"><table class="table table-vcenter card-table">
+        <thead><tr><th>Cuenta</th><th>Concepto</th><th>Clase</th><th class="num">Presupuesto</th><th class="num">Real</th><th class="num">Desviación</th><th class="num">%</th><th>Estado</th></tr></thead>
+        <tbody id="ppto-body"></tbody>
+      </table></div>
+    </div>
   </div>
 </div>
 
@@ -1977,7 +1986,6 @@ function goto(sec) {
     invima: loadInvima,
     proyecciones: loadProyecciones,
     finanzas: loadFinanzas,
-    presupuestos: loadPresupuestos,
     siigo: loadSiigoVentas,
     'productos-siigo': loadProductosSiigo,
     reglas: loadReglas,
@@ -3455,32 +3463,43 @@ async function loadProyecciones() {
   }
 }
 
-// ── FINANZAS ────────────────────────────────────────────────────
+// ── FINANZAS (tabbed) ────────────────────────────────────────────
 let chartFinTendencia = null;
+let currentFinTab = 'dashboard';
+
+function finTab(tab) {
+  currentFinTab = tab;
+  ['dashboard','pl','balance','presupuesto'].forEach(function(t){
+    $('fin-panel-'+t).style.display = t===tab ? '' : 'none';
+    $('fin-tab-'+t).classList.toggle('active', t===tab);
+  });
+  if(tab==='dashboard') loadFinDashboard();
+  if(tab==='pl') loadFinPL();
+  if(tab==='balance') loadFinBalance();
+  if(tab==='presupuesto') loadPresupuestos();
+}
 
 async function syncFinanzas() {
   notyf.success('Sincronizando contabilidad desde Siigo...');
   var res = await api('/finanzas/sync','POST').catch(function(e){notyf.error('Error: '+e);return null;});
   if(res && res.ok) {
     notyf.success(res.registros+' asientos, '+res.cuentas+' cuentas sincronizadas');
-    loadFinanzas();
+    loadFinDashboard();
   }
 }
 
 async function loadFinanzas() {
+  // Sync log
+  var logs = await api('/finanzas/sync-log','GET',null,true).catch(function(){return [];});
+  $('fin-last-sync').innerHTML = logs.length ? '<i class="ti ti-clock me-1"></i>Última sync: '+logs[0].fecha+' ('+logs[0].registros+' reg)' : '<span class="text-warning"><i class="ti ti-alert-triangle me-1"></i>Sin sincronizar</span>';
+  finTab(currentFinTab);
+}
+
+async function loadFinDashboard() {
   var anio = parseInt($('fin-anio').value);
   var mes = parseInt($('fin-mes').value);
-
-  // Last sync
-  var logs = await api('/finanzas/sync-log','GET',null,true).catch(function(){return [];});
-  $('fin-last-sync').innerHTML = logs.length ? '<i class="ti ti-clock me-1"></i>Última sincronización: '+logs[0].fecha+' ('+logs[0].registros+' registros)' : '<span class="text-warning"><i class="ti ti-alert-triangle me-1"></i>Sin sincronizar — haz click en "Sincronizar Siigo"</span>';
-
-  // Indicadores
   var ind = await api('/finanzas/indicadores?anio='+anio+'&mes='+mes,'GET',null,true).catch(function(){return null;});
-  if(!ind) {
-    $('fin-kpis').innerHTML = '<div class="col-12"><div class="card"><div class="card-body text-center text-warning py-3"><i class="ti ti-alert-triangle me-2"></i>Sin datos. Sincroniza primero.</div></div></div>';
-    return;
-  }
+  if(!ind) { $('fin-kpis').innerHTML = '<div class="col-12"><div class="card"><div class="card-body text-center text-warning py-3">Sin datos. Sincroniza primero.</div></div></div>'; return; }
   var r = ind.resultados; var rt = ind.ratios; var b = ind.balance;
   $('fin-kpis').innerHTML =
     '<div class="col-sm-6 col-lg-2"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val">$'+fmt(r.ingresos)+'</div><div class="text-secondary small mt-1">Ingresos</div></div></div></div>' +
@@ -3489,67 +3508,26 @@ async function loadFinanzas() {
     '<div class="col-sm-6 col-lg-2"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val">'+fmtD(rt.margen_bruto_pct,1)+'%</div><div class="text-secondary small mt-1">Margen bruto</div></div></div></div>' +
     '<div class="col-sm-6 col-lg-2"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val">'+fmtD(rt.liquidez,2)+'</div><div class="text-secondary small mt-1">Liquidez</div></div></div></div>' +
     '<div class="col-sm-6 col-lg-2"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val">'+fmtD(rt.endeudamiento_pct,1)+'%</div><div class="text-secondary small mt-1">Endeudamiento</div></div></div></div>';
-
-  // Ratios panel
   $('fin-ratios').innerHTML =
     '<div class="mb-3"><div class="d-flex justify-content-between"><span class="small">Margen bruto</span><strong>'+fmtD(rt.margen_bruto_pct,1)+'%</strong></div><div class="stock-bar"><div class="stock-fill" style="width:'+Math.min(100,Math.max(0,rt.margen_bruto_pct))+'%;background:#2fb344"></div></div></div>' +
     '<div class="mb-3"><div class="d-flex justify-content-between"><span class="small">Margen operacional</span><strong>'+fmtD(rt.margen_operacional_pct,1)+'%</strong></div><div class="stock-bar"><div class="stock-fill" style="width:'+Math.min(100,Math.max(0,rt.margen_operacional_pct+50))+'%;background:'+(rt.margen_operacional_pct>=0?'#2fb344':'#d63939')+'"></div></div></div>' +
     '<div class="mb-3"><div class="d-flex justify-content-between"><span class="small">Margen neto</span><strong>'+fmtD(rt.margen_neto_pct,1)+'%</strong></div><div class="stock-bar"><div class="stock-fill" style="width:'+Math.min(100,Math.max(0,rt.margen_neto_pct+50))+'%;background:'+(rt.margen_neto_pct>=0?'#2fb344':'#d63939')+'"></div></div></div>' +
-    '<div class="mb-3"><div class="d-flex justify-content-between"><span class="small">ROE</span><strong>'+fmtD(rt.roe_pct,1)+'%</strong></div></div>' +
-    '<div class="mb-3"><div class="d-flex justify-content-between"><span class="small">ROA</span><strong>'+fmtD(rt.roa_pct,1)+'%</strong></div></div>' +
-    '<hr>' +
-    '<div class="mb-2"><div class="d-flex justify-content-between"><span class="small">Activos totales</span><strong>$'+fmt(b.activo_total)+'</strong></div></div>' +
-    '<div class="mb-2"><div class="d-flex justify-content-between"><span class="small">Pasivos totales</span><strong>$'+fmt(b.pasivo_total)+'</strong></div></div>' +
+    '<div class="mb-2"><div class="d-flex justify-content-between"><span class="small">ROE</span><strong>'+fmtD(rt.roe_pct,1)+'%</strong></div></div>' +
+    '<div class="mb-2"><div class="d-flex justify-content-between"><span class="small">ROA</span><strong>'+fmtD(rt.roa_pct,1)+'%</strong></div></div>' +
+    '<hr><div class="mb-2"><div class="d-flex justify-content-between"><span class="small">Activos</span><strong>$'+fmt(b.activo_total)+'</strong></div></div>' +
+    '<div class="mb-2"><div class="d-flex justify-content-between"><span class="small">Pasivos</span><strong>$'+fmt(b.pasivo_total)+'</strong></div></div>' +
     '<div class="mb-2"><div class="d-flex justify-content-between"><span class="small">Patrimonio</span><strong>$'+fmt(b.patrimonio)+'</strong></div></div>';
-
-  // P&L
-  var pl = await api('/finanzas/estado-resultados?anio='+anio+'&mes_inicio=1&mes_fin='+mes,'GET',null,true).catch(function(){return null;});
-  if(pl) {
-    var plRows = '';
-    plRows += '<tr class="table-success"><td colspan="2"><strong>INGRESOS</strong></td><td class="num"><strong>$'+fmt(pl.ingresos.total)+'</strong></td></tr>';
-    pl.ingresos.items.forEach(function(i){plRows += '<tr><td style="padding-left:24px">'+i.cuenta+'</td><td>'+i.nombre+'</td><td class="num">$'+fmt(i.saldo)+'</td></tr>';});
-    plRows += '<tr class="table-danger"><td colspan="2"><strong>(-) COSTO DE VENTAS</strong></td><td class="num"><strong>$'+fmt(pl.costos_ventas.total)+'</strong></td></tr>';
-    pl.costos_ventas.items.forEach(function(i){plRows += '<tr><td style="padding-left:24px">'+i.cuenta+'</td><td>'+i.nombre+'</td><td class="num">$'+fmt(i.saldo)+'</td></tr>';});
-    plRows += '<tr style="background:var(--tblr-bg-surface-secondary)"><td colspan="2"><strong>= UTILIDAD BRUTA ('+fmtD(pl.margen_bruto_pct,1)+'%)</strong></td><td class="num"><strong class="'+(pl.utilidad_bruta>=0?'pos':'neg')+'">$'+fmt(pl.utilidad_bruta)+'</strong></td></tr>';
-    plRows += '<tr class="table-warning"><td colspan="2"><strong>(-) GASTOS ADMINISTRACIÓN</strong></td><td class="num"><strong>$'+fmt(pl.gastos_admin.total)+'</strong></td></tr>';
-    pl.gastos_admin.items.forEach(function(i){plRows += '<tr><td style="padding-left:24px">'+i.cuenta+'</td><td>'+i.nombre+'</td><td class="num">$'+fmt(i.saldo)+'</td></tr>';});
-    plRows += '<tr class="table-warning"><td colspan="2"><strong>(-) GASTOS DE VENTAS</strong></td><td class="num"><strong>$'+fmt(pl.gastos_ventas.total)+'</strong></td></tr>';
-    pl.gastos_ventas.items.forEach(function(i){plRows += '<tr><td style="padding-left:24px">'+i.cuenta+'</td><td>'+i.nombre+'</td><td class="num">$'+fmt(i.saldo)+'</td></tr>';});
-    plRows += '<tr style="background:var(--tblr-bg-surface-secondary)"><td colspan="2"><strong>= UTILIDAD OPERACIONAL ('+fmtD(pl.margen_operacional_pct,1)+'%)</strong></td><td class="num"><strong class="'+(pl.utilidad_operacional>=0?'pos':'neg')+'">$'+fmt(pl.utilidad_operacional)+'</strong></td></tr>';
-    if(pl.gastos_no_operacionales.total > 0) {
-      plRows += '<tr><td colspan="2"><strong>(-) GASTOS NO OPERACIONALES</strong></td><td class="num"><strong>$'+fmt(pl.gastos_no_operacionales.total)+'</strong></td></tr>';
-    }
-    plRows += '<tr style="background:var(--tblr-primary-lt);font-size:15px"><td colspan="2"><strong>= UTILIDAD NETA ('+fmtD(pl.margen_neto_pct,1)+'%)</strong></td><td class="num"><strong class="'+(pl.utilidad_neta>=0?'pos':'neg')+'">$'+fmt(pl.utilidad_neta)+'</strong></td></tr>';
-    $('fin-pl-body').innerHTML = plRows;
-  }
-
-  // Balance de prueba
-  var bp = await api('/finanzas/balance-prueba?anio='+anio+'&mes='+mes,'GET',null,true).catch(function(){return null;});
-  if(bp && bp.cuentas.length) {
-    $('fin-bp-body').innerHTML = bp.cuentas.map(function(c,i){
-      return '<tr class="animate-row" style="animation-delay:'+i*0.01+'s"><td><span class="badge bg-blue-lt" style="font-family:monospace">'+c.cuenta+'</span></td><td>'+c.clase+'</td><td style="font-size:12px">'+c.grupo_puc+'</td><td class="num">$'+fmt(c.debito)+'</td><td class="num">$'+fmt(c.credito)+'</td><td class="num fw-bold '+(c.saldo>=0?'':'neg')+'">$'+fmt(c.saldo)+'</td></tr>';
-    }).join('') + '<tr style="font-weight:700;background:var(--tblr-bg-surface-secondary)"><td colspan="3">TOTALES</td><td class="num">$'+fmt(bp.total_debito)+'</td><td class="num">$'+fmt(bp.total_credito)+'</td><td></td></tr>';
-  } else {
-    $('fin-bp-body').innerHTML = '<tr><td colspan="6" class="text-center text-secondary py-3">Sin datos</td></tr>';
-  }
-
   // Tendencia chart
   var tend = await api('/finanzas/tendencia?anio='+anio,'GET',null,true).catch(function(){return null;});
   if(tend && tend.meses.length > 1) {
-    var mNames = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
-    var themeMode = document.documentElement.getAttribute('data-bs-theme') || 'light';
+    var mN = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    var tm = document.documentElement.getAttribute('data-bs-theme') || 'light';
     if(chartFinTendencia) chartFinTendencia.destroy();
     chartFinTendencia = new ApexCharts($('chart-fin-tendencia'), {
-      chart:{type:'area',height:280,toolbar:{show:false},theme:{mode:themeMode},background:'transparent'},
-      series:[
-        {name:'Ingresos',data:tend.meses.map(function(m){return m.ingresos;})},
-        {name:'Costos',data:tend.meses.map(function(m){return m.costos;})},
-        {name:'Gastos',data:tend.meses.map(function(m){return m.gastos;})},
-        {name:'Utilidad neta',data:tend.meses.map(function(m){return m.utilidad_neta;})}
-      ],
-      xaxis:{categories:tend.meses.map(function(m){return mNames[m.mes];})},
-      stroke:{curve:'smooth',width:2},
-      colors:['#2fb344','#d63939','#f76707','#206bc4'],
+      chart:{type:'area',height:280,toolbar:{show:false},theme:{mode:tm},background:'transparent'},
+      series:[{name:'Ingresos',data:tend.meses.map(function(m){return m.ingresos;})},{name:'Costos',data:tend.meses.map(function(m){return m.costos;})},{name:'Gastos',data:tend.meses.map(function(m){return m.gastos;})},{name:'Utilidad neta',data:tend.meses.map(function(m){return m.utilidad_neta;})}],
+      xaxis:{categories:tend.meses.map(function(m){return mN[m.mes];})},
+      stroke:{curve:'smooth',width:2}, colors:['#2fb344','#d63939','#f76707','#206bc4'],
       fill:{type:'gradient',gradient:{opacityFrom:.4,opacityTo:.05}},
       grid:{borderColor:'var(--tblr-border-color)'},
       yaxis:{labels:{formatter:function(v){return '$'+fmt(v);}}}
@@ -3558,74 +3536,145 @@ async function loadFinanzas() {
   }
 }
 
-// ── PRESUPUESTOS ────────────────────────────────────────────────
-async function loadPresupuestos() {
-  var anio = parseInt($('ppto-anio').value);
-  var mes = parseInt($('ppto-mes').value);
-  showSkeleton('ppto-body', 8);
+// ── P&L Tab ──
+function renderPLTable(pl, colTitle) {
+  var h = '';
+  h += '<tr class="table-success"><td><strong>INGRESOS</strong></td><td class="num"><strong>$'+fmt(pl.ingresos.total)+'</strong></td></tr>';
+  pl.ingresos.items.forEach(function(i){h+='<tr><td style="padding-left:24px;font-size:13px">'+i.nombre+'</td><td class="num">$'+fmt(i.saldo)+'</td></tr>';});
+  h += '<tr class="table-danger"><td><strong>(-) COSTO DE VENTAS</strong></td><td class="num"><strong>$'+fmt(pl.costos_ventas.total)+'</strong></td></tr>';
+  pl.costos_ventas.items.slice(0,15).forEach(function(i){h+='<tr><td style="padding-left:24px;font-size:13px">'+i.nombre+'</td><td class="num">$'+fmt(i.saldo)+'</td></tr>';});
+  if(pl.costos_ventas.items.length>15) h+='<tr><td style="padding-left:24px;font-size:12px" class="text-secondary">... +'+(pl.costos_ventas.items.length-15)+' más</td><td></td></tr>';
+  h += '<tr style="background:var(--tblr-bg-surface-secondary)"><td><strong>= UTILIDAD BRUTA ('+fmtD(pl.margen_bruto_pct,1)+'%)</strong></td><td class="num"><strong class="'+(pl.utilidad_bruta>=0?'pos':'neg')+'">$'+fmt(pl.utilidad_bruta)+'</strong></td></tr>';
+  h += '<tr class="table-warning"><td><strong>(-) GASTOS ADMINISTRACIÓN</strong></td><td class="num"><strong>$'+fmt(pl.gastos_admin.total)+'</strong></td></tr>';
+  pl.gastos_admin.items.slice(0,10).forEach(function(i){h+='<tr><td style="padding-left:24px;font-size:13px">'+i.nombre+'</td><td class="num">$'+fmt(i.saldo)+'</td></tr>';});
+  h += '<tr class="table-warning"><td><strong>(-) GASTOS DE VENTAS</strong></td><td class="num"><strong>$'+fmt(pl.gastos_ventas.total)+'</strong></td></tr>';
+  pl.gastos_ventas.items.slice(0,10).forEach(function(i){h+='<tr><td style="padding-left:24px;font-size:13px">'+i.nombre+'</td><td class="num">$'+fmt(i.saldo)+'</td></tr>';});
+  h += '<tr style="background:var(--tblr-bg-surface-secondary)"><td><strong>= UTILIDAD OPERACIONAL ('+fmtD(pl.margen_operacional_pct,1)+'%)</strong></td><td class="num"><strong class="'+(pl.utilidad_operacional>=0?'pos':'neg')+'">$'+fmt(pl.utilidad_operacional)+'</strong></td></tr>';
+  if(pl.gastos_no_operacionales.total>0) h+='<tr><td><strong>(-) GASTOS NO OPERACIONALES</strong></td><td class="num"><strong>$'+fmt(pl.gastos_no_operacionales.total)+'</strong></td></tr>';
+  h += '<tr style="background:var(--tblr-primary-lt);font-size:15px"><td><strong>= UTILIDAD NETA ('+fmtD(pl.margen_neto_pct,1)+'%)</strong></td><td class="num"><strong class="'+(pl.utilidad_neta>=0?'pos':'neg')+'">$'+fmt(pl.utilidad_neta)+'</strong></td></tr>';
+  return h;
+}
 
-  var data = await api('/finanzas/presupuesto-vs-real?anio='+anio+'&mes='+mes,'GET',null,true).catch(function(){return {items:[]};});
+async function loadFinPL() {
+  var anio = parseInt($('pl-anio').value); var mi = parseInt($('pl-mes-ini').value); var mf = parseInt($('pl-mes-fin').value);
+  var mN = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  $('pl-title').textContent = 'Estado de Resultados — '+mN[mi]+' a '+mN[mf]+' '+anio;
+  $('pl-thead').innerHTML = '<tr><th>Concepto</th><th class="num">'+mN[mi]+'-'+mN[mf]+' '+anio+'</th></tr>';
+  showSkeleton('fin-pl-body', 2, 10);
+  var pl = await api('/finanzas/estado-resultados?anio='+anio+'&mes_inicio='+mi+'&mes_fin='+mf,'GET',null,true).catch(function(){return null;});
+  if(pl) { $('fin-pl-body').innerHTML = renderPLTable(pl); }
+  else { $('fin-pl-body').innerHTML = '<tr><td colspan="2" class="text-center text-secondary py-3">Error cargando datos</td></tr>'; }
+}
 
-  // Alertas
-  var alertas = data.items.filter(function(i){return i.alerta;});
-  if(alertas.length) {
-    $('ppto-alertas').innerHTML = alertas.map(function(a){
-      var cls = a.alerta === 'sobre_presupuesto' ? 'border-danger' : 'border-warning';
-      var icon = a.alerta === 'sobre_presupuesto' ? 'ti-arrow-up text-danger' : 'ti-arrow-down text-warning';
-      var msg = a.alerta === 'sobre_presupuesto' ? 'Sobre presupuesto' : 'Bajo presupuesto';
-      return '<div class="col-md-4"><div class="card '+cls+'" style="border-left-width:3px"><div class="card-body py-2">' +
-        '<div class="d-flex align-items-center gap-2"><i class="ti '+icon+'"></i><strong>'+a.nombre+'</strong></div>' +
-        '<div class="small">'+msg+': <strong>'+fmtD(a.desviacion_pct,1)+'%</strong> ($'+fmt(a.desviacion)+')</div>' +
-      '</div></div></div>';
-    }).join('');
-  } else {
-    $('ppto-alertas').innerHTML = '';
+function toggleComparativoPL() {
+  var row = $('pl-comparativo-row');
+  row.style.display = row.style.display === 'none' ? '' : 'none';
+}
+
+async function loadFinComparativo() {
+  var a1=parseInt($('pl-anio').value),m1i=parseInt($('pl-mes-ini').value),m1f=parseInt($('pl-mes-fin').value);
+  var a2=parseInt($('pl2-anio').value),m2i=parseInt($('pl2-mes-ini').value),m2f=parseInt($('pl2-mes-fin').value);
+  var mN=['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  var col1=mN[m1i]+'-'+mN[m1f]+' '+a1;
+  var col2=mN[m2i]+'-'+mN[m2f]+' '+a2;
+  $('pl-title').textContent = 'Estado de Resultados — Comparativo';
+  $('pl-thead').innerHTML = '<tr><th>Concepto</th><th class="num">'+col1+'</th><th class="num">'+col2+'</th><th class="num">Var $</th><th class="num">Var %</th></tr>';
+  showSkeleton('fin-pl-body', 5, 10);
+  var data = await api('/finanzas/comparativo?anio1='+a1+'&m1i='+m1i+'&m1f='+m1f+'&anio2='+a2+'&m2i='+m2i+'&m2f='+m2f,'GET',null,true).catch(function(){return null;});
+  if(!data) { $('fin-pl-body').innerHTML = '<tr><td colspan="5" class="text-center text-secondary py-3">Error</td></tr>'; return; }
+  var p1=data.periodo1.data, p2=data.periodo2.data, v=data.variaciones;
+  function compRow(label, v1, v2, vr, cls) {
+    var varCls = vr.valor>=0?'pos':'neg';
+    return '<tr class="'+(cls||'')+'"><td><strong>'+label+'</strong></td><td class="num">$'+fmt(v1)+'</td><td class="num">$'+fmt(v2)+'</td><td class="num '+varCls+'">$'+fmt(vr.valor)+'</td><td class="num '+varCls+'">'+fmtD(vr.pct,1)+'%</td></tr>';
   }
+  var h = '';
+  h += compRow('INGRESOS NETOS', p1.ingresos.total, p2.ingresos.total, v.ingresos, 'table-success');
+  h += compRow('(-) COSTO DE VENTAS', p1.costos_ventas.total, p2.costos_ventas.total, v.costos, 'table-danger');
+  h += compRow('= UTILIDAD BRUTA', p1.utilidad_bruta, p2.utilidad_bruta, v.utilidad_bruta, '');
+  h += compRow('(-) GASTOS ADMIN', p1.gastos_admin.total, p2.gastos_admin.total, v.gastos_admin, 'table-warning');
+  h += compRow('(-) GASTOS VENTAS', p1.gastos_ventas.total, p2.gastos_ventas.total, v.gastos_ventas, 'table-warning');
+  h += compRow('= UTILIDAD OPERACIONAL', p1.utilidad_operacional, p2.utilidad_operacional, v.utilidad_operacional, '');
+  h += '<tr style="background:var(--tblr-primary-lt);font-size:15px">'+compRow('= UTILIDAD NETA', p1.utilidad_neta, p2.utilidad_neta, v.utilidad_neta, '').replace('<tr class="">','').replace('</tr>','')+'</tr>';
+  $('fin-pl-body').innerHTML = h;
+}
 
-  // Table
+function downloadExcelPL() {
+  var a=parseInt($('pl-anio').value),mi=parseInt($('pl-mes-ini').value),mf=parseInt($('pl-mes-fin').value);
+  window.open(API+'/api/finanzas/export-excel?anio='+a+'&mes_inicio='+mi+'&mes_fin='+mf, '_blank');
+}
+function downloadExcelBG() {
+  var a=parseInt($('bg-anio').value),m=parseInt($('bg-mes').value);
+  window.open(API+'/api/finanzas/export-excel?anio='+a+'&mes_inicio=1&mes_fin='+m, '_blank');
+}
+
+// ── Balance General Tab ──
+async function loadFinBalance() {
+  var anio=parseInt($('bg-anio').value), mes=parseInt($('bg-mes').value);
+  var mN=['','Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  showSkeleton('bg-activos',2,5); showSkeleton('bg-pasivos',2,5); showSkeleton('bg-patrimonio',2,3);
+  var bg = await api('/finanzas/balance-general?anio='+anio+'&mes='+mes,'GET',null,true).catch(function(){return null;});
+  if(!bg) { $('bg-activos').innerHTML='<tr><td class="text-center text-secondary py-3">Error</td></tr>'; return; }
+  function bgSection(items, total, label) {
+    var h = '';
+    items.forEach(function(i,idx){h+='<tr class="animate-row" style="animation-delay:'+idx*0.02+'s"><td style="padding-left:16px;font-size:13px">'+i.nombre+'</td><td class="num">$'+fmt(i.saldo)+'</td></tr>';});
+    h += '<tr style="background:var(--tblr-bg-surface-secondary);font-weight:700"><td>'+label+'</td><td class="num">$'+fmt(total)+'</td></tr>';
+    return h;
+  }
+  $('bg-activos').innerHTML =
+    '<tr><td colspan="2" class="fw-bold small text-secondary">CORRIENTE</td></tr>' +
+    bgSection(bg.activo_corriente.items, bg.activo_corriente.total, 'Total Corriente') +
+    '<tr><td colspan="2" class="fw-bold small text-secondary">NO CORRIENTE</td></tr>' +
+    bgSection(bg.activo_no_corriente.items, bg.activo_no_corriente.total, 'Total No Corriente') +
+    '<tr style="background:var(--tblr-primary-lt);font-weight:700;font-size:15px"><td>TOTAL ACTIVO</td><td class="num">$'+fmt(bg.total_activo)+'</td></tr>';
+  $('bg-pasivos').innerHTML =
+    '<tr><td colspan="2" class="fw-bold small text-secondary">CORRIENTE</td></tr>' +
+    bgSection(bg.pasivo_corriente.items, bg.pasivo_corriente.total, 'Total Corriente') +
+    '<tr><td colspan="2" class="fw-bold small text-secondary">NO CORRIENTE</td></tr>' +
+    bgSection(bg.pasivo_no_corriente.items, bg.pasivo_no_corriente.total, 'Total No Corriente') +
+    '<tr style="font-weight:700"><td>TOTAL PASIVO</td><td class="num">$'+fmt(bg.total_pasivo)+'</td></tr>';
+  $('bg-patrimonio').innerHTML =
+    bgSection(bg.patrimonio.items, bg.patrimonio.total, 'TOTAL PATRIMONIO') +
+    '<tr style="background:var(--tblr-primary-lt);font-weight:700;font-size:15px"><td>TOTAL PASIVO + PATRIMONIO</td><td class="num">$'+fmt(bg.total_pasivo_patrimonio)+'</td></tr>';
+  var cuadra = bg.cuadre < 1;
+  $('bg-cuadre').innerHTML =
+    '<span><strong>Total Activo:</strong> $'+fmt(bg.total_activo)+'</span>' +
+    '<span><strong>Total Pasivo + Patrimonio:</strong> $'+fmt(bg.total_pasivo_patrimonio)+'</span>' +
+    '<span class="badge '+(cuadra?'bg-green-lt':'bg-red-lt')+'">'+(cuadra?'Cuadra ✓':'Diferencia: $'+fmt(bg.cuadre))+'</span>';
+}
+
+// ── Presupuestos Tab ──
+async function loadPresupuestos() {
+  var anio=parseInt($('ppto-anio').value), mes=parseInt($('ppto-mes').value);
+  showSkeleton('ppto-body', 8);
+  var data = await api('/finanzas/presupuesto-vs-real?anio='+anio+'&mes='+mes,'GET',null,true).catch(function(){return {items:[]};});
+  var alertas = data.items.filter(function(i){return i.alerta;});
+  $('ppto-alertas').innerHTML = alertas.length ? alertas.map(function(a){
+    var cls=a.alerta==='sobre_presupuesto'?'border-danger':'border-warning';
+    var icon=a.alerta==='sobre_presupuesto'?'ti-arrow-up text-danger':'ti-arrow-down text-warning';
+    return '<div class="col-md-4"><div class="card '+cls+'" style="border-left-width:3px"><div class="card-body py-2"><div class="d-flex align-items-center gap-2"><i class="ti '+icon+'"></i><strong>'+a.nombre+'</strong></div><div class="small">'+(a.alerta==='sobre_presupuesto'?'Sobre':'Bajo')+' presupuesto: <strong>'+fmtD(a.desviacion_pct,1)+'%</strong></div></div></div></div>';
+  }).join('') : '';
   if(!data.items.length) {
-    $('ppto-body').innerHTML = emptyState('calculator','Sin presupuestos','Agrega presupuestos para comparar con datos reales de Siigo','Agregar',"openModal('modal-ppto')");
+    $('ppto-body').innerHTML = emptyState('calculator','Sin presupuestos','Agrega presupuestos para comparar','Agregar',"openModal('modal-ppto')");
   } else {
     $('ppto-body').innerHTML = data.items.map(function(i,idx){
-      var desvCls = i.desviacion > 0 ? (i.alerta==='sobre_presupuesto'?'neg':'pos') : (i.alerta==='bajo_presupuesto'?'neg':'pos');
-      var estadoBadge = i.alerta === 'sobre_presupuesto' ? '<span class="badge bg-red-lt">Excedido</span>' :
-                        i.alerta === 'bajo_presupuesto' ? '<span class="badge bg-yellow-lt">Bajo meta</span>' :
-                        '<span class="badge bg-green-lt">OK</span>';
-      return '<tr class="animate-row" style="animation-delay:'+idx*0.03+'s">' +
-        '<td><span class="badge bg-blue-lt" style="font-family:monospace">'+i.cuenta+'</span></td>' +
-        '<td><strong>'+i.nombre+'</strong></td>' +
-        '<td>'+( i.clase||'')+'</td>' +
-        '<td class="num">$'+fmt(i.presupuesto)+'</td>' +
-        '<td class="num">$'+fmt(i.real)+'</td>' +
-        '<td class="num '+desvCls+'">$'+fmt(i.desviacion)+'</td>' +
-        '<td class="num '+desvCls+'">'+fmtD(i.desviacion_pct,1)+'%</td>' +
-        '<td>'+estadoBadge+'</td>' +
-      '</tr>';
+      var dc=i.desviacion>0?(i.alerta==='sobre_presupuesto'?'neg':'pos'):(i.alerta==='bajo_presupuesto'?'neg':'pos');
+      var eb=i.alerta==='sobre_presupuesto'?'<span class="badge bg-red-lt">Excedido</span>':i.alerta==='bajo_presupuesto'?'<span class="badge bg-yellow-lt">Bajo meta</span>':'<span class="badge bg-green-lt">OK</span>';
+      return '<tr class="animate-row" style="animation-delay:'+idx*0.03+'s"><td><span class="badge bg-blue-lt" style="font-family:monospace">'+i.cuenta+'</span></td><td><strong>'+i.nombre+'</strong></td><td>'+(i.clase||'')+'</td><td class="num">$'+fmt(i.presupuesto)+'</td><td class="num">$'+fmt(i.real)+'</td><td class="num '+dc+'">$'+fmt(i.desviacion)+'</td><td class="num '+dc+'">'+fmtD(i.desviacion_pct,1)+'%</td><td>'+eb+'</td></tr>';
     }).join('');
   }
 }
 
 async function guardarPresupuesto() {
-  var cuenta = $('ppto-cuenta').value;
+  var cuenta=$('ppto-cuenta').value;
   if(!cuenta) return notyf.error('Selecciona una cuenta');
-  var opt = $('ppto-cuenta').options[$('ppto-cuenta').selectedIndex];
-  await api('/finanzas/presupuestos','POST',{
-    cuenta: cuenta,
-    cuenta_nombre: opt ? opt.textContent : cuenta,
-    anio: parseInt($('ppto-form-anio').value),
-    mes: parseInt($('ppto-form-mes').value),
-    monto: parseFloat($('ppto-monto').value) || 0,
-    notas: $('ppto-notas').value || null
-  });
-  closeModal('modal-ppto');
-  notyf.success('Presupuesto guardado');
-  loadPresupuestos();
+  var opt=$('ppto-cuenta').options[$('ppto-cuenta').selectedIndex];
+  await api('/finanzas/presupuestos','POST',{cuenta:cuenta,cuenta_nombre:opt?opt.textContent:cuenta,anio:parseInt($('ppto-form-anio').value),mes:parseInt($('ppto-form-mes').value),monto:parseFloat($('ppto-monto').value)||0,notas:$('ppto-notas').value||null});
+  closeModal('modal-ppto'); notyf.success('Presupuesto guardado'); loadPresupuestos();
 }
 
 async function fillCuentasPresupuesto() {
-  var cuentas = await api('/finanzas/balance-prueba?anio=2026&mes=3','GET',null,true).catch(function(){return {cuentas:[]};});
-  $('ppto-cuenta').innerHTML = '<option value="">-- Seleccionar --</option>' +
-    cuentas.cuentas.map(function(c){return '<option value="'+c.cuenta+'">'+c.cuenta+' - '+c.nombre+'</option>';}).join('');
+  var c=await api('/finanzas/balance-prueba?anio=2026&mes=3','GET',null,true).catch(function(){return {cuentas:[]};});
+  $('ppto-cuenta').innerHTML='<option value="">-- Seleccionar --</option>'+c.cuentas.map(function(x){return '<option value="'+x.cuenta+'">'+x.cuenta+' - '+x.nombre+'</option>';}).join('');
 }
 
 // ── SYNC MP DESDE SIIGO ─────────────────────────────────────────

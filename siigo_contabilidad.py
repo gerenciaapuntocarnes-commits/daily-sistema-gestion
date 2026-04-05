@@ -620,3 +620,269 @@ def get_presupuesto_vs_real(anio: int, mes: int):
             "clase": r[4], "grupo_puc": r[5], "alerta": alerta
         })
     return {"anio": anio, "mes": mes, "items": result}
+
+
+def get_balance_general(anio: int, mes: int):
+    """Balance General formal con estructura NIIF."""
+    conn = get_conn()
+    cur = conn.cursor()
+    # Saldos acumulados hasta el mes (solo cuentas 1-3xxx)
+    cur.execute("""
+        SELECT s.cuenta, COALESCE(c.nombre, s.cuenta), c.clase, c.grupo_puc, c.naturaleza,
+               SUM(s.debito), SUM(s.credito)
+        FROM saldos_mensuales s
+        LEFT JOIN siigo_cuentas c ON c.codigo = s.cuenta
+        WHERE (s.anio < %s OR (s.anio = %s AND s.mes <= %s))
+          AND s.cuenta LIKE ANY(ARRAY['1%%','2%%','3%%'])
+        GROUP BY s.cuenta, c.nombre, c.clase, c.grupo_puc, c.naturaleza
+        ORDER BY s.cuenta
+    """, (anio, anio, mes))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+
+    activo_corriente = []
+    activo_no_corriente = []
+    pasivo_corriente = []
+    pasivo_no_corriente = []
+    patrimonio_items = []
+
+    for r in rows:
+        code = r[0]
+        nat = r[4] or ('debit' if code[0] == '1' else 'credit')
+        debito = float(r[5])
+        credito = float(r[6])
+        saldo = (debito - credito) if nat == 'debit' else (credito - debito)
+        if abs(saldo) < 0.01:
+            continue
+        item = {"cuenta": code, "nombre": r[1] or code, "grupo_puc": r[3] or '', "saldo": round(saldo, 2)}
+        prefix = code[:2]
+        if code[0] == '1':
+            if prefix in ('11', '12', '13', '14'):
+                activo_corriente.append(item)
+            else:
+                activo_no_corriente.append(item)
+        elif code[0] == '2':
+            if prefix in ('21', '22', '23', '24', '25'):
+                pasivo_corriente.append(item)
+            else:
+                pasivo_no_corriente.append(item)
+        elif code[0] == '3':
+            patrimonio_items.append(item)
+
+    t_ac = sum(i['saldo'] for i in activo_corriente)
+    t_anc = sum(i['saldo'] for i in activo_no_corriente)
+    t_activo = t_ac + t_anc
+    t_pc = sum(i['saldo'] for i in pasivo_corriente)
+    t_pnc = sum(i['saldo'] for i in pasivo_no_corriente)
+    t_pasivo = t_pc + t_pnc
+    t_patrimonio = sum(i['saldo'] for i in patrimonio_items)
+
+    return {
+        "anio": anio, "mes": mes,
+        "activo_corriente": {"items": activo_corriente, "total": round(t_ac, 2)},
+        "activo_no_corriente": {"items": activo_no_corriente, "total": round(t_anc, 2)},
+        "total_activo": round(t_activo, 2),
+        "pasivo_corriente": {"items": pasivo_corriente, "total": round(t_pc, 2)},
+        "pasivo_no_corriente": {"items": pasivo_no_corriente, "total": round(t_pnc, 2)},
+        "total_pasivo": round(t_pasivo, 2),
+        "patrimonio": {"items": patrimonio_items, "total": round(t_patrimonio, 2)},
+        "total_pasivo_patrimonio": round(t_pasivo + t_patrimonio, 2),
+        "cuadre": round(abs(t_activo - (t_pasivo + t_patrimonio)), 2)
+    }
+
+
+def get_comparativo(anio1: int, mes_inicio1: int, mes_fin1: int,
+                    anio2: int, mes_inicio2: int, mes_fin2: int):
+    """Comparativo de P&L entre dos períodos."""
+    pl1 = get_estado_resultados(anio1, mes_inicio1, mes_fin1)
+    pl2 = get_estado_resultados(anio2, mes_inicio2, mes_fin2)
+
+    def var(v1, v2):
+        diff = v1 - v2
+        pct = (diff / abs(v2) * 100) if v2 != 0 else 0
+        return {"valor": round(diff, 2), "pct": round(pct, 1)}
+
+    return {
+        "periodo1": {"anio": anio1, "mes_inicio": mes_inicio1, "mes_fin": mes_fin1, "data": pl1},
+        "periodo2": {"anio": anio2, "mes_inicio": mes_inicio2, "mes_fin": mes_fin2, "data": pl2},
+        "variaciones": {
+            "ingresos": var(pl1["ingresos"]["total"], pl2["ingresos"]["total"]),
+            "costos": var(pl1["costos_ventas"]["total"], pl2["costos_ventas"]["total"]),
+            "utilidad_bruta": var(pl1["utilidad_bruta"], pl2["utilidad_bruta"]),
+            "gastos_admin": var(pl1["gastos_admin"]["total"], pl2["gastos_admin"]["total"]),
+            "gastos_ventas": var(pl1["gastos_ventas"]["total"], pl2["gastos_ventas"]["total"]),
+            "utilidad_operacional": var(pl1["utilidad_operacional"], pl2["utilidad_operacional"]),
+            "utilidad_neta": var(pl1["utilidad_neta"], pl2["utilidad_neta"]),
+        }
+    }
+
+
+def export_eeff_excel(anio: int, mes_inicio: int, mes_fin: int):
+    """Generate Excel file with formal financial statements."""
+    import io
+    from openpyxl import Workbook
+    from openpyxl.styles import Font, Alignment, Border, Side, PatternFill, numbers
+
+    wb = Workbook()
+    bold = Font(bold=True)
+    bold_big = Font(bold=True, size=14)
+    header_font = Font(bold=True, size=11, color="FFFFFF")
+    header_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    subtotal_fill = PatternFill(start_color="D6E4F0", end_color="D6E4F0", fill_type="solid")
+    total_fill = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
+    total_font = Font(bold=True, size=12, color="FFFFFF")
+    num_fmt = '#,##0'
+    thin_border = Border(bottom=Side(style='thin'))
+    meses_nombres = ['','Enero','Febrero','Marzo','Abril','Mayo','Junio',
+                     'Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre']
+
+    periodo_str = f"{meses_nombres[mes_inicio]} a {meses_nombres[mes_fin]} {anio}"
+
+    def write_header(ws, titulo):
+        ws.append(["DAILY FOOD SOLUTIONS SAS"])
+        ws['A1'].font = bold_big
+        ws.append(["NIT 901.871.505-2"])
+        ws.append([titulo])
+        ws['A3'].font = Font(bold=True, size=12)
+        ws.append([f"Del 1 de {meses_nombres[mes_inicio]} al {mes_fin if mes_fin < 28 else ''} de {meses_nombres[mes_fin]} de {anio}"])
+        ws.append(["(Expresados en pesos colombianos)"])
+        ws.append([])
+
+    def fmt_row(ws, row, val, is_subtotal=False, is_total=False, indent=0):
+        r = ws.max_row + 1
+        ws.cell(row=r, column=1, value=("  " * indent) + row)
+        cell = ws.cell(row=r, column=2, value=val)
+        cell.number_format = num_fmt
+        if is_total:
+            ws.cell(row=r, column=1).font = total_font
+            cell.font = total_font
+            ws.cell(row=r, column=1).fill = total_fill
+            cell.fill = total_fill
+        elif is_subtotal:
+            ws.cell(row=r, column=1).font = bold
+            cell.font = bold
+            ws.cell(row=r, column=1).fill = subtotal_fill
+            cell.fill = subtotal_fill
+
+    # === Sheet 1: Estado de Resultados ===
+    ws_pl = wb.active
+    ws_pl.title = "Estado de Resultados"
+    ws_pl.column_dimensions['A'].width = 45
+    ws_pl.column_dimensions['B'].width = 20
+
+    write_header(ws_pl, "ESTADO DE RESULTADOS")
+    pl = get_estado_resultados(anio, mes_inicio, mes_fin)
+
+    # Header row
+    r = ws_pl.max_row + 1
+    ws_pl.cell(row=r, column=1, value="Concepto").font = header_font
+    ws_pl.cell(row=r, column=1).fill = header_fill
+    ws_pl.cell(row=r, column=2, value=periodo_str).font = header_font
+    ws_pl.cell(row=r, column=2).fill = header_fill
+
+    fmt_row(ws_pl, "Ingresos brutos", pl.get("ingresos_brutos", pl["ingresos"]["total"]))
+    if pl.get("impoconsumo", 0) > 0:
+        fmt_row(ws_pl, "(-) Impoconsumo", -pl["impoconsumo"], indent=1)
+    if pl.get("devoluciones", 0) > 0:
+        fmt_row(ws_pl, "(-) Devoluciones", -pl["devoluciones"], indent=1)
+    fmt_row(ws_pl, "= INGRESOS NETOS", pl["ingresos"]["total"], is_subtotal=True)
+    ws_pl.append([])
+    for item in pl["costos_ventas"]["items"]:
+        fmt_row(ws_pl, f"  {item['nombre']}", -item["saldo"], indent=1)
+    fmt_row(ws_pl, "(-) TOTAL COSTO DE VENTAS", -pl["costos_ventas"]["total"], is_subtotal=True)
+    ws_pl.append([])
+    fmt_row(ws_pl, f"= UTILIDAD BRUTA ({pl['margen_bruto_pct']}%)", pl["utilidad_bruta"], is_subtotal=True)
+    ws_pl.append([])
+    for item in pl["gastos_admin"]["items"][:10]:
+        fmt_row(ws_pl, f"  {item['nombre']}", -item["saldo"], indent=1)
+    fmt_row(ws_pl, "(-) TOTAL GASTOS ADMINISTRACIÓN", -pl["gastos_admin"]["total"], is_subtotal=True)
+    for item in pl["gastos_ventas"]["items"][:10]:
+        fmt_row(ws_pl, f"  {item['nombre']}", -item["saldo"], indent=1)
+    fmt_row(ws_pl, "(-) TOTAL GASTOS DE VENTAS", -pl["gastos_ventas"]["total"], is_subtotal=True)
+    ws_pl.append([])
+    fmt_row(ws_pl, f"= UTILIDAD OPERACIONAL ({pl['margen_operacional_pct']}%)", pl["utilidad_operacional"], is_subtotal=True)
+    if pl["gastos_no_operacionales"]["total"] > 0:
+        fmt_row(ws_pl, "(-) GASTOS NO OPERACIONALES", -pl["gastos_no_operacionales"]["total"])
+    ws_pl.append([])
+    fmt_row(ws_pl, f"= UTILIDAD NETA ({pl['margen_neto_pct']}%)", pl["utilidad_neta"], is_total=True)
+
+    # === Sheet 2: Balance General ===
+    ws_bg = wb.create_sheet("Balance General")
+    ws_bg.column_dimensions['A'].width = 45
+    ws_bg.column_dimensions['B'].width = 20
+
+    write_header(ws_bg, "ESTADO DE SITUACIÓN FINANCIERA")
+    bg = get_balance_general(anio, mes_fin)
+
+    r = ws_bg.max_row + 1
+    ws_bg.cell(row=r, column=1, value="Concepto").font = header_font
+    ws_bg.cell(row=r, column=1).fill = header_fill
+    ws_bg.cell(row=r, column=2, value=f"A {meses_nombres[mes_fin]} {anio}").font = header_font
+    ws_bg.cell(row=r, column=2).fill = header_fill
+
+    fmt_row(ws_bg, "ACTIVOS", None, is_subtotal=True)
+    fmt_row(ws_bg, "Activo Corriente", None)
+    for item in bg["activo_corriente"]["items"]:
+        fmt_row(ws_bg, f"  {item['nombre']}", item["saldo"], indent=1)
+    fmt_row(ws_bg, "Total Activo Corriente", bg["activo_corriente"]["total"], is_subtotal=True)
+    ws_bg.append([])
+    fmt_row(ws_bg, "Activo No Corriente", None)
+    for item in bg["activo_no_corriente"]["items"]:
+        fmt_row(ws_bg, f"  {item['nombre']}", item["saldo"], indent=1)
+    fmt_row(ws_bg, "Total Activo No Corriente", bg["activo_no_corriente"]["total"], is_subtotal=True)
+    fmt_row(ws_bg, "TOTAL ACTIVO", bg["total_activo"], is_total=True)
+    ws_bg.append([])
+
+    fmt_row(ws_bg, "PASIVOS", None, is_subtotal=True)
+    fmt_row(ws_bg, "Pasivo Corriente", None)
+    for item in bg["pasivo_corriente"]["items"]:
+        fmt_row(ws_bg, f"  {item['nombre']}", item["saldo"], indent=1)
+    fmt_row(ws_bg, "Total Pasivo Corriente", bg["pasivo_corriente"]["total"], is_subtotal=True)
+    ws_bg.append([])
+    fmt_row(ws_bg, "Pasivo No Corriente", None)
+    for item in bg["pasivo_no_corriente"]["items"]:
+        fmt_row(ws_bg, f"  {item['nombre']}", item["saldo"], indent=1)
+    fmt_row(ws_bg, "Total Pasivo No Corriente", bg["pasivo_no_corriente"]["total"], is_subtotal=True)
+    fmt_row(ws_bg, "TOTAL PASIVO", bg["total_pasivo"], is_subtotal=True)
+    ws_bg.append([])
+
+    fmt_row(ws_bg, "PATRIMONIO", None, is_subtotal=True)
+    for item in bg["patrimonio"]["items"]:
+        fmt_row(ws_bg, f"  {item['nombre']}", item["saldo"], indent=1)
+    fmt_row(ws_bg, "TOTAL PATRIMONIO", bg["patrimonio"]["total"], is_subtotal=True)
+    ws_bg.append([])
+    fmt_row(ws_bg, "TOTAL PASIVO + PATRIMONIO", bg["total_pasivo_patrimonio"], is_total=True)
+
+    # === Sheet 3: Indicadores ===
+    ws_ind = wb.create_sheet("Indicadores")
+    ws_ind.column_dimensions['A'].width = 35
+    ws_ind.column_dimensions['B'].width = 20
+
+    write_header(ws_ind, "INDICADORES FINANCIEROS")
+    ind = get_indicadores(anio, mes_fin)
+
+    r = ws_ind.max_row + 1
+    ws_ind.cell(row=r, column=1, value="Indicador").font = header_font
+    ws_ind.cell(row=r, column=1).fill = header_fill
+    ws_ind.cell(row=r, column=2, value="Valor").font = header_font
+    ws_ind.cell(row=r, column=2).fill = header_fill
+
+    fmt_row(ws_ind, "LIQUIDEZ", None, is_subtotal=True)
+    fmt_row(ws_ind, "Razón corriente", ind["ratios"]["liquidez"])
+    fmt_row(ws_ind, "Capital de trabajo", ind["balance"]["activo_corriente"] - ind["balance"]["pasivo_corriente"])
+    ws_ind.append([])
+    fmt_row(ws_ind, "ENDEUDAMIENTO", None, is_subtotal=True)
+    fmt_row(ws_ind, "Endeudamiento total (%)", ind["ratios"]["endeudamiento_pct"])
+    ws_ind.append([])
+    fmt_row(ws_ind, "RENTABILIDAD", None, is_subtotal=True)
+    fmt_row(ws_ind, "Margen bruto (%)", ind["ratios"]["margen_bruto_pct"])
+    fmt_row(ws_ind, "Margen operacional (%)", ind["ratios"]["margen_operacional_pct"])
+    fmt_row(ws_ind, "Margen neto (%)", ind["ratios"]["margen_neto_pct"])
+    fmt_row(ws_ind, "ROE (%)", ind["ratios"]["roe_pct"])
+    fmt_row(ws_ind, "ROA (%)", ind["ratios"]["roa_pct"])
+
+    # Save to bytes
+    output = io.BytesIO()
+    wb.save(output)
+    output.seek(0)
+    return output.getvalue()

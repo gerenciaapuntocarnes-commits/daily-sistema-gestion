@@ -1590,6 +1590,39 @@ def tendencia_financiera(anio: int = 2026):
     except Exception as e:
         raise HTTPException(500, f"Error: {str(e)}")
 
+@router.get("/finanzas/balance-general")
+def balance_general(anio: int = 2026, mes: int = 3):
+    try:
+        from siigo_contabilidad import get_balance_general
+        return get_balance_general(anio, mes)
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+
+@router.get("/finanzas/comparativo")
+def comparativo_pl(anio1: int = 2026, m1i: int = 1, m1f: int = 3,
+                   anio2: int = 2025, m2i: int = 1, m2f: int = 3):
+    try:
+        from siigo_contabilidad import get_comparativo
+        return get_comparativo(anio1, m1i, m1f, anio2, m2i, m2f)
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+
+@router.get("/finanzas/export-excel")
+def export_excel_eeff(anio: int = 2026, mes_inicio: int = 1, mes_fin: int = 12):
+    from fastapi.responses import Response
+    try:
+        from siigo_contabilidad import export_eeff_excel
+        content = export_eeff_excel(anio, mes_inicio, mes_fin)
+        meses = ['','Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic']
+        filename = f"EEFF_Daily_{meses[mes_inicio]}-{meses[mes_fin]}_{anio}.xlsx"
+        return Response(
+            content=content,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'}
+        )
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+
 @router.get("/finanzas/presupuesto-vs-real")
 def presupuesto_vs_real(anio: int = 2026, mes: int = 3):
     try:
