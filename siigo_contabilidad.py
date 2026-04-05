@@ -268,43 +268,9 @@ def get_estado_resultados(anio: int, mes_inicio: int = 1, mes_fin: int = 12):
             elif code.startswith('53') or code.startswith('54'):
                 gastos_no_op_map[f"{code} {desc}"] += total_val
 
-    # 4. Add nómina and financial costs from journal saldos (vouchers data)
-    # These are in accounts 5105-5110 (nómina admin), 5205-5210 (nómina ventas),
-    # 5305 (financieros), registered via vouchers/journals
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT s.cuenta, COALESCE(c.nombre, s.cuenta), SUM(ABS(s.saldo))
-        FROM saldos_mensuales s
-        LEFT JOIN siigo_cuentas c ON c.codigo = s.cuenta
-        WHERE s.anio = %s AND s.mes BETWEEN %s AND %s
-          AND s.cuenta LIKE ANY(ARRAY['5%%'])
-        GROUP BY s.cuenta, c.nombre
-        HAVING SUM(ABS(s.saldo)) > 0
-    """, (anio, mes_inicio, mes_fin))
-    for row in cur.fetchall():
-        code = row[0]
-        nombre = row[1] or code
-        val = float(row[2])
-        key = f"{code} {nombre} (contable)"
-        prefix = code[:2]
-        if prefix == '51':
-            gastos_admin_map[key] += val
-        elif prefix == '52':
-            gastos_ventas_map[key] += val
-        elif prefix == '53':
-            gastos_no_op_map[key] += val
-
-    # Also get financial costs from journals
-    cur.execute("""
-        SELECT SUM(ABS(s.saldo))
-        FROM saldos_mensuales s
-        WHERE s.anio = %s AND s.mes BETWEEN %s AND %s
-          AND s.cuenta LIKE '53%%'
-    """, (anio, mes_inicio, mes_fin))
-    row = cur.fetchone()
-    costos_financieros = float(row[0] or 0) if row else 0
-    cur.close(); conn.close()
+    # Note: P&L uses ONLY purchases as source for costs/expenses.
+    # Journals contain annual closing entries that would duplicate amounts.
+    # Nómina and other expenses registered via vouchers are reflected in purchases.
 
     def to_items(m):
         return sorted([{"cuenta": k.split(' ')[0], "nombre": ' '.join(k.split(' ')[1:]) or k.split(' ')[0],
@@ -388,18 +354,8 @@ def get_indicadores(anio: int, mes: int):
             elif code.startswith('5'):
                 gastos_compras += val
 
-    # Add journal-based expenses (nómina, financieros)
-    conn2 = get_conn()
-    cur2 = conn2.cursor()
-    cur2.execute("""
-        SELECT SUM(ABS(s.saldo)) FROM saldos_mensuales s
-        WHERE s.anio = %s AND s.mes <= %s AND s.cuenta LIKE '5%%'
-    """, (anio, mes))
-    row = cur2.fetchone()
-    gastos_journals = float(row[0] or 0) if row else 0
-    cur2.close(); conn2.close()
-
-    gastos = gastos_compras + gastos_journals
+    # Only use purchases for expenses (journals have closing entries that duplicate)
+    gastos = gastos_compras
 
     # Balance from journal saldos
     conn = get_conn()
@@ -512,17 +468,7 @@ def get_tendencia_mensual_from_invoices(anio: int):
             elif code.startswith('5'):
                 meses[mes]["gastos"] += val
 
-    # Add journal-based expenses (nómina, financieros) per month
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT s.mes, SUM(ABS(s.saldo))
-        FROM saldos_mensuales s
-        WHERE s.anio = %s AND s.cuenta LIKE '5%%'
-        GROUP BY s.mes
-    """, (anio,))
-    for row in cur.fetchall():
-        meses[row[0]]["gastos"] += float(row[1])
+    # Expenses come only from purchases (journals have annual closing entries that duplicate)
     cur.close(); conn.close()
 
     result = []
