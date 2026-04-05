@@ -48,7 +48,8 @@ def _headers():
 
 
 def _paginate(endpoint: str, params: dict = None, max_pages: int = 50) -> list:
-    """Fetch all pages from a Siigo endpoint."""
+    """Fetch all pages from a Siigo endpoint with rate limit handling."""
+    import time
     if params is None:
         params = {}
     params.setdefault("page_size", 100)
@@ -56,9 +57,17 @@ def _paginate(endpoint: str, params: dict = None, max_pages: int = 50) -> list:
     all_results = []
 
     for _ in range(max_pages):
-        resp = requests.get(f"{SIIGO_BASE}{endpoint}", headers=_headers(),
-                            params=params, timeout=30)
-        resp.raise_for_status()
+        for attempt in range(4):
+            resp = requests.get(f"{SIIGO_BASE}{endpoint}", headers=_headers(),
+                                params=params, timeout=30)
+            if resp.status_code == 429:
+                time.sleep(2 * (attempt + 1))
+                continue
+            resp.raise_for_status()
+            break
+        else:
+            break  # Max retries exhausted
+
         data = resp.json()
         results = data.get("results", [])
         all_results.extend(results)
@@ -67,6 +76,7 @@ def _paginate(endpoint: str, params: dict = None, max_pages: int = 50) -> list:
         if len(all_results) >= total:
             break
         params["page"] += 1
+        time.sleep(0.3)  # Small delay between pages
 
     return all_results
 

@@ -94,13 +94,12 @@ def sync_journals():
                 cuentas_seen[code] = classify_account(code)
         total += 1
 
-    # 1. Journals (manual entries, adjustments, closing entries)
+    # 1. Journals (manual entries, adjustments, closing entries — 552 docs)
     for doc in _paginate("/journals"):
         process_doc(doc, "JRN")
 
-    # 2. Vouchers (cash receipts — have real account codes)
-    for doc in _paginate("/vouchers"):
-        process_doc(doc, "VCH")
+    # Note: Vouchers (3,666 docs) excluded — too many for sync, causes rate limits.
+    # Balance sheet uses journals. P&L uses invoices+purchases directly.
 
     # Upsert accounts
     for code, info in cuentas_seen.items():
