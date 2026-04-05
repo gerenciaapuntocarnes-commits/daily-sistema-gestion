@@ -35,10 +35,24 @@
 }
 
 /* ── Ingredient rows ── */
-.ing-row { display: flex; align-items: center; gap: 8px; background: var(--tblr-bg-surface-secondary); border: 1px solid var(--tblr-border-color); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; }
+.ing-row { display: flex; align-items: center; gap: 8px; background: var(--tblr-bg-surface-secondary); border: 1px solid var(--tblr-border-color); border-radius: 8px; padding: 10px 12px; margin-bottom: 6px; position: relative; }
 .ing-row span { flex: 1; font-size: 13px; }
 .ing-qty { font-size: 12px; color: var(--tblr-secondary); background: var(--tblr-bg-surface); border-radius: 4px; padding: 2px 7px; flex-shrink: 0; }
 .ing-cost { font-size: 12px; color: var(--tblr-primary); font-weight: 600; flex-shrink: 0; }
+.ing-detail { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.ing-detail .ing-name { font-size: 13px; font-weight: 500; }
+.ing-detail .ing-meta { font-size: 11px; color: var(--tblr-secondary); margin-top: 1px; }
+.ing-pct { font-size: 10px; color: var(--tblr-secondary); background: var(--tblr-bg-surface); border-radius: 4px; padding: 1px 6px; flex-shrink: 0; font-weight: 600; }
+.ing-no-price { font-size: 10px; color: var(--tblr-warning); font-weight: 600; }
+
+/* ── Cost composition bar ── */
+.cost-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; width: 100%; }
+.cost-bar .bar-mp { background: var(--tblr-primary); }
+.cost-bar .bar-mo { background: var(--tblr-success); }
+.cost-bar .bar-sv { background: var(--tblr-warning); }
+.cost-legend { display: flex; gap: 12px; margin-top: 6px; flex-wrap: wrap; }
+.cost-legend .leg { display: flex; align-items: center; gap: 4px; font-size: 11px; color: var(--tblr-secondary); }
+.cost-legend .leg .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
 
 /* ── Steps builder ── */
 .steps-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
@@ -2413,15 +2427,36 @@ async function verReceta(id) {
   currentRecetaId = id;
   var r = await api('/recetas/'+id);
   var margenClass = r.margen >= 0 ? 'pos' : 'neg';
-  var ingsHtml = r.ingredientes.length ? r.ingredientes.map(function(i){return '<div class="ing-row">' +
-    '<span>'+i.mp_nombre+'</span>' +
-    '<span class="ing-qty">'+fmtD(i.cantidad,3)+' '+i.unidad+'</span>' +
-    '<span class="ing-cost">$'+fmt(i.costo_linea)+'</span>' +
-    '<button class="step-del" onclick="eliminarIngrediente('+i.id+')" title="Quitar"><i class="ti ti-x"></i></button>' +
+  var costoMpTotal = r.costo_total || 0;
+  var ingsHtml = r.ingredientes.length ? r.ingredientes.map(function(i){
+    var pct = costoMpTotal > 0 ? (i.costo_linea / costoMpTotal * 100) : 0;
+    var noPriceWarn = i.precio_unit <= 0 ? ' <span class="ing-no-price"><i class="ti ti-alert-triangle" style="font-size:11px"></i> Sin precio</span>' : '';
+    return '<div class="ing-row">' +
+      '<div class="ing-detail">' +
+        '<div class="ing-name">'+i.mp_nombre+noPriceWarn+'</div>' +
+        '<div class="ing-meta">'+fmtD(i.cantidad,3)+' '+i.unidad+' x $'+fmt(i.precio_unit)+'/'+i.unidad+'</div>' +
+      '</div>' +
+      '<span class="ing-pct">'+fmtD(pct,0)+'%</span>' +
+      '<span class="ing-cost">$'+fmt(i.costo_linea)+'</span>' +
+      '<button class="step-del" onclick="eliminarIngrediente('+i.id+')" title="Quitar"><i class="ti ti-x"></i></button>' +
     '</div>';}).join('') : '<p class="text-secondary" style="padding:8px">Sin ingredientes aún.</p>';
 
-  var costoDesglose = r.costo_fijo_batch > 0 ?
-    '<div class="small text-secondary mt-1">MP: $'+fmt(r.costo_mp_und)+' + MO: $'+fmt(r.costo_mano_obra/r.batch_maximo)+' + Serv: $'+fmt(r.costo_servicios/r.batch_maximo)+'</div>' : '';
+  // Cost composition bar
+  var mpPct = 0, moPct = 0, svPct = 0;
+  if(r.costo_porcion > 0) {
+    mpPct = r.costo_mp_und / r.costo_porcion * 100;
+    var moUnd = r.batch_maximo > 0 ? r.costo_mano_obra / r.batch_maximo : 0;
+    var svUnd = r.batch_maximo > 0 ? r.costo_servicios / r.batch_maximo : 0;
+    moPct = moUnd / r.costo_porcion * 100;
+    svPct = svUnd / r.costo_porcion * 100;
+  }
+  var costBarHtml = r.costo_porcion > 0 ?
+    '<div class="cost-bar mt-2"><div class="bar-mp" style="width:'+mpPct+'%"></div><div class="bar-mo" style="width:'+moPct+'%"></div><div class="bar-sv" style="width:'+svPct+'%"></div></div>' +
+    '<div class="cost-legend">' +
+      '<div class="leg"><div class="dot" style="background:var(--tblr-primary)"></div>MP $'+fmt(r.costo_mp_und)+' ('+fmtD(mpPct,0)+'%)</div>' +
+      (moPct > 0 ? '<div class="leg"><div class="dot" style="background:var(--tblr-success)"></div>MO $'+fmt(r.batch_maximo>0?r.costo_mano_obra/r.batch_maximo:0)+' ('+fmtD(moPct,0)+'%)</div>' : '') +
+      (svPct > 0 ? '<div class="leg"><div class="dot" style="background:var(--tblr-warning)"></div>Serv $'+fmt(r.batch_maximo>0?r.costo_servicios/r.batch_maximo:0)+' ('+fmtD(svPct,0)+'%)</div>' : '') +
+    '</div>' : '';
 
   // Build category options
   var cats = ['Sopas','Proteinas','Salsas','Acompañamientos','Navidad','Procesos','General'];
@@ -2446,7 +2481,6 @@ async function verReceta(id) {
         '<div class="row row-cards mb-3">' +
           '<div class="col-4"><div class="card card-sm bg-primary-lt"><div class="card-body py-2 text-center">' +
             '<div class="fw-bold fs-3">$'+fmt(r.costo_porcion)+'</div><div class="text-secondary small">Costo / und</div>' +
-            costoDesglose +
           '</div></div></div>' +
           '<div class="col-4"><div class="card card-sm bg-primary-lt"><div class="card-body py-2 text-center">' +
             '<div class="fw-bold fs-3">$'+fmt(r.precio_venta)+'</div><div class="text-secondary small">Precio venta</div>' +
@@ -2455,6 +2489,7 @@ async function verReceta(id) {
             '<div class="fw-bold fs-3 '+margenClass+'">'+fmtD(r.margen_pct,1)+'%</div><div class="text-secondary small">Margen ($'+fmt(r.margen)+')</div>' +
           '</div></div></div>' +
         '</div>' +
+        costBarHtml +
         // Config produccion editable
         '<div class="mt-2 mb-3 p-3 rounded" style="background:var(--tblr-bg-surface-secondary)">' +
           '<div class="fw-bold small mb-2"><i class="ti ti-settings me-1"></i>Configuración de producción</div>' +
@@ -2466,8 +2501,8 @@ async function verReceta(id) {
             '<div class="col-md-6"><label class="form-label" style="font-size:11px">Servicios / batch ($)</label><input class="form-control form-control-sm" type="number" id="edit-sv" value="'+r.costo_servicios+'" step="1000"></div>' +
           '</div>' +
         '</div>' +
-        '<div class="d-flex justify-content-between align-items-center mb-2">' +
-          '<span class="text-secondary text-uppercase small fw-bold" style="letter-spacing:.4px">Ingredientes</span>' +
+        '<div class="d-flex justify-content-between align-items-center mb-2 mt-3">' +
+          '<span class="text-secondary text-uppercase small fw-bold" style="letter-spacing:.4px">Ingredientes <span class="text-primary">($'+fmt(costoMpTotal)+' total)</span></span>' +
           '<button class="btn btn-outline-primary btn-sm" onclick="openModal(\'modal-ing\')"><i class="ti ti-plus me-1"></i>Agregar</button>' +
         '</div>' +
         ingsHtml +
