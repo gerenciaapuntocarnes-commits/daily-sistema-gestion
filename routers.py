@@ -1546,6 +1546,102 @@ def siigo_ventas_semana(semanas: int = 8):
         raise HTTPException(500, f"Error Siigo: {str(e)}")
 
 # ═══════════════════════════════════════════════════════════════
+# FINANZAS — Contabilidad desde Siigo
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/finanzas/sync")
+def sync_contabilidad():
+    try:
+        from siigo_contabilidad import sync_journals
+        result = sync_journals()
+        return {"ok": True, **result}
+    except Exception as e:
+        raise HTTPException(500, f"Error sync: {str(e)}")
+
+@router.get("/finanzas/balance-prueba")
+def balance_prueba(anio: int = 2026, mes: int = 3):
+    try:
+        from siigo_contabilidad import get_balance_prueba
+        return get_balance_prueba(anio, mes)
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+
+@router.get("/finanzas/estado-resultados")
+def estado_resultados(anio: int = 2026, mes_inicio: int = 1, mes_fin: int = 3):
+    try:
+        from siigo_contabilidad import get_estado_resultados
+        return get_estado_resultados(anio, mes_inicio, mes_fin)
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+
+@router.get("/finanzas/indicadores")
+def indicadores_financieros(anio: int = 2026, mes: int = 3):
+    try:
+        from siigo_contabilidad import get_indicadores
+        return get_indicadores(anio, mes)
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+
+@router.get("/finanzas/tendencia")
+def tendencia_financiera(anio: int = 2026):
+    try:
+        from siigo_contabilidad import get_tendencia_mensual
+        return get_tendencia_mensual(anio)
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+
+@router.get("/finanzas/presupuesto-vs-real")
+def presupuesto_vs_real(anio: int = 2026, mes: int = 3):
+    try:
+        from siigo_contabilidad import get_presupuesto_vs_real
+        return get_presupuesto_vs_real(anio, mes)
+    except Exception as e:
+        raise HTTPException(500, f"Error: {str(e)}")
+
+@router.get("/finanzas/sync-log")
+def sync_log():
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, tipo, fecha, registros, detalle FROM sync_log ORDER BY fecha DESC LIMIT 20")
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return [{"id": r[0], "tipo": r[1], "fecha": str(r[2]), "registros": r[3], "detalle": r[4]} for r in rows]
+
+class PresupuestoIn(BaseModel):
+    cuenta: str
+    cuenta_nombre: Optional[str] = None
+    anio: int
+    mes: int
+    monto: float
+    notas: Optional[str] = None
+
+@router.post("/finanzas/presupuestos")
+def guardar_presupuesto(data: PresupuestoIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO presupuestos (cuenta, cuenta_nombre, anio, mes, monto, notas)
+        VALUES (%s, %s, %s, %s, %s, %s)
+        ON CONFLICT (cuenta, anio, mes) DO UPDATE SET monto=%s, notas=%s, cuenta_nombre=%s
+    """, (data.cuenta, data.cuenta_nombre, data.anio, data.mes, data.monto, data.notas,
+          data.monto, data.notas, data.cuenta_nombre))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+@router.get("/finanzas/presupuestos")
+def listar_presupuestos(anio: int = 2026):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT cuenta, cuenta_nombre, anio, mes, monto, notas
+        FROM presupuestos WHERE anio=%s ORDER BY cuenta, mes
+    """, (anio,))
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return [{"cuenta": r[0], "nombre": r[1], "anio": r[2], "mes": r[3],
+             "monto": float(r[4]), "notas": r[5]} for r in rows]
+
+# ═══════════════════════════════════════════════════════════════
 # PRODUCTO ↔ RECETA (ligado Siigo → Daily)
 # ═══════════════════════════════════════════════════════════════
 

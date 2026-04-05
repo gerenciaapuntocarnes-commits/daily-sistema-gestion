@@ -238,6 +238,59 @@ def _create_tables():
         )
     """)
 
+    # ── Contabilidad (datos de Siigo) ──────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS siigo_journals (
+            id             TEXT PRIMARY KEY,
+            name           TEXT,
+            fecha          DATE NOT NULL,
+            items          JSONB NOT NULL DEFAULT '[]',
+            synced_at      TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS siigo_cuentas (
+            codigo         TEXT PRIMARY KEY,
+            nombre         TEXT,
+            clase          TEXT,
+            grupo_puc      TEXT,
+            naturaleza     TEXT DEFAULT 'debit'
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS saldos_mensuales (
+            id             SERIAL PRIMARY KEY,
+            cuenta         TEXT NOT NULL,
+            anio           INTEGER NOT NULL,
+            mes            INTEGER NOT NULL,
+            debito         NUMERIC(16,2) DEFAULT 0,
+            credito        NUMERIC(16,2) DEFAULT 0,
+            saldo          NUMERIC(16,2) DEFAULT 0,
+            UNIQUE(cuenta, anio, mes)
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS presupuestos (
+            id             SERIAL PRIMARY KEY,
+            cuenta         TEXT NOT NULL,
+            cuenta_nombre  TEXT,
+            anio           INTEGER NOT NULL,
+            mes            INTEGER NOT NULL,
+            monto          NUMERIC(16,2) NOT NULL DEFAULT 0,
+            notas          TEXT,
+            UNIQUE(cuenta, anio, mes)
+        )
+    """)
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS sync_log (
+            id             SERIAL PRIMARY KEY,
+            tipo           TEXT NOT NULL,
+            fecha          TIMESTAMP DEFAULT NOW(),
+            registros      INTEGER DEFAULT 0,
+            detalle        TEXT
+        )
+    """)
+
     # ── Configuración de Planta ────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS config_planta (
