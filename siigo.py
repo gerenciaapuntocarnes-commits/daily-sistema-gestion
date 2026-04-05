@@ -160,6 +160,38 @@ def fetch_purchases(date_start: str = None, date_end: str = None) -> list:
     return raw
 
 
+def fetch_credit_notes(date_start: str = None, date_end: str = None) -> list:
+    """Get credit notes, optionally filtered by date."""
+    raw = _paginate("/credit-notes")
+    if date_start or date_end:
+        filtered = []
+        for cn in raw:
+            fecha = cn.get('date', '')[:10]
+            if date_start and fecha < date_start:
+                continue
+            if date_end and fecha > date_end:
+                continue
+            filtered.append(cn)
+        return filtered
+    return raw
+
+
+def fetch_vouchers_paginated(page: int = 1, page_size: int = 50) -> dict:
+    """Get a single page of vouchers (for incremental sync)."""
+    import time
+    for attempt in range(4):
+        resp = requests.get(f"{SIIGO_BASE}/vouchers",
+                            headers=_headers(),
+                            params={"page": page, "page_size": page_size},
+                            timeout=30)
+        if resp.status_code == 429:
+            time.sleep(3 * (attempt + 1))
+            continue
+        resp.raise_for_status()
+        return resp.json()
+    return {"pagination": {"total_results": 0}, "results": []}
+
+
 def sales_by_product_weekly(weeks: int = 8) -> dict:
     """
     Returns sales aggregated by product, broken down by week.

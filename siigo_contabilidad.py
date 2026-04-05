@@ -98,8 +98,27 @@ def sync_journals():
     for doc in _paginate("/journals"):
         process_doc(doc, "JRN")
 
-    # Note: Vouchers (3,666 docs) excluded — too many for sync, causes rate limits.
-    # Balance sheet uses journals. P&L uses invoices+purchases directly.
+    # 2. Vouchers (in small batches with delays to avoid rate limits)
+    from siigo import fetch_vouchers_paginated
+    import time
+    vch_page = 1
+    vch_total = 0
+    while True:
+        time.sleep(1.5)  # Respect rate limits
+        try:
+            data = fetch_vouchers_paginated(page=vch_page, page_size=50)
+        except Exception:
+            break
+        results = data.get('results', [])
+        if not results:
+            break
+        for doc in results:
+            process_doc(doc, "VCH")
+            vch_total += 1
+        total_expected = data.get('pagination', {}).get('total_results', 0)
+        if vch_total >= total_expected:
+            break
+        vch_page += 1
 
     # Upsert accounts
     for code, info in cuentas_seen.items():
@@ -198,25 +217,40 @@ def get_balance_prueba(anio: int, mes: int):
 def get_estado_resultados(anio: int, mes_inicio: int = 1, mes_fin: int = 12):
     """
     P&L combining:
-    - Revenue from Siigo invoices
-    - Costs/expenses from Siigo purchases (classified by PUC code in each item)
+    - Revenue from invoices - credit notes - taxes (impoconsumo)
+    - Costs from purchases (6xxx + 7xxx)
+    - Expenses from purchases (5xxx) + vouchers/journals (nómina, financieros)
     """
-    from siigo import fetch_invoices, fetch_purchases
+    from siigo import fetch_invoices, fetch_purchases, fetch_credit_notes
 
     start = f"{anio}-{mes_inicio:02d}-01"
     last_day = 28 if mes_fin == 2 else 30 if mes_fin in (4,6,9,11) else 31
     end = f"{anio}-{mes_fin:02d}-{last_day}"
 
-    # 1. Revenue from invoices
+    # 1. Revenue from invoices (net of taxes)
     invoices = fetch_invoices(start, end)
-    total_ingresos = sum(float(inv.get('total', 0)) for inv in invoices if not inv.get('annulled'))
+    ingresos_brutos = 0
+    impoconsumo = 0
+    for inv in invoices:
+        if inv.get('annulled'):
+            continue
+        ingresos_brutos += float(inv.get('total', 0))
+        for item in inv.get('items', []):
+            for tax in item.get('taxes', []):
+                impoconsumo += float(tax.get('value', 0))
 
-    # 2. Costs and expenses from purchases (each item has a PUC code)
+    # 2. Credit notes (devoluciones)
+    credit_notes = fetch_credit_notes(start, end)
+    devoluciones = sum(float(cn.get('total', 0)) for cn in credit_notes if not cn.get('annulled'))
+
+    ingresos_netos = ingresos_brutos - impoconsumo - devoluciones
+
+    # 3. Costs and expenses from purchases
     purchases = fetch_purchases(start, end)
-    costos_map = defaultdict(float)       # 6xxx = cost of sales
-    gastos_admin_map = defaultdict(float)  # 51xx = admin expenses
-    gastos_ventas_map = defaultdict(float) # 52xx = sales expenses
-    gastos_no_op_map = defaultdict(float)  # 53xx = non-operating
+    costos_map = defaultdict(float)
+    gastos_admin_map = defaultdict(float)
+    gastos_ventas_map = defaultdict(float)
+    gastos_no_op_map = defaultdict(float)
 
     for pur in purchases:
         if pur.get('annulled'):
@@ -234,10 +268,48 @@ def get_estado_resultados(anio: int, mes_inicio: int = 1, mes_fin: int = 12):
             elif code.startswith('53') or code.startswith('54'):
                 gastos_no_op_map[f"{code} {desc}"] += total_val
 
+    # 4. Add nómina and financial costs from journal saldos (vouchers data)
+    # These are in accounts 5105-5110 (nómina admin), 5205-5210 (nómina ventas),
+    # 5305 (financieros), registered via vouchers/journals
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.cuenta, COALESCE(c.nombre, s.cuenta), SUM(ABS(s.saldo))
+        FROM saldos_mensuales s
+        LEFT JOIN siigo_cuentas c ON c.codigo = s.cuenta
+        WHERE s.anio = %s AND s.mes BETWEEN %s AND %s
+          AND s.cuenta LIKE ANY(ARRAY['5%%'])
+        GROUP BY s.cuenta, c.nombre
+        HAVING SUM(ABS(s.saldo)) > 0
+    """, (anio, mes_inicio, mes_fin))
+    for row in cur.fetchall():
+        code = row[0]
+        nombre = row[1] or code
+        val = float(row[2])
+        key = f"{code} {nombre} (contable)"
+        prefix = code[:2]
+        if prefix == '51':
+            gastos_admin_map[key] += val
+        elif prefix == '52':
+            gastos_ventas_map[key] += val
+        elif prefix == '53':
+            gastos_no_op_map[key] += val
+
+    # Also get financial costs from journals
+    cur.execute("""
+        SELECT SUM(ABS(s.saldo))
+        FROM saldos_mensuales s
+        WHERE s.anio = %s AND s.mes BETWEEN %s AND %s
+          AND s.cuenta LIKE '53%%'
+    """, (anio, mes_inicio, mes_fin))
+    row = cur.fetchone()
+    costos_financieros = float(row[0] or 0) if row else 0
+    cur.close(); conn.close()
+
     def to_items(m):
         return sorted([{"cuenta": k.split(' ')[0], "nombre": ' '.join(k.split(' ')[1:]) or k.split(' ')[0],
                         "clase": "", "grupo_puc": "", "saldo": round(v, 2)}
-                       for k, v in m.items()], key=lambda x: -x['saldo'])
+                       for k, v in m.items() if v > 0], key=lambda x: -x['saldo'])
 
     costos = to_items(costos_map)
     gastos_admin = to_items(gastos_admin_map)
@@ -248,55 +320,86 @@ def get_estado_resultados(anio: int, mes_inicio: int = 1, mes_fin: int = 12):
     total_gastos_admin = sum(i['saldo'] for i in gastos_admin)
     total_gastos_ventas = sum(i['saldo'] for i in gastos_ventas)
     total_gastos_no_op = sum(i['saldo'] for i in gastos_no_op)
-    utilidad_bruta = total_ingresos - total_costos
+    utilidad_bruta = ingresos_netos - total_costos
     utilidad_operacional = utilidad_bruta - total_gastos_admin - total_gastos_ventas
-    utilidad_neta = utilidad_operacional - total_gastos_no_op
+    utilidad_antes_imp = utilidad_operacional - total_gastos_no_op
 
-    ingresos_items = [{"cuenta": "Facturas", "nombre": "Ingresos por ventas",
-                       "clase": "Ingresos", "grupo_puc": "Ingresos operacionales",
-                       "saldo": round(total_ingresos, 2)}]
+    ingresos_items = [
+        {"cuenta": "Facturas", "nombre": "Ingresos brutos (facturas)", "clase": "Ingresos",
+         "grupo_puc": "", "saldo": round(ingresos_brutos, 2)},
+        {"cuenta": "Impoconsumo", "nombre": "(-) Impoconsumo", "clase": "Ingresos",
+         "grupo_puc": "", "saldo": round(-impoconsumo, 2)},
+        {"cuenta": "NC", "nombre": "(-) Devoluciones (notas crédito)", "clase": "Ingresos",
+         "grupo_puc": "", "saldo": round(-devoluciones, 2)},
+    ]
 
     return {
         "anio": anio, "mes_inicio": mes_inicio, "mes_fin": mes_fin,
-        "ingresos": {"items": ingresos_items, "total": round(total_ingresos, 2)},
+        "ingresos": {"items": ingresos_items, "total": round(ingresos_netos, 2)},
+        "ingresos_brutos": round(ingresos_brutos, 2),
+        "impoconsumo": round(impoconsumo, 2),
+        "devoluciones": round(devoluciones, 2),
         "costos_ventas": {"items": costos, "total": round(total_costos, 2)},
         "utilidad_bruta": round(utilidad_bruta, 2),
-        "margen_bruto_pct": round(utilidad_bruta / total_ingresos * 100, 1) if total_ingresos > 0 else 0,
+        "margen_bruto_pct": round(utilidad_bruta / ingresos_netos * 100, 1) if ingresos_netos > 0 else 0,
         "gastos_admin": {"items": gastos_admin, "total": round(total_gastos_admin, 2)},
         "gastos_ventas": {"items": gastos_ventas, "total": round(total_gastos_ventas, 2)},
         "utilidad_operacional": round(utilidad_operacional, 2),
-        "margen_operacional_pct": round(utilidad_operacional / total_ingresos * 100, 1) if total_ingresos > 0 else 0,
+        "margen_operacional_pct": round(utilidad_operacional / ingresos_netos * 100, 1) if ingresos_netos > 0 else 0,
         "gastos_no_operacionales": {"items": gastos_no_op, "total": round(total_gastos_no_op, 2)},
-        "utilidad_neta": round(utilidad_neta, 2),
-        "margen_neto_pct": round(utilidad_neta / total_ingresos * 100, 1) if total_ingresos > 0 else 0,
+        "utilidad_neta": round(utilidad_antes_imp, 2),
+        "margen_neto_pct": round(utilidad_antes_imp / ingresos_netos * 100, 1) if ingresos_netos > 0 else 0,
     }
 
 
 def get_indicadores(anio: int, mes: int):
-    """Key financial indicators from invoices (revenue) + purchases (costs/expenses) + journals (balance)."""
-    from siigo import fetch_invoices, fetch_purchases
+    """Key financial indicators from invoices, credit notes, purchases, journals."""
+    from siigo import fetch_invoices, fetch_purchases, fetch_credit_notes
 
-    # Revenue from invoices (YTD)
     start = f"{anio}-01-01"
     last_day = 28 if mes == 2 else 30 if mes in (4,6,9,11) else 31
     end = f"{anio}-{mes:02d}-{last_day}"
-    invoices = fetch_invoices(start, end)
-    ingresos = sum(float(inv.get('total', 0)) for inv in invoices if not inv.get('annulled'))
 
-    # Costs and expenses from purchases (YTD)
+    # Revenue (net of taxes and credit notes)
+    invoices = fetch_invoices(start, end)
+    ingresos_brutos = 0
+    impuestos = 0
+    for inv in invoices:
+        if inv.get('annulled'): continue
+        ingresos_brutos += float(inv.get('total', 0))
+        for item in inv.get('items', []):
+            for tax in item.get('taxes', []):
+                impuestos += float(tax.get('value', 0))
+    credit_notes = fetch_credit_notes(start, end)
+    devoluciones = sum(float(cn.get('total', 0)) for cn in credit_notes if not cn.get('annulled'))
+    ingresos = ingresos_brutos - impuestos - devoluciones
+
+    # Costs/expenses from purchases
     purchases = fetch_purchases(start, end)
     costos = 0
-    gastos = 0
+    gastos_compras = 0
     for pur in purchases:
-        if pur.get('annulled'):
-            continue
+        if pur.get('annulled'): continue
         for item in pur.get('items', []):
             code = item.get('code', '')
             val = float(item.get('total', 0))
             if code.startswith('6') or code.startswith('7'):
                 costos += val
             elif code.startswith('5'):
-                gastos += val
+                gastos_compras += val
+
+    # Add journal-based expenses (nómina, financieros)
+    conn2 = get_conn()
+    cur2 = conn2.cursor()
+    cur2.execute("""
+        SELECT SUM(ABS(s.saldo)) FROM saldos_mensuales s
+        WHERE s.anio = %s AND s.mes <= %s AND s.cuenta LIKE '5%%'
+    """, (anio, mes))
+    row = cur2.fetchone()
+    gastos_journals = float(row[0] or 0) if row else 0
+    cur2.close(); conn2.close()
+
+    gastos = gastos_compras + gastos_journals
 
     # Balance from journal saldos
     conn = get_conn()
@@ -361,34 +464,45 @@ def get_indicadores(anio: int, mes: int):
 
 
 def get_tendencia_mensual_from_invoices(anio: int):
-    """Monthly P&L trend from invoices (revenue) and purchases (costs/expenses)."""
-    from siigo import fetch_invoices, fetch_purchases
+    """Monthly P&L trend from invoices, credit notes, purchases, and journal expenses."""
+    from siigo import fetch_invoices, fetch_purchases, fetch_credit_notes
 
     meses = {}
     for mes in range(1, 13):
-        meses[mes] = {"ingresos": 0, "costos": 0, "gastos": 0}
+        meses[mes] = {"ingresos_brutos": 0, "impuestos": 0, "devoluciones": 0,
+                      "costos": 0, "gastos": 0}
 
-    # Invoices = revenue
     start = f"{anio}-01-01"
     end = f"{anio}-12-31"
+
+    # Invoices = revenue (net of taxes)
     invoices = fetch_invoices(start, end)
     for inv in invoices:
         if inv.get('annulled'):
             continue
         fecha = inv.get('date', '')
-        if not fecha:
-            continue
+        if not fecha: continue
         mes = int(fecha[5:7])
-        meses[mes]["ingresos"] += float(inv.get('total', 0))
+        meses[mes]["ingresos_brutos"] += float(inv.get('total', 0))
+        for item in inv.get('items', []):
+            for tax in item.get('taxes', []):
+                meses[mes]["impuestos"] += float(tax.get('value', 0))
 
-    # Purchases = costs (6xxx) and expenses (5xxx)
+    # Credit notes = devoluciones
+    credit_notes = fetch_credit_notes(start, end)
+    for cn in credit_notes:
+        if cn.get('annulled'): continue
+        fecha = cn.get('date', '')
+        if not fecha: continue
+        mes = int(fecha[5:7])
+        meses[mes]["devoluciones"] += float(cn.get('total', 0))
+
+    # Purchases = costs (6+7xxx) and expenses (5xxx)
     purchases = fetch_purchases(start, end)
     for pur in purchases:
-        if pur.get('annulled'):
-            continue
+        if pur.get('annulled'): continue
         fecha = pur.get('date', '')
-        if not fecha:
-            continue
+        if not fecha: continue
         mes = int(fecha[5:7])
         for item in pur.get('items', []):
             code = item.get('code', '')
@@ -398,22 +512,36 @@ def get_tendencia_mensual_from_invoices(anio: int):
             elif code.startswith('5'):
                 meses[mes]["gastos"] += val
 
+    # Add journal-based expenses (nómina, financieros) per month
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.mes, SUM(ABS(s.saldo))
+        FROM saldos_mensuales s
+        WHERE s.anio = %s AND s.cuenta LIKE '5%%'
+        GROUP BY s.mes
+    """, (anio,))
+    for row in cur.fetchall():
+        meses[row[0]]["gastos"] += float(row[1])
+    cur.close(); conn.close()
+
     result = []
     for mes in range(1, 13):
         m = meses[mes]
-        if m["ingresos"] == 0 and m["costos"] == 0 and m["gastos"] == 0:
+        ingresos = m["ingresos_brutos"] - m["impuestos"] - m["devoluciones"]
+        if ingresos == 0 and m["costos"] == 0 and m["gastos"] == 0:
             continue
-        utilidad_bruta = m["ingresos"] - m["costos"]
+        utilidad_bruta = ingresos - m["costos"]
         utilidad_neta = utilidad_bruta - m["gastos"]
         result.append({
             "mes": mes,
-            "ingresos": round(m["ingresos"], 2),
+            "ingresos": round(ingresos, 2),
             "costos": round(m["costos"], 2),
             "gastos": round(m["gastos"], 2),
             "utilidad_bruta": round(utilidad_bruta, 2),
             "utilidad_neta": round(utilidad_neta, 2),
-            "margen_bruto_pct": round(utilidad_bruta / m["ingresos"] * 100, 1) if m["ingresos"] > 0 else 0,
-            "margen_neto_pct": round(utilidad_neta / m["ingresos"] * 100, 1) if m["ingresos"] > 0 else 0,
+            "margen_bruto_pct": round(utilidad_bruta / ingresos * 100, 1) if ingresos > 0 else 0,
+            "margen_neto_pct": round(utilidad_neta / ingresos * 100, 1) if ingresos > 0 else 0,
         })
     return {"anio": anio, "meses": result}
 
