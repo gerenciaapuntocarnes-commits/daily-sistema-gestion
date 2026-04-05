@@ -199,51 +199,51 @@ def get_balance_prueba(anio: int, mes: int):
 def get_estado_resultados(anio: int, mes_inicio: int = 1, mes_fin: int = 12):
     """
     P&L combining:
-    - Revenue from Siigo invoices (accurate monthly)
-    - Costs/expenses from journal saldos (5xxx, 6xxx)
+    - Revenue from Siigo invoices
+    - Costs/expenses from Siigo purchases (classified by PUC code in each item)
     """
-    from siigo import fetch_invoices
+    from siigo import fetch_invoices, fetch_purchases
 
-    # 1. Revenue from invoices
     start = f"{anio}-{mes_inicio:02d}-01"
     last_day = 28 if mes_fin == 2 else 30 if mes_fin in (4,6,9,11) else 31
     end = f"{anio}-{mes_fin:02d}-{last_day}"
+
+    # 1. Revenue from invoices
     invoices = fetch_invoices(start, end)
     total_ingresos = sum(float(inv.get('total', 0)) for inv in invoices if not inv.get('annulled'))
 
-    # 2. Costs and expenses from accounting saldos
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT s.cuenta, COALESCE(c.nombre, s.cuenta), c.clase, c.grupo_puc,
-               SUM(s.debito), SUM(s.credito), SUM(s.saldo)
-        FROM saldos_mensuales s
-        LEFT JOIN siigo_cuentas c ON c.codigo = s.cuenta
-        WHERE s.anio = %s AND s.mes BETWEEN %s AND %s
-          AND s.cuenta LIKE ANY(ARRAY['5%%','6%%','7%%'])
-        GROUP BY s.cuenta, c.nombre, c.clase, c.grupo_puc
-        ORDER BY s.cuenta
-    """, (anio, mes_inicio, mes_fin))
-    rows = cur.fetchall()
-    cur.close(); conn.close()
+    # 2. Costs and expenses from purchases (each item has a PUC code)
+    purchases = fetch_purchases(start, end)
+    costos_map = defaultdict(float)       # 6xxx = cost of sales
+    gastos_admin_map = defaultdict(float)  # 51xx = admin expenses
+    gastos_ventas_map = defaultdict(float) # 52xx = sales expenses
+    gastos_no_op_map = defaultdict(float)  # 53xx = non-operating
 
-    costos = []
-    gastos_admin = []
-    gastos_ventas = []
-    gastos_no_op = []
+    for pur in purchases:
+        if pur.get('annulled'):
+            continue
+        for item in pur.get('items', []):
+            code = item.get('code', '')
+            total_val = float(item.get('total', 0))
+            desc = item.get('description', code)
+            if code.startswith('6'):
+                costos_map[f"{code} {desc}"] += total_val
+            elif code.startswith('51'):
+                gastos_admin_map[f"{code} {desc}"] += total_val
+            elif code.startswith('52'):
+                gastos_ventas_map[f"{code} {desc}"] += total_val
+            elif code.startswith('5'):
+                gastos_no_op_map[f"{code} {desc}"] += total_val
 
-    for r in rows:
-        item = {"cuenta": r[0], "nombre": r[1] or r[0], "clase": r[2],
-                "grupo_puc": r[3], "saldo": abs(float(r[6]))}
-        prefix = r[0][:2]
-        if prefix in ('61', '62'):
-            costos.append(item)
-        elif prefix == '51':
-            gastos_admin.append(item)
-        elif prefix == '52':
-            gastos_ventas.append(item)
-        elif prefix in ('53', '54', '71'):
-            gastos_no_op.append(item)
+    def to_items(m):
+        return sorted([{"cuenta": k.split(' ')[0], "nombre": ' '.join(k.split(' ')[1:]) or k.split(' ')[0],
+                        "clase": "", "grupo_puc": "", "saldo": round(v, 2)}
+                       for k, v in m.items()], key=lambda x: -x['saldo'])
+
+    costos = to_items(costos_map)
+    gastos_admin = to_items(gastos_admin_map)
+    gastos_ventas = to_items(gastos_ventas_map)
+    gastos_no_op = to_items(gastos_no_op_map)
 
     total_costos = sum(i['saldo'] for i in costos)
     total_gastos_admin = sum(i['saldo'] for i in gastos_admin)
@@ -253,7 +253,7 @@ def get_estado_resultados(anio: int, mes_inicio: int = 1, mes_fin: int = 12):
     utilidad_operacional = utilidad_bruta - total_gastos_admin - total_gastos_ventas
     utilidad_neta = utilidad_operacional - total_gastos_no_op
 
-    ingresos_items = [{"cuenta": "Facturas Siigo", "nombre": "Ingresos por ventas (facturas)",
+    ingresos_items = [{"cuenta": "Facturas", "nombre": "Ingresos por ventas",
                        "clase": "Ingresos", "grupo_puc": "Ingresos operacionales",
                        "saldo": round(total_ingresos, 2)}]
 
@@ -274,8 +274,8 @@ def get_estado_resultados(anio: int, mes_inicio: int = 1, mes_fin: int = 12):
 
 
 def get_indicadores(anio: int, mes: int):
-    """Key financial indicators combining invoices (revenue) + journals (balance/expenses)."""
-    from siigo import fetch_invoices
+    """Key financial indicators from invoices (revenue) + purchases (costs/expenses) + journals (balance)."""
+    from siigo import fetch_invoices, fetch_purchases
 
     # Revenue from invoices (YTD)
     start = f"{anio}-01-01"
@@ -284,11 +284,24 @@ def get_indicadores(anio: int, mes: int):
     invoices = fetch_invoices(start, end)
     ingresos = sum(float(inv.get('total', 0)) for inv in invoices if not inv.get('annulled'))
 
-    # Balance and expenses from journal saldos
+    # Costs and expenses from purchases (YTD)
+    purchases = fetch_purchases(start, end)
+    costos = 0
+    gastos = 0
+    for pur in purchases:
+        if pur.get('annulled'):
+            continue
+        for item in pur.get('items', []):
+            code = item.get('code', '')
+            val = float(item.get('total', 0))
+            if code.startswith('6'):
+                costos += val
+            elif code.startswith('5'):
+                gastos += val
+
+    # Balance from journal saldos
     conn = get_conn()
     cur = conn.cursor()
-
-    # Cumulative balance sheet accounts (1xxx, 2xxx, 3xxx)
     cur.execute("""
         SELECT s.cuenta, SUM(s.debito) as total_d, SUM(s.credito) as total_c
         FROM saldos_mensuales s
@@ -296,17 +309,6 @@ def get_indicadores(anio: int, mes: int):
         GROUP BY s.cuenta
     """, (anio, anio, mes))
     raw = {r[0]: {"debito": float(r[1]), "credito": float(r[2])} for r in cur.fetchall()}
-
-    # Expenses YTD from saldos
-    cur.execute("""
-        SELECT SUM(CASE WHEN s.cuenta LIKE '6%%' THEN ABS(s.saldo) ELSE 0 END),
-               SUM(CASE WHEN s.cuenta LIKE '5%%' THEN ABS(s.saldo) ELSE 0 END)
-        FROM saldos_mensuales s
-        WHERE s.anio = %s AND s.mes <= %s
-    """, (anio, mes))
-    row = cur.fetchone()
-    costos = float(row[0] or 0)
-    gastos = float(row[1] or 0)
     cur.close(); conn.close()
 
     # Calculate balance from raw debits/credits
@@ -360,9 +362,8 @@ def get_indicadores(anio: int, mes: int):
 
 
 def get_tendencia_mensual_from_invoices(anio: int):
-    """Monthly P&L trend built from invoice/purchase data (more accurate monthly view)."""
-    from siigo import fetch_invoices
-    import time
+    """Monthly P&L trend from invoices (revenue) and purchases (costs/expenses)."""
+    from siigo import fetch_invoices, fetch_purchases
 
     meses = {}
     for mes in range(1, 13):
@@ -381,35 +382,22 @@ def get_tendencia_mensual_from_invoices(anio: int):
         mes = int(fecha[5:7])
         meses[mes]["ingresos"] += float(inv.get('total', 0))
 
-    # Gastos from journals (real accounting entries for expenses - 5xxx)
-    conn = get_conn()
-    cur = conn.cursor()
-    cur.execute("""
-        SELECT s.mes, SUM(s.saldo)
-        FROM saldos_mensuales s
-        WHERE s.anio = %s AND s.cuenta LIKE '5%%'
-        GROUP BY s.mes
-    """, (anio,))
-    for row in cur.fetchall():
-        meses[row[0]]["gastos"] = abs(float(row[1]))
-
-    # Costos from saldos (6xxx) — but only if they are spread monthly
-    # If not, use purchases as proxy
-    cur.execute("""
-        SELECT s.mes, SUM(s.saldo)
-        FROM saldos_mensuales s
-        WHERE s.anio = %s AND s.cuenta LIKE '6%%'
-        GROUP BY s.mes
-    """, (anio,))
-    has_monthly_costs = False
-    for row in cur.fetchall():
-        val = abs(float(row[1]))
-        if val > 0:
-            meses[row[0]]["costos"] = val
-            has_monthly_costs = True
-
-    cur.close()
-    conn.close()
+    # Purchases = costs (6xxx) and expenses (5xxx)
+    purchases = fetch_purchases(start, end)
+    for pur in purchases:
+        if pur.get('annulled'):
+            continue
+        fecha = pur.get('date', '')
+        if not fecha:
+            continue
+        mes = int(fecha[5:7])
+        for item in pur.get('items', []):
+            code = item.get('code', '')
+            val = float(item.get('total', 0))
+            if code.startswith('6'):
+                meses[mes]["costos"] += val
+            elif code.startswith('5'):
+                meses[mes]["gastos"] += val
 
     result = []
     for mes in range(1, 13):

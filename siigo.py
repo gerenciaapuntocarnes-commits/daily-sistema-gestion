@@ -134,6 +134,22 @@ def fetch_invoices(date_start: str, date_end: str) -> list:
     return raw
 
 
+def fetch_purchases(date_start: str = None, date_end: str = None) -> list:
+    """Get all purchases, optionally filtered by date (filtered in Python since API ignores date params)."""
+    raw = _paginate("/purchases")
+    if date_start or date_end:
+        filtered = []
+        for p in raw:
+            fecha = p.get('date', '')[:10]
+            if date_start and fecha < date_start:
+                continue
+            if date_end and fecha > date_end:
+                continue
+            filtered.append(p)
+        return filtered
+    return raw
+
+
 def sales_by_product_weekly(weeks: int = 8) -> dict:
     """
     Returns sales aggregated by product, broken down by week.
