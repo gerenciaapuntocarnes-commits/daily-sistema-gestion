@@ -225,13 +225,13 @@ def get_estado_resultados(anio: int, mes_inicio: int = 1, mes_fin: int = 12):
             code = item.get('code', '')
             total_val = float(item.get('total', 0))
             desc = item.get('description', code)
-            if code.startswith('6'):
+            if code.startswith('6') or code.startswith('7'):
                 costos_map[f"{code} {desc}"] += total_val
             elif code.startswith('51'):
                 gastos_admin_map[f"{code} {desc}"] += total_val
             elif code.startswith('52'):
                 gastos_ventas_map[f"{code} {desc}"] += total_val
-            elif code.startswith('5'):
+            elif code.startswith('53') or code.startswith('54'):
                 gastos_no_op_map[f"{code} {desc}"] += total_val
 
     def to_items(m):
@@ -293,7 +293,7 @@ def get_indicadores(anio: int, mes: int):
         for item in pur.get('items', []):
             code = item.get('code', '')
             val = float(item.get('total', 0))
-            if code.startswith('6'):
+            if code.startswith('6') or code.startswith('7'):
                 costos += val
             elif code.startswith('5'):
                 gastos += val
@@ -393,7 +393,7 @@ def get_tendencia_mensual_from_invoices(anio: int):
         for item in pur.get('items', []):
             code = item.get('code', '')
             val = float(item.get('total', 0))
-            if code.startswith('6'):
+            if code.startswith('6') or code.startswith('7'):
                 meses[mes]["costos"] += val
             elif code.startswith('5'):
                 meses[mes]["gastos"] += val
