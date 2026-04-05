@@ -54,36 +54,154 @@ def classify_account(code: str):
 
 
 def sync_journals():
-    """Download all journals from Siigo and store in local DB."""
-    all_journals = _paginate("/journals")
-
+    """Download ALL accounting data from Siigo: journals, vouchers, invoices, purchases, credit notes."""
     conn = get_conn()
     cur = conn.cursor()
     cuentas_seen = {}
-    count = 0
+    total = 0
 
-    for j in all_journals:
-        jid = j['id']
-        fecha = j.get('date', '')[:10]
-        items = j.get('items', [])
+    # Helper to process any document with items that have account codes
+    def process_doc(doc, source):
+        nonlocal total
+        jid = f"{source}_{doc['id']}"
+        fecha = doc.get('date', '')[:10]
+        items = doc.get('items', [])
+        if not fecha or not items:
+            return
 
-        # Upsert journal
+        # Normalize items — some endpoints have different structures
+        normalized = []
+        for item in items:
+            if 'account' in item:
+                normalized.append(item)
+            # Invoices/purchases don't have account codes directly — skip
+        if not normalized:
+            return
+
         cur.execute("""
             INSERT INTO siigo_journals (id, name, fecha, items, synced_at)
             VALUES (%s, %s, %s, %s, NOW())
             ON CONFLICT (id) DO UPDATE SET name=%s, fecha=%s, items=%s, synced_at=NOW()
-        """, (jid, j.get('name', ''), fecha, json.dumps(items),
-              j.get('name', ''), fecha, json.dumps(items)))
+        """, (jid, doc.get('name', ''), fecha, json.dumps(normalized),
+              doc.get('name', ''), fecha, json.dumps(normalized)))
 
-        # Track accounts
-        for item in items:
+        for item in normalized:
             code = item['account']['code']
             if code not in cuentas_seen:
-                info = classify_account(code)
-                cuentas_seen[code] = info
-        count += 1
+                cuentas_seen[code] = classify_account(code)
+        total += 1
 
-    # Upsert accounts
+    # 1. Journals (manual entries)
+    print("Syncing journals...")
+    for doc in _paginate("/journals"):
+        process_doc(doc, "JRN")
+
+    # 2. Vouchers (cash receipts — have account codes)
+    print("Syncing vouchers...")
+    for doc in _paginate("/vouchers"):
+        process_doc(doc, "VCH")
+
+    # 3. Invoices — NO account codes, but we extract revenue data
+    # We create synthetic journal entries from invoice totals
+    print("Syncing invoices...")
+    all_invoices = _paginate("/invoices")
+    for inv in all_invoices:
+        if inv.get('annulled'):
+            continue
+        fecha = inv.get('date', '')[:10]
+        total_val = float(inv.get('total', 0))
+        if not fecha or total_val <= 0:
+            continue
+        jid = f"INV_{inv['id']}"
+        # Synthetic double-entry: Debit 1305 (Cuentas por cobrar), Credit 4135 (Ingresos)
+        # Extract tax amounts
+        tax_total = 0
+        for item in inv.get('items', []):
+            for tax in item.get('taxes', []):
+                tax_total += float(tax.get('value', 0))
+        revenue = total_val - tax_total
+        synthetic_items = [
+            {"account": {"code": "13050501", "movement": "Debit"}, "value": total_val,
+             "description": f"Factura {inv.get('name', '')}"},
+            {"account": {"code": "41354501", "movement": "Credit"}, "value": revenue,
+             "description": f"Ingreso {inv.get('name', '')}"},
+        ]
+        if tax_total > 0:
+            synthetic_items.append(
+                {"account": {"code": "24080501", "movement": "Credit"}, "value": tax_total,
+                 "description": f"Impoconsumo {inv.get('name', '')}"}
+            )
+        cur.execute("""
+            INSERT INTO siigo_journals (id, name, fecha, items, synced_at)
+            VALUES (%s, %s, %s, %s, NOW())
+            ON CONFLICT (id) DO UPDATE SET name=%s, fecha=%s, items=%s, synced_at=NOW()
+        """, (jid, inv.get('name', ''), fecha, json.dumps(synthetic_items),
+              inv.get('name', ''), fecha, json.dumps(synthetic_items)))
+        for si in synthetic_items:
+            code = si['account']['code']
+            if code not in cuentas_seen:
+                cuentas_seen[code] = classify_account(code)
+        total += 1
+
+    # 4. Purchases — synthetic entries (Debit 6xxx cost, Credit 2205 proveedores)
+    print("Syncing purchases...")
+    all_purchases = _paginate("/purchases")
+    for pur in all_purchases:
+        if pur.get('annulled'):
+            continue
+        fecha = pur.get('date', '')[:10]
+        total_val = float(pur.get('total', 0))
+        if not fecha or total_val <= 0:
+            continue
+        jid = f"PUR_{pur['id']}"
+        synthetic_items = [
+            {"account": {"code": "61350101", "movement": "Debit"}, "value": total_val,
+             "description": f"Compra {pur.get('name', '')}"},
+            {"account": {"code": "22050501", "movement": "Credit"}, "value": total_val,
+             "description": f"Proveedor {pur.get('name', '')}"},
+        ]
+        cur.execute("""
+            INSERT INTO siigo_journals (id, name, fecha, items, synced_at)
+            VALUES (%s, %s, %s, %s, NOW())
+            ON CONFLICT (id) DO UPDATE SET name=%s, fecha=%s, items=%s, synced_at=NOW()
+        """, (jid, pur.get('name', ''), fecha, json.dumps(synthetic_items),
+              pur.get('name', ''), fecha, json.dumps(synthetic_items)))
+        for si in synthetic_items:
+            code = si['account']['code']
+            if code not in cuentas_seen:
+                cuentas_seen[code] = classify_account(code)
+        total += 1
+
+    # 5. Credit notes — reduce revenue
+    print("Syncing credit notes...")
+    all_cn = _paginate("/credit-notes")
+    for cn in all_cn:
+        if cn.get('annulled'):
+            continue
+        fecha = cn.get('date', '')[:10]
+        total_val = float(cn.get('total', 0))
+        if not fecha or total_val <= 0:
+            continue
+        jid = f"CN_{cn['id']}"
+        synthetic_items = [
+            {"account": {"code": "41354501", "movement": "Debit"}, "value": total_val,
+             "description": f"Nota crédito {cn.get('name', '')}"},
+            {"account": {"code": "13050501", "movement": "Credit"}, "value": total_val,
+             "description": f"NC {cn.get('name', '')}"},
+        ]
+        cur.execute("""
+            INSERT INTO siigo_journals (id, name, fecha, items, synced_at)
+            VALUES (%s, %s, %s, %s, NOW())
+            ON CONFLICT (id) DO UPDATE SET name=%s, fecha=%s, items=%s, synced_at=NOW()
+        """, (jid, cn.get('name', ''), fecha, json.dumps(synthetic_items),
+              cn.get('name', ''), fecha, json.dumps(synthetic_items)))
+        for si in synthetic_items:
+            code = si['account']['code']
+            if code not in cuentas_seen:
+                cuentas_seen[code] = classify_account(code)
+        total += 1
+
+    # Upsert all accounts
     for code, info in cuentas_seen.items():
         cur.execute("""
             INSERT INTO siigo_cuentas (codigo, clase, grupo_puc, naturaleza)
@@ -95,16 +213,14 @@ def sync_journals():
     # Rebuild monthly balances
     _rebuild_saldos_mensuales(cur)
 
-    # Log sync
-    cur.execute("""
-        INSERT INTO sync_log (tipo, registros, detalle)
-        VALUES ('journals', %s, %s)
-    """, (count, f"{len(cuentas_seen)} cuentas"))
+    # Log
+    detail = f"{len(cuentas_seen)} cuentas. INV:{len(all_invoices)} VCH:vouchers JRN:journals PUR:{len(all_purchases)} CN:{len(all_cn)}"
+    cur.execute("INSERT INTO sync_log (tipo, registros, detalle) VALUES ('full_sync', %s, %s)", (total, detail))
 
     conn.commit()
     cur.close()
     conn.close()
-    return {"journals": count, "cuentas": len(cuentas_seen)}
+    return {"registros": total, "cuentas": len(cuentas_seen)}
 
 
 def _rebuild_saldos_mensuales(cur):
