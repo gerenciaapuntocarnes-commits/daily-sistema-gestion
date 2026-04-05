@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Daily — Sistema de Gestion</title>
+<title>Daily — Sistema de Gestión</title>
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/core@1.2.0/dist/css/tabler.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/tabler-icons.min.css">
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.css">
@@ -174,8 +174,8 @@ tr:hover .btn-delete { opacity: 1; }
           </a>
         </li>
 
-        <!-- Produccion -->
-        <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Produccion</span></li>
+        <!-- Producción -->
+        <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Producción</span></li>
         <li class="nav-item">
           <a class="nav-link" href="#" onclick="goto('mp');return false;">
             <span class="nav-link-icon"><i class="ti ti-meat"></i></span>
@@ -192,7 +192,7 @@ tr:hover .btn-delete { opacity: 1; }
         <li class="nav-item">
           <a class="nav-link" href="#" onclick="goto('produccion');return false;">
             <span class="nav-link-icon"><i class="ti ti-building-factory-2"></i></span>
-            <span class="nav-link-title">Bitacora Produccion</span>
+            <span class="nav-link-title">Bitácora Producción</span>
           </a>
         </li>
         <li class="nav-item">
@@ -202,14 +202,14 @@ tr:hover .btn-delete { opacity: 1; }
           </a>
         </li>
 
-        <!-- Recepcion -->
+        <!-- Recepción -->
         <li class="nav-item">
           <a class="nav-link" href="#" onclick="goto('trazabilidad');return false;">
             <span class="nav-link-icon"><i class="ti ti-route"></i></span>
             <span class="nav-link-title">Trazabilidad</span>
           </a>
         </li>
-        <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Recepcion</span></li>
+        <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Recepción</span></li>
         <li class="nav-item">
           <a class="nav-link" href="#" onclick="goto('remisiones');return false;">
             <span class="nav-link-icon"><i class="ti ti-truck"></i></span>
@@ -260,7 +260,7 @@ tr:hover .btn-delete { opacity: 1; }
             <span class="nav-link-title">INVIMA / BPM</span>
           </a>
         </li>
-        <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Planificacion</span></li>
+        <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Planificación</span></li>
         <li class="nav-item">
           <a class="nav-link" href="#" onclick="goto('productos-siigo');return false;">
             <span class="nav-link-icon"><i class="ti ti-package"></i></span>
@@ -285,7 +285,7 @@ tr:hover .btn-delete { opacity: 1; }
             <span class="nav-link-title">Plan Semanal</span>
           </a>
         </li>
-        <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Analitica</span></li>
+        <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Analítica</span></li>
         <li class="nav-item">
           <a class="nav-link" href="#" onclick="goto('proyecciones');return false;">
             <span class="nav-link-icon"><i class="ti ti-chart-line"></i></span>
@@ -325,7 +325,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="row row-cards mb-3">
     <div class="col-lg-8">
       <div class="card">
-        <div class="card-header"><h3 class="card-title"><i class="ti ti-chart-area me-2"></i>Produccion ultimos 30 dias</h3></div>
+        <div class="card-header"><h3 class="card-title"><i class="ti ti-chart-area me-2"></i>Producción últimos 30 días</h3></div>
         <div class="card-body" id="chart-produccion" style="min-height:280px"></div>
       </div>
     </div>
@@ -345,7 +345,7 @@ tr:hover .btn-delete { opacity: 1; }
     </div>
     <div class="col-lg-6">
       <div class="card">
-        <div class="card-header"><h3 class="card-title">Ultima produccion</h3></div>
+        <div class="card-header"><h3 class="card-title">Última producción</h3></div>
         <div class="table-responsive">
           <table class="table table-vcenter card-table">
             <thead><tr><th>Fecha</th><th>Receta</th><th class="num">Planeado</th><th class="num">Real</th><th>Operario</th></tr></thead>
@@ -415,7 +415,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
       <div class="col-auto">
-        <div class="page-pretitle">Produccion</div>
+        <div class="page-pretitle">Producción</div>
         <h2 class="page-title">Materias Primas</h2>
       </div>
       <div class="col-auto ms-auto d-flex gap-2">
@@ -435,7 +435,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="card">
     <div class="table-responsive">
       <table class="table table-vcenter card-table">
-        <thead><tr><th>Codigo</th><th>Ingrediente</th><th>Unidad</th><th>Categoria</th><th class="num">Precio actual</th><th>Ultima compra</th><th>Proveedor</th><th></th></tr></thead>
+        <thead><tr><th>Codigo</th><th>Ingrediente</th><th>Unidad</th><th>Categoria</th><th class="num">Precio actual</th><th>Última compra</th><th>Proveedor</th><th></th></tr></thead>
         <tbody id="mp-body"></tbody>
       </table>
     </div>
@@ -447,7 +447,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
       <div class="col-auto">
-        <div class="page-pretitle">Produccion</div>
+        <div class="page-pretitle">Producción</div>
         <h2 class="page-title">Registro de Materias Primas</h2>
       </div>
       <div class="col-auto ms-auto d-flex gap-2">
@@ -482,7 +482,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
       <div class="col-auto">
-        <div class="page-pretitle">Produccion</div>
+        <div class="page-pretitle">Producción</div>
         <h2 class="page-title">Recetas</h2>
       </div>
       <div class="col-auto ms-auto">
@@ -495,7 +495,7 @@ tr:hover .btn-delete { opacity: 1; }
       <div class="card">
         <div class="table-responsive">
           <table class="table table-vcenter card-table">
-            <thead><tr><th>Receta</th><th>Categoria</th><th class="num">Costo/porcion</th><th class="num">P. venta</th><th class="num">Margen %</th><th></th></tr></thead>
+            <thead><tr><th>Receta</th><th>Categoria</th><th class="num">Costo/porción</th><th class="num">P. venta</th><th class="num">Margen %</th><th></th></tr></thead>
             <tbody id="recetas-body"></tbody>
           </table>
         </div>
@@ -512,8 +512,8 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
       <div class="col-auto">
-        <div class="page-pretitle">Produccion</div>
-        <h2 class="page-title">Bitacora de Produccion</h2>
+        <div class="page-pretitle">Producción</div>
+        <h2 class="page-title">Bitácora de Producción</h2>
       </div>
       <div class="col-auto ms-auto d-flex gap-2">
         <div class="btn-group">
@@ -543,7 +543,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
       <div class="col-auto">
-        <div class="page-pretitle">Produccion</div>
+        <div class="page-pretitle">Producción</div>
         <h2 class="page-title">Inventario</h2>
       </div>
       <div class="col-auto ms-auto d-flex gap-2">
@@ -574,7 +574,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
       <div class="col-auto">
-        <div class="page-pretitle">Recepcion</div>
+        <div class="page-pretitle">Recepción</div>
         <h2 class="page-title">Remisiones</h2>
       </div>
       <div class="col-auto ms-auto d-flex gap-2">
@@ -606,7 +606,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
       <div class="col-auto">
-        <div class="page-pretitle">Recepcion</div>
+        <div class="page-pretitle">Recepción</div>
         <h2 class="page-title">Aprobaciones</h2>
       </div>
       <div class="col-auto ms-auto">
@@ -651,7 +651,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="card">
     <div class="table-responsive">
       <table class="table table-vcenter card-table">
-        <thead><tr><th>Fecha</th><th>Tipo</th><th>Categoria</th><th>Descripcion</th><th class="num">Monto</th><th>Responsable</th><th>Comprobante</th><th></th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Tipo</th><th>Categoria</th><th>Descripción</th><th class="num">Monto</th><th>Responsable</th><th>Comprobante</th><th></th></tr></thead>
         <tbody id="gastos-body"></tbody>
       </table>
     </div>
@@ -707,7 +707,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="card">
     <div class="table-responsive">
       <table class="table table-vcenter card-table">
-        <thead><tr><th>Fecha</th><th>Tipo</th><th>Descripcion</th><th>Resultado</th><th>Operario</th><th>Proxima revision</th><th>Observaciones</th><th></th></tr></thead>
+        <thead><tr><th>Fecha</th><th>Tipo</th><th>Descripción</th><th>Resultado</th><th>Operario</th><th>Próxima revision</th><th>Observaciones</th><th></th></tr></thead>
         <tbody id="sanitario-body"></tbody>
       </table>
     </div>
@@ -719,7 +719,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
       <div class="col-auto">
-        <div class="page-pretitle">Produccion</div>
+        <div class="page-pretitle">Producción</div>
         <h2 class="page-title">Trazabilidad de Lotes</h2>
       </div>
     </div>
@@ -798,7 +798,7 @@ tr:hover .btn-delete { opacity: 1; }
         <div class="card-header"><h3 class="card-title">Registros recientes (todos)</h3></div>
         <div class="table-responsive">
           <table class="table table-vcenter card-table table-sm">
-            <thead><tr><th>Fecha</th><th>Programa</th><th>Descripcion</th><th>Resultado</th><th>Responsable</th><th></th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Programa</th><th>Descripción</th><th>Resultado</th><th>Responsable</th><th></th></tr></thead>
             <tbody id="invima-registros-body"></tbody>
           </table>
         </div>
@@ -812,7 +812,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
       <div class="col-auto">
-        <div class="page-pretitle">Planificacion</div>
+        <div class="page-pretitle">Planificación</div>
         <h2 class="page-title">Productos Siigo</h2>
       </div>
       <div class="col-auto ms-auto">
@@ -825,7 +825,7 @@ tr:hover .btn-delete { opacity: 1; }
     <div class="card-header"><h3 class="card-title">Producto terminado ↔ Receta</h3><div class="card-actions text-secondary small">Selecciona la receta que produce cada producto</div></div>
     <div class="table-responsive">
       <table class="table table-vcenter card-table">
-        <thead><tr><th>Codigo Siigo</th><th>Producto</th><th>Grupo</th><th>Receta ligada</th><th></th></tr></thead>
+        <thead><tr><th>Código Siigo</th><th>Producto</th><th>Grupo</th><th class="num">Precio venta</th><th>Receta ligada</th><th></th></tr></thead>
         <tbody id="prod-siigo-body"></tbody>
       </table>
     </div>
@@ -837,7 +837,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
       <div class="col-auto">
-        <div class="page-pretitle">Planificacion</div>
+        <div class="page-pretitle">Planificación</div>
         <h2 class="page-title">Reglas y Condicionales</h2>
       </div>
       <div class="col-auto ms-auto">
@@ -847,13 +847,13 @@ tr:hover .btn-delete { opacity: 1; }
   </div>
   <div class="row row-cards mb-3">
     <div class="col-md-4"><div class="card bg-azure-lt"><div class="card-body py-3"><i class="ti ti-truck me-2"></i><strong>Dias de recepcion</strong><div class="small text-secondary mt-1">Que dias llega cada MP</div></div></div></div>
-    <div class="col-md-4"><div class="card bg-yellow-lt"><div class="card-body py-3"><i class="ti ti-clock me-2"></i><strong>Vida util / Lead time</strong><div class="small text-secondary mt-1">Cuanto dura, cuanto tarda en llegar</div></div></div></div>
+    <div class="col-md-4"><div class="card bg-yellow-lt"><div class="card-body py-3"><i class="ti ti-clock me-2"></i><strong>Vida útil / Lead time</strong><div class="small text-secondary mt-1">Cuanto dura, cuanto tarda en llegar</div></div></div></div>
     <div class="col-md-4"><div class="card bg-red-lt"><div class="card-body py-3"><i class="ti ti-alert-triangle me-2"></i><strong>Restricciones</strong><div class="small text-secondary mt-1">No pedir finde, produccion solo ciertos dias</div></div></div></div>
   </div>
   <div class="card">
     <div class="table-responsive">
       <table class="table table-vcenter card-table">
-        <thead><tr><th>Tipo</th><th>Aplica a</th><th>Parametro</th><th>Valor</th><th>Descripcion</th><th></th></tr></thead>
+        <thead><tr><th>Tipo</th><th>Aplica a</th><th>Parametro</th><th>Valor</th><th>Descripción</th><th></th></tr></thead>
         <tbody id="reglas-body"></tbody>
       </table>
     </div>
@@ -873,11 +873,11 @@ tr:hover .btn-delete { opacity: 1; }
           <label class="form-label">Tipo de regla *</label>
           <select class="form-select" id="regla-tipo" onchange="actualizarCamposRegla()">
             <option value="dias_recepcion">Dias de recepcion de MP</option>
-            <option value="vida_util">Vida util (dias)</option>
+            <option value="vida_util">Vida útil (días)</option>
             <option value="dias_entrega">Lead time proveedor (dias)</option>
             <option value="no_fin_semana">No pedir para fin de semana</option>
             <option value="stock_seguridad">Stock de seguridad</option>
-            <option value="produccion_dia">Produccion solo ciertos dias</option>
+            <option value="produccion_dia">Producción solo ciertos días</option>
             <option value="capacidad_max">Capacidad maxima diaria planta</option>
           </select>
         </div>
@@ -890,14 +890,14 @@ tr:hover .btn-delete { opacity: 1; }
           <input class="form-control" id="regla-valor" placeholder="Ej: martes,jueves  o  3  o  true">
         </div>
         <div class="col-md-6">
-          <label class="form-label">Descripcion</label>
+          <label class="form-label">Descripción</label>
           <input class="form-control" id="regla-desc" placeholder="Explicacion de la regla">
         </div>
       </div>
       <div class="mt-3 p-2 bg-light rounded small text-secondary" id="regla-ayuda">
         <strong>Ejemplos:</strong><br>
         Dias recepcion: valor = <code>martes,jueves</code> — MP solo llega esos dias<br>
-        Vida util: valor = <code>3</code> — la MP dura 3 dias<br>
+        Vida útil: valor = <code>3</code> — la MP dura 3 días<br>
         No fin semana: valor = <code>true</code> — no pedir para sabado/domingo<br>
         Lead time: valor = <code>2</code> — pedido tarda 2 dias en llegar<br>
         Capacidad max: valor = <code>200</code> — max 200 porciones/dia
@@ -915,8 +915,8 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
       <div class="col-auto">
-        <div class="page-pretitle">Planificacion</div>
-        <h2 class="page-title"><i class="ti ti-calendar-event me-2"></i>Plan de Produccion Semanal</h2>
+        <div class="page-pretitle">Planificación</div>
+        <h2 class="page-title"><i class="ti ti-calendar-event me-2"></i>Plan de Producción Semanal</h2>
       </div>
       <div class="col-auto ms-auto d-flex gap-2">
         <select class="form-select" id="plan-semanas" onchange="loadPlanProduccion()" style="width:auto">
@@ -938,7 +938,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="row row-cards mb-3" style="align-items:start">
     <div class="col-lg-6">
       <div class="card">
-        <div class="card-header"><h3 class="card-title"><i class="ti ti-building-factory-2 me-2"></i>Plan de Produccion</h3></div>
+        <div class="card-header"><h3 class="card-title"><i class="ti ti-building-factory-2 me-2"></i>Plan de Producción</h3></div>
         <div class="table-responsive">
           <table class="table table-vcenter card-table table-sm">
             <thead><tr><th>Producto</th><th class="num">Venta/sem</th><th class="num">Stock min</th><th class="num">Necesidad</th><th class="num">Producir</th><th>Batch</th><th class="num">Costo/und</th><th class="num">Tiempo</th></tr></thead>
@@ -973,9 +973,9 @@ tr:hover .btn-delete { opacity: 1; }
       </div>
       <div class="col-auto ms-auto d-flex gap-2">
         <select class="form-select" id="siigo-semanas" onchange="loadSiigoVentas()" style="width:auto">
-          <option value="4">Ultimas 4 semanas</option>
-          <option value="8" selected>Ultimas 8 semanas</option>
-          <option value="12">Ultimas 12 semanas</option>
+          <option value="4">Últimas 4 semanas</option>
+          <option value="8" selected>Últimas 8 semanas</option>
+          <option value="12">Últimas 12 semanas</option>
         </select>
         <button class="btn btn-outline-secondary" onclick="loadSiigoProductos()"><i class="ti ti-package me-1"></i>Ver productos</button>
       </div>
@@ -1035,7 +1035,7 @@ tr:hover .btn-delete { opacity: 1; }
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
       <div class="col-auto">
-        <div class="page-pretitle">Analitica</div>
+        <div class="page-pretitle">Analítica</div>
         <h2 class="page-title">Proyecciones de Demanda</h2>
       </div>
       <div class="col-auto ms-auto">
@@ -1063,7 +1063,7 @@ tr:hover .btn-delete { opacity: 1; }
     </div>
   </div>
   <div class="card">
-    <div class="card-header"><h3 class="card-title">Forecast por receta (basado en ultimos 90 dias)</h3></div>
+    <div class="card-header"><h3 class="card-title">Forecast por receta (basado en últimos 90 días)</h3></div>
     <div class="table-responsive">
       <table class="table table-vcenter card-table">
         <thead><tr><th>Receta</th><th>Categoria</th><th class="num">Veces (90d)</th><th class="num">Total (90d)</th><th class="num">Promedio</th><th class="num">Proyeccion</th><th class="num">Costo est.</th><th>Tendencia</th></tr></thead>
@@ -1241,19 +1241,19 @@ tr:hover .btn-delete { opacity: 1; }
           <input class="form-control" type="number" id="rec-porciones" step="0.5" value="1">
         </div>
         <div class="col-md-6">
-          <label class="form-label">Precio de venta por porcion ($)</label>
+          <label class="form-label">Precio de venta por porción ($)</label>
           <input class="form-control" type="number" id="rec-precio" step="100" value="0">
         </div>
         <div class="col-12">
-          <label class="form-label">Descripcion</label>
-          <textarea class="form-control" id="rec-descripcion" rows="2" placeholder="Descripcion breve de la receta"></textarea>
+          <label class="form-label">Descripción</label>
+          <textarea class="form-control" id="rec-descripcion" rows="2" placeholder="Descripción breve de la receta"></textarea>
         </div>
       </div>
       <hr class="my-3">
-      <div class="text-uppercase text-secondary small fw-bold mb-2" style="letter-spacing:.4px"><i class="ti ti-settings me-1"></i>Configuracion de produccion</div>
+      <div class="text-uppercase text-secondary small fw-bold mb-2" style="letter-spacing:.4px"><i class="ti ti-settings me-1"></i>Configuración de producción</div>
       <div class="row g-3">
         <div class="col-md-6">
-          <label class="form-label">Batch maximo (unidades por tanda)</label>
+          <label class="form-label">Batch máximo (unidades por tanda)</label>
           <input class="form-control" type="number" id="rec-batch" step="1" value="0" placeholder="Ej: 50">
         </div>
         <div class="col-md-6">
@@ -1261,7 +1261,7 @@ tr:hover .btn-delete { opacity: 1; }
           <input class="form-control" type="number" id="rec-tiempo" step="5" value="0" placeholder="Ej: 90">
         </div>
         <div class="col-md-4">
-          <label class="form-label">Vida util (dias)</label>
+          <label class="form-label">Vida útil (días)</label>
           <input class="form-control" type="number" id="rec-vida" step="1" value="30" placeholder="Ej: 30">
         </div>
         <div class="col-md-4">
@@ -1274,18 +1274,18 @@ tr:hover .btn-delete { opacity: 1; }
         </div>
       </div>
     </div>
-    <div class="card-footer text-end">
+    <div class="card-footer text-end" style="position:sticky;bottom:0;z-index:1;background:var(--tblr-card-bg);border-top:1px solid var(--tblr-border-color)">
       <button class="btn btn-link me-2" onclick="closeModal('modal-receta')">Cancelar</button>
       <button class="btn btn-primary" onclick="crearReceta()">Crear receta</button>
     </div>
   </div>
 </div>
 
-<!-- Registrar Produccion -->
+<!-- Registrar Producción -->
 <div id="modal-prod" class="modal-bg">
   <div class="card" style="width:100%;max-width:680px;max-height:90vh;overflow-y:auto">
     <div class="card-header">
-      <h3 class="card-title">Registrar Produccion</h3>
+      <h3 class="card-title">Registrar Producción</h3>
       <button type="button" class="btn-close" onclick="closeModal('modal-prod')"></button>
     </div>
     <div class="card-body">
@@ -1436,8 +1436,8 @@ tr:hover .btn-delete { opacity: 1; }
           <input class="form-control" type="number" id="gasto-monto" step="100" placeholder="0">
         </div>
         <div class="col-12">
-          <label class="form-label">Descripcion</label>
-          <input class="form-control" id="gasto-desc" placeholder="Descripcion del gasto">
+          <label class="form-label">Descripción</label>
+          <input class="form-control" id="gasto-desc" placeholder="Descripción del gasto">
         </div>
         <div class="col-md-6">
           <label class="form-label">Responsable</label>
@@ -1504,7 +1504,7 @@ tr:hover .btn-delete { opacity: 1; }
       <div class="row g-3">
         <div class="col-md-4"><label class="form-label">Codigo</label><input class="form-control" id="inv-prog-codigo" placeholder="Ej: L&D"></div>
         <div class="col-md-8"><label class="form-label">Nombre del programa *</label><input class="form-control" id="inv-prog-nombre" placeholder="Ej: Limpieza y Desinfeccion"></div>
-        <div class="col-12"><label class="form-label">Descripcion</label><textarea class="form-control" id="inv-prog-desc" rows="2"></textarea></div>
+        <div class="col-12"><label class="form-label">Descripción</label><textarea class="form-control" id="inv-prog-desc" rows="2"></textarea></div>
         <div class="col-md-6"><label class="form-label">Responsable</label><input class="form-control" id="inv-prog-resp" placeholder="Cargo o nombre"></div>
         <div class="col-md-6"><label class="form-label">Frecuencia</label>
           <select class="form-select" id="inv-prog-freq"><option>Diario</option><option>Semanal</option><option>Quincenal</option><option>Mensual</option><option>Trimestral</option><option>Semestral</option><option>Anual</option><option>Cada lote</option><option>Cada despacho</option></select>
@@ -1529,13 +1529,13 @@ tr:hover .btn-delete { opacity: 1; }
       <div class="row g-3">
         <div class="col-md-6"><label class="form-label">Programa *</label><select class="form-select" id="inv-reg-programa"></select></div>
         <div class="col-md-6"><label class="form-label">Fecha</label><input class="form-control" type="date" id="inv-reg-fecha"></div>
-        <div class="col-12"><label class="form-label">Descripcion / Actividad realizada *</label><input class="form-control" id="inv-reg-desc" placeholder="Que se hizo o verifico"></div>
+        <div class="col-12"><label class="form-label">Descripción / Actividad realizada *</label><input class="form-control" id="inv-reg-desc" placeholder="Que se hizo o verifico"></div>
         <div class="col-md-6"><label class="form-label">Resultado</label>
           <select class="form-select" id="inv-reg-resultado"><option>Conforme</option><option>No conforme</option><option>Pendiente correccion</option><option>En proceso</option></select>
         </div>
         <div class="col-md-6"><label class="form-label">Responsable</label><input class="form-control" id="inv-reg-resp" placeholder="Nombre"></div>
         <div class="col-12"><label class="form-label">Observaciones</label><textarea class="form-control" id="inv-reg-obs" rows="2"></textarea></div>
-        <div class="col-md-6"><label class="form-label">Proxima revision</label><input class="form-control" type="date" id="inv-reg-prox"></div>
+        <div class="col-md-6"><label class="form-label">Próxima revision</label><input class="form-control" type="date" id="inv-reg-prox"></div>
       </div>
     </div>
     <div class="card-footer text-end">
@@ -1561,7 +1561,7 @@ tr:hover .btn-delete { opacity: 1; }
         <div class="col-md-6">
           <label class="form-label">Categoria</label>
           <select class="form-select" id="proc-categoria">
-            <option>Produccion</option><option>Limpieza y sanitizacion</option><option>Recepcion de MP</option>
+            <option>Producción</option><option>Limpieza y sanitización</option><option>Recepción de MP</option>
             <option>Almacenamiento</option><option>Despacho</option><option>General</option>
           </select>
         </div>
@@ -1574,7 +1574,7 @@ tr:hover .btn-delete { opacity: 1; }
           <select class="form-select" id="proc-frecuencia"><option>Cada vez</option><option>Diario</option><option>Semanal</option><option>Quincenal</option><option>Mensual</option></select>
         </div>
         <div class="col-12">
-          <label class="form-label">Descripcion general</label>
+          <label class="form-label">Descripción general</label>
           <textarea class="form-control" id="proc-desc" rows="2" placeholder="Objetivo o resumen del procedimiento"></textarea>
         </div>
       </div>
@@ -1623,7 +1623,7 @@ tr:hover .btn-delete { opacity: 1; }
           <input class="form-control" id="san-operario" placeholder="Nombre">
         </div>
         <div class="col-12">
-          <label class="form-label">Descripcion de lo controlado</label>
+          <label class="form-label">Descripción de lo controlado</label>
           <input class="form-control" id="san-desc" placeholder="Que se verifico / inspecciono">
         </div>
         <div class="col-12">
@@ -1631,7 +1631,7 @@ tr:hover .btn-delete { opacity: 1; }
           <textarea class="form-control" id="san-obs" rows="2"></textarea>
         </div>
         <div class="col-md-6">
-          <label class="form-label">Proxima revision</label>
+          <label class="form-label">Próxima revision</label>
           <input class="form-control" type="date" id="san-proxima">
         </div>
       </div>
@@ -2281,7 +2281,7 @@ async function verReceta(id) {
     '<span class="ing-qty">'+fmtD(i.cantidad,3)+' '+i.unidad+'</span>' +
     '<span class="ing-cost">$'+fmt(i.costo_linea)+'</span>' +
     '<button class="step-del" onclick="eliminarIngrediente('+i.id+')" title="Quitar"><i class="ti ti-x"></i></button>' +
-    '</div>';}).join('') : '<p class="text-secondary" style="padding:8px">Sin ingredientes aun.</p>';
+    '</div>';}).join('') : '<p class="text-secondary" style="padding:8px">Sin ingredientes aún.</p>';
 
   var costoDesglose = r.costo_fijo_batch > 0 ?
     '<div class="small text-secondary mt-1">MP: $'+fmt(r.costo_mp_und)+' + MO: $'+fmt(r.costo_mano_obra/r.batch_maximo)+' + Serv: $'+fmt(r.costo_servicios/r.batch_maximo)+'</div>' : '';
@@ -2292,19 +2292,18 @@ async function verReceta(id) {
 
   $('receta-detalle-panel').innerHTML =
     '<div class="card">' +
-      '<div class="card-header d-flex justify-content-between align-items-center">' +
-        '<div style="flex:1">' +
-          '<input class="form-control form-control-sm fw-bold" id="edit-nombre" value="'+r.nombre.replace(/"/g,'&quot;')+'" style="font-size:16px;border:none;padding:0;background:transparent" onfocus="this.style.background=\'var(--tblr-bg-surface-secondary)\';this.style.padding=\'4px 8px\'" onblur="this.style.background=\'transparent\';this.style.padding=\'0\'">' +
-          '<div class="d-flex gap-2 mt-1 align-items-center">' +
-            '<select class="form-select form-select-sm" id="edit-categoria" style="width:auto;font-size:12px">'+catOpts+'</select>' +
-            '<span class="text-secondary small">Rinde</span>' +
-            '<input class="form-control form-control-sm" type="number" id="edit-porciones" value="'+r.porciones+'" step="0.5" style="width:70px;font-size:12px">' +
-            '<span class="text-secondary small">porciones</span>' +
-            '<span class="text-secondary small ms-2">Precio $</span>' +
-            '<input class="form-control form-control-sm" type="number" id="edit-precio" value="'+r.precio_venta+'" step="100" style="width:100px;font-size:12px">' +
+      '<div class="card-header">' +
+        '<div class="w-100">' +
+          '<div class="d-flex justify-content-between align-items-center mb-2">' +
+            '<input class="form-control fw-bold" id="edit-nombre" value="'+r.nombre.replace(/"/g,'&quot;')+'" style="font-size:16px;border:none;padding:0;background:transparent;flex:1" onfocus="this.style.background=\'var(--tblr-bg-surface-secondary)\';this.style.padding=\'4px 8px\'" onblur="this.style.background=\'transparent\';this.style.padding=\'0\'">' +
+            '<button class="btn btn-primary btn-sm ms-3" onclick="guardarReceta('+r.id+')"><i class="ti ti-device-floppy me-1"></i>Guardar</button>' +
+          '</div>' +
+          '<div class="row g-2">' +
+            '<div class="col-auto"><select class="form-select form-select-sm" id="edit-categoria" style="font-size:12px">'+catOpts+'</select></div>' +
+            '<div class="col-auto d-flex align-items-center gap-1"><span class="text-secondary small">Rinde</span><input class="form-control form-control-sm" type="number" id="edit-porciones" value="'+r.porciones+'" step="0.5" style="width:70px;font-size:12px"><span class="text-secondary small">porciones</span></div>' +
+            '<div class="col-auto d-flex align-items-center gap-1"><span class="text-secondary small">Precio $</span><input class="form-control form-control-sm" type="number" id="edit-precio" value="'+r.precio_venta+'" step="100" style="width:110px;font-size:12px"></div>' +
           '</div>' +
         '</div>' +
-        '<button class="btn btn-primary btn-sm ms-2" onclick="guardarReceta('+r.id+')"><i class="ti ti-check me-1"></i>Guardar</button>' +
       '</div>' +
       '<div class="card-body">' +
         '<div class="row row-cards mb-3">' +
@@ -2321,11 +2320,11 @@ async function verReceta(id) {
         '</div>' +
         // Config produccion editable
         '<div class="mt-2 mb-3 p-3 rounded" style="background:var(--tblr-bg-surface-secondary)">' +
-          '<div class="fw-bold small mb-2"><i class="ti ti-settings me-1"></i>Configuracion de produccion</div>' +
+          '<div class="fw-bold small mb-2"><i class="ti ti-settings me-1"></i>Configuración de producción</div>' +
           '<div class="row g-2">' +
-            '<div class="col-md-4"><label class="form-label" style="font-size:11px">Batch maximo (und)</label><input class="form-control form-control-sm" type="number" id="edit-batch" value="'+r.batch_maximo+'" step="1"></div>' +
+            '<div class="col-md-4"><label class="form-label" style="font-size:11px">Batch máximo (und)</label><input class="form-control form-control-sm" type="number" id="edit-batch" value="'+r.batch_maximo+'" step="1"></div>' +
             '<div class="col-md-4"><label class="form-label" style="font-size:11px">Tiempo / batch (min)</label><input class="form-control form-control-sm" type="number" id="edit-tiempo" value="'+r.tiempo_batch_min+'" step="5"></div>' +
-            '<div class="col-md-4"><label class="form-label" style="font-size:11px">Vida util (dias)</label><input class="form-control form-control-sm" type="number" id="edit-vida" value="'+r.vida_util_dias+'" step="1"></div>' +
+            '<div class="col-md-4"><label class="form-label" style="font-size:11px">Vida útil (días)</label><input class="form-control form-control-sm" type="number" id="edit-vida" value="'+r.vida_util_dias+'" step="1"></div>' +
             '<div class="col-md-6"><label class="form-label" style="font-size:11px">Mano de obra / batch ($)</label><input class="form-control form-control-sm" type="number" id="edit-mo" value="'+r.costo_mano_obra+'" step="1000"></div>' +
             '<div class="col-md-6"><label class="form-label" style="font-size:11px">Servicios / batch ($)</label><input class="form-control form-control-sm" type="number" id="edit-sv" value="'+r.costo_servicios+'" step="1000"></div>' +
           '</div>' +
@@ -2441,7 +2440,7 @@ async function registrarProduccion() {
   if(res.lote) {
     notyf.success('Registro guardado. Lote: ' + res.lote);
   } else {
-    notyf.success('Produccion registrada');
+    notyf.success('Producción registrada');
   }
   loadProduccion();
 }
@@ -2988,11 +2987,11 @@ function getExportData(section) {
   var configs = {
     mp: { title:'Materias Primas', headers:['Codigo','Ingrediente','Unidad','Categoria','Precio actual'], data:function(){ return mpList.map(function(m){return [m.codigo||'',m.nombre,m.unidad,m.categoria,m.precio_actual||0];}); }},
     compras: { title:'Compras MP', headers:['Fecha','Ingrediente','Cantidad','Precio/und','Total','Proveedor','Factura'], data:function(){ var rows=[]; document.querySelectorAll('#compras-body tr').forEach(function(tr){if(tr.querySelector('.empty-state'))return;var cells=tr.querySelectorAll('td');if(cells.length>=7) rows.push([cells[0].textContent,cells[1].textContent,cells[2].textContent,cells[3].textContent,cells[4].textContent,cells[5].textContent,cells[6].textContent]);}); return rows; }},
-    produccion: { title:'Produccion', headers:['Fecha','Producto','Planeado','Real','Lote','Operario','Costo'], data:function(){ var rows=[]; document.querySelectorAll('#prod-body tr').forEach(function(tr){if(tr.querySelector('.empty-state'))return;var cells=tr.querySelectorAll('td');if(cells.length>=9) rows.push([cells[0].textContent,cells[1].textContent,cells[3].textContent,cells[4].textContent,cells[6].textContent,cells[7].textContent,cells[8].textContent]);}); return rows; }},
+    produccion: { title:'Producción', headers:['Fecha','Producto','Planeado','Real','Lote','Operario','Costo'], data:function(){ var rows=[]; document.querySelectorAll('#prod-body tr').forEach(function(tr){if(tr.querySelector('.empty-state'))return;var cells=tr.querySelectorAll('td');if(cells.length>=9) rows.push([cells[0].textContent,cells[1].textContent,cells[3].textContent,cells[4].textContent,cells[6].textContent,cells[7].textContent,cells[8].textContent]);}); return rows; }},
     inventario: { title:'Inventario', headers:['Ingrediente','Codigo','Unidad','Stock Actual','Stock Minimo','Estado'], data:function(){ return inventarioData.map(function(item){return [item.nombre,item.codigo||'',item.unidad,item.stock_actual,item.stock_minimo,item.status||'ok'];}); }},
     remisiones: { title:'Remisiones', headers:['N Remision','Fecha','Proveedor','Operario','Estado'], data:function(){ var rows=[]; document.querySelectorAll('#remisiones-body tr').forEach(function(tr){if(tr.querySelector('.empty-state'))return;var cells=tr.querySelectorAll('td');if(cells.length>=6) rows.push([cells[0].textContent,cells[1].textContent,cells[2].textContent,cells[3].textContent,cells[5].textContent]);}); return rows; }},
-    gastos: { title:'Gastos', headers:['Fecha','Tipo','Categoria','Descripcion','Monto','Responsable','Comprobante'], data:function(){ var rows=[]; document.querySelectorAll('#gastos-body tr').forEach(function(tr){if(tr.querySelector('.empty-state'))return;var cells=tr.querySelectorAll('td');if(cells.length>=7) rows.push([cells[0].textContent,cells[1].textContent,cells[2].textContent,cells[3].textContent,cells[4].textContent,cells[5].textContent,cells[6].textContent]);}); return rows; }},
-    sanitario: { title:'Registros Sanitarios', headers:['Fecha','Tipo','Descripcion','Resultado','Operario','Proxima revision','Observaciones'], data:function(){ var rows=[]; document.querySelectorAll('#sanitario-body tr').forEach(function(tr){if(tr.querySelector('.empty-state'))return;var cells=tr.querySelectorAll('td');if(cells.length>=7) rows.push([cells[0].textContent,cells[1].textContent,cells[2].textContent,cells[3].textContent,cells[4].textContent,cells[5].textContent,cells[6].textContent]);}); return rows; }}
+    gastos: { title:'Gastos', headers:['Fecha','Tipo','Categoria','Descripción','Monto','Responsable','Comprobante'], data:function(){ var rows=[]; document.querySelectorAll('#gastos-body tr').forEach(function(tr){if(tr.querySelector('.empty-state'))return;var cells=tr.querySelectorAll('td');if(cells.length>=7) rows.push([cells[0].textContent,cells[1].textContent,cells[2].textContent,cells[3].textContent,cells[4].textContent,cells[5].textContent,cells[6].textContent]);}); return rows; }},
+    sanitario: { title:'Registros Sanitarios', headers:['Fecha','Tipo','Descripción','Resultado','Operario','Próxima revision','Observaciones'], data:function(){ var rows=[]; document.querySelectorAll('#sanitario-body tr').forEach(function(tr){if(tr.querySelector('.empty-state'))return;var cells=tr.querySelectorAll('td');if(cells.length>=7) rows.push([cells[0].textContent,cells[1].textContent,cells[2].textContent,cells[3].textContent,cells[4].textContent,cells[5].textContent,cells[6].textContent]);}); return rows; }}
   };
   return configs[section] || null;
 }
@@ -3038,7 +3037,7 @@ async function escalarReceta(recetaId, porciones) {
       '<span class="scale-stock '+(i.alcanza?'scale-ok':'scale-no')+'">'+(i.alcanza?'OK: '+fmtD(i.stock_disponible,1):'FALTA: '+fmtD(i.stock_disponible,1))+'</span>' +
     '</div>';
   });
-  html += '<div class="scale-row" style="font-weight:700;border-top:2px solid var(--tblr-border-color)"><span class="scale-name">TOTAL</span><span class="scale-qty"></span><span class="scale-cost">$'+fmt(data.costo_total)+'</span><span class="scale-stock">$'+fmt(data.costo_porcion)+'/porcion</span></div>';
+  html += '<div class="scale-row" style="font-weight:700;border-top:2px solid var(--tblr-border-color)"><span class="scale-name">TOTAL</span><span class="scale-qty"></span><span class="scale-cost">$'+fmt(data.costo_total)+'</span><span class="scale-stock">$'+fmt(data.costo_porcion)+'/porción</span></div>';
   $('scale-resultado').innerHTML = html;
 }
 
@@ -3224,7 +3223,7 @@ async function loadInvimaRegistros(programaId) {
   $('invima-registros-panel').innerHTML =
     '<div class="card"><div class="card-header"><h3 class="card-title">'+title+'</h3></div>' +
     '<div class="table-responsive"><table class="table table-vcenter card-table table-sm">' +
-    '<thead><tr><th>Fecha</th><th>Programa</th><th>Descripcion</th><th>Resultado</th><th>Responsable</th><th></th></tr></thead><tbody>' +
+    '<thead><tr><th>Fecha</th><th>Programa</th><th>Descripción</th><th>Resultado</th><th>Responsable</th><th></th></tr></thead><tbody>' +
     data.map(function(r,i){
       var resCls = r.resultado==='Conforme'?'bg-green-lt':r.resultado==='No conforme'?'bg-red-lt':'bg-yellow-lt';
       return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s"><td>'+r.fecha+'</td><td><span class="badge bg-blue-lt">'+r.codigo+'</span></td><td style="max-width:200px;font-size:12px">'+r.descripcion+'</td><td><span class="badge '+resCls+'">'+r.resultado+'</span></td><td>'+(r.responsable||'--')+'</td><td><button class="btn btn-outline-danger btn-sm btn-delete" onclick="eliminarInvimaRegistro('+r.id+')"><i class="ti ti-x"></i></button></td></tr>';
@@ -3356,6 +3355,7 @@ async function loadProductosSiigo() {
       '<td><span class="badge bg-blue-lt" style="font-family:monospace">'+p.siigo_code+'</span></td>' +
       '<td><strong>'+p.siigo_name+'</strong></td>' +
       '<td><span class="badge bg-azure-lt">'+(p.siigo_group||'')+'</span></td>' +
+      '<td class="num">'+(p.precio_venta > 0 ? '$'+fmt(p.precio_venta) : '<span class="text-secondary">--</span>')+'</td>' +
       '<td>'+linked+'</td>' +
       '<td><select class="form-select form-select-sm" style="width:200px" onchange="ligarReceta('+p.id+',this.value)">' +
         optsHtml.replace('value="'+p.receta_id+'"','value="'+p.receta_id+'" selected') +
@@ -3389,7 +3389,7 @@ async function loadReglas() {
   }
   var tipoIcons = {dias_recepcion:'ti-truck',vida_util:'ti-clock',dias_entrega:'ti-clock-hour-4',no_fin_semana:'ti-calendar-off',stock_seguridad:'ti-shield',produccion_dia:'ti-calendar',capacidad_max:'ti-gauge'};
   var tipoBadges = {dias_recepcion:'bg-azure-lt',vida_util:'bg-yellow-lt',dias_entrega:'bg-orange-lt',no_fin_semana:'bg-red-lt',stock_seguridad:'bg-green-lt',produccion_dia:'bg-purple-lt',capacidad_max:'bg-pink-lt'};
-  var tipoLabels = {dias_recepcion:'Dias recepcion',vida_util:'Vida util',dias_entrega:'Lead time',no_fin_semana:'No fin semana',stock_seguridad:'Stock seguridad',produccion_dia:'Dias produccion',capacidad_max:'Capacidad max'};
+  var tipoLabels = {dias_recepcion:'Días recepción',vida_util:'Vida útil',dias_entrega:'Lead time',no_fin_semana:'No fin semana',stock_seguridad:'Stock seguridad',produccion_dia:'Días producción',capacidad_max:'Capacidad máx'};
   $('reglas-body').innerHTML = data.map(function(r,i){
     return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
       '<td><span class="badge '+(tipoBadges[r.tipo]||'bg-secondary-lt')+'"><i class="'+(tipoIcons[r.tipo]||'ti-settings')+' me-1"></i>'+(tipoLabels[r.tipo]||r.tipo)+'</span></td>' +
@@ -3404,7 +3404,7 @@ async function loadReglas() {
 
 function actualizarCamposRegla() {
   var tipo = $('regla-tipo').value;
-  var labels = {dias_recepcion:['MP','Dias (ej: martes,jueves)'],vida_util:['MP','Dias de vida util'],dias_entrega:['Proveedor','Dias de entrega'],no_fin_semana:['MP','true'],stock_seguridad:['MP','Cantidad minima'],produccion_dia:['Receta','Dias (ej: lunes,miercoles)'],capacidad_max:['planta','Porciones/dia']};
+  var labels = {dias_recepcion:['MP','Días (ej: martes,jueves)'],vida_util:['MP','Días de vida útil'],dias_entrega:['Proveedor','Días de entrega'],no_fin_semana:['MP','true'],stock_seguridad:['MP','Cantidad mínima'],produccion_dia:['Receta','Días (ej: lunes,miércoles)'],capacidad_max:['planta','Porciones/día']};
   var l = labels[tipo] || ['Entidad','Valor'];
   $('regla-entidad-label').textContent = 'Aplica a (' + l[0] + ')';
   $('regla-valor-label').textContent = 'Valor: ' + l[1];
@@ -3628,7 +3628,7 @@ var cmdCommands = [
   {icon:'ti-meat', label:'Ir a Materias Primas', action:function(){goto('mp');}},
   {icon:'ti-package-import', label:'Ir a Registro de MP', action:function(){goto('registro-mp');}},
   {icon:'ti-clipboard-list', label:'Ir a Recetas', action:function(){goto('recetas');}},
-  {icon:'ti-building-factory-2', label:'Ir a Produccion', action:function(){goto('produccion');}},
+  {icon:'ti-building-factory-2', label:'Ir a Producción', action:function(){goto('produccion');}},
   {icon:'ti-packages', label:'Ir a Inventario', action:function(){goto('inventario');}},
   {icon:'ti-truck', label:'Ir a Remisiones', action:function(){goto('remisiones');}},
   {icon:'ti-circle-check', label:'Ir a Aprobaciones', action:function(){goto('aprobaciones');}},
@@ -3638,7 +3638,7 @@ var cmdCommands = [
   {icon:'ti-plus', label:'Nueva Materia Prima', hint:'Crear', action:function(){goto('mp');openModal('modal-mp');}},
   {icon:'ti-plus', label:'Registrar llegada MP', hint:'Crear', action:function(){goto('registro-mp');openModal('modal-compra');}},
   {icon:'ti-plus', label:'Nueva Receta', hint:'Crear', action:function(){goto('recetas');openModal('modal-receta');}},
-  {icon:'ti-plus', label:'Registrar Produccion', hint:'Crear', action:function(){goto('produccion');openModal('modal-prod');}},
+  {icon:'ti-plus', label:'Registrar Producción', hint:'Crear', action:function(){goto('produccion');openModal('modal-prod');}},
   {icon:'ti-plus', label:'Nueva Remision', hint:'Crear', action:function(){goto('remisiones');openModal('modal-remision');}},
   {icon:'ti-plus', label:'Registrar Gasto', hint:'Crear', action:function(){goto('gastos');openModal('modal-gasto');}},
   {icon:'ti-plus', label:'Nuevo SOP', hint:'Crear', action:function(){goto('procedimientos');openModal('modal-proc');}},
