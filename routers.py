@@ -1590,6 +1590,43 @@ def tendencia_financiera(anio: int = 2026):
     except Exception as e:
         raise HTTPException(500, f"Error: {str(e)}")
 
+@router.get("/finanzas/diagnostico")
+def diagnostico_financiero():
+    """Debug: check what data sources are in DB and their 5xxx totals."""
+    import json
+    from collections import defaultdict
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM siigo_journals WHERE id LIKE 'VCH_%'")
+    vch = cur.fetchone()[0]
+    cur.execute("SELECT COUNT(*) FROM siigo_journals WHERE id LIKE 'JRN_%'")
+    jrn = cur.fetchone()[0]
+
+    # Gastos 5xxx from vouchers only
+    gastos_vch = defaultdict(float)
+    gastos_jrn = defaultdict(float)
+    cur.execute("SELECT id, items FROM siigo_journals")
+    for row_id, items_json in cur.fetchall():
+        items = json.loads(items_json) if isinstance(items_json, str) else items_json
+        for item in items:
+            if not isinstance(item, dict) or 'account' not in item:
+                continue
+            code = item['account']['code']
+            if code.startswith('5') and item['account']['movement'] == 'Debit':
+                if row_id.startswith('VCH_'):
+                    gastos_vch[code[:4]] += item['value']
+                elif row_id.startswith('JRN_'):
+                    gastos_jrn[code[:4]] += item['value']
+
+    cur.close(); conn.close()
+    return {
+        "vouchers_in_db": vch, "journals_in_db": jrn,
+        "gastos_5xxx_vouchers": round(sum(gastos_vch.values()), 2),
+        "gastos_5xxx_journals": round(sum(gastos_jrn.values()), 2),
+        "top_vch_5xxx": {k: round(v,2) for k,v in sorted(gastos_vch.items(), key=lambda x:-x[1])[:10]},
+        "top_jrn_5xxx": {k: round(v,2) for k,v in sorted(gastos_jrn.items(), key=lambda x:-x[1])[:10]},
+    }
+
 @router.get("/finanzas/balance-general")
 def balance_general(anio: int = 2026, mes: int = 3):
     try:
