@@ -3462,7 +3462,7 @@ async function syncFinanzas() {
   notyf.success('Sincronizando contabilidad desde Siigo...');
   var res = await api('/finanzas/sync','POST').catch(function(e){notyf.error('Error: '+e);return null;});
   if(res && res.ok) {
-    notyf.success(res.journals+' asientos, '+res.cuentas+' cuentas sincronizadas');
+    notyf.success(res.registros+' asientos, '+res.cuentas+' cuentas sincronizadas');
     loadFinanzas();
   }
 }
