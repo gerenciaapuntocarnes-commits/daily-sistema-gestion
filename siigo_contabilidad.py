@@ -268,9 +268,41 @@ def get_estado_resultados(anio: int, mes_inicio: int = 1, mes_fin: int = 12):
             elif code.startswith('53') or code.startswith('54'):
                 gastos_no_op_map[f"{code} {desc}"] += total_val
 
-    # Note: P&L uses ONLY purchases as source for costs/expenses.
-    # Journals contain annual closing entries that would duplicate amounts.
-    # Nómina and other expenses registered via vouchers are reflected in purchases.
+    # 4. Add expenses from journals/vouchers that are NOT in purchases
+    # (nómina, depreciación, provisiones — accounts 5xxx in journals but not purchases)
+    conn = get_conn()
+    cur = conn.cursor()
+    # Get 5xxx accounts already counted from purchases
+    purchase_5xxx_accounts = set()
+    for key in list(gastos_admin_map.keys()) + list(gastos_ventas_map.keys()) + list(gastos_no_op_map.keys()):
+        purchase_5xxx_accounts.add(key.split(' ')[0][:6])
+
+    # Get 5xxx from journal saldos, EXCLUDING accounts already in purchases
+    cur.execute("""
+        SELECT s.cuenta, COALESCE(c.nombre, s.cuenta), ABS(SUM(s.saldo))
+        FROM saldos_mensuales s
+        LEFT JOIN siigo_cuentas c ON c.codigo = s.cuenta
+        WHERE s.anio = %s AND s.mes BETWEEN %s AND %s
+          AND s.cuenta LIKE '5%%'
+        GROUP BY s.cuenta, c.nombre
+        HAVING ABS(SUM(s.saldo)) > 100
+    """, (anio, mes_inicio, mes_fin))
+    for row in cur.fetchall():
+        code = row[0]
+        # Skip if this account prefix already counted from purchases
+        if code[:6] in purchase_5xxx_accounts:
+            continue
+        nombre = row[1] or code
+        val = float(row[2])
+        key = f"{code} {nombre}"
+        prefix = code[:2]
+        if prefix == '51':
+            gastos_admin_map[key] += val
+        elif prefix == '52':
+            gastos_ventas_map[key] += val
+        elif prefix in ('53', '54'):
+            gastos_no_op_map[key] += val
+    cur.close(); conn.close()
 
     def to_items(m):
         return sorted([{"cuenta": k.split(' ')[0], "nombre": ' '.join(k.split(' ')[1:]) or k.split(' ')[0],
@@ -468,7 +500,24 @@ def get_tendencia_mensual_from_invoices(anio: int):
             elif code.startswith('5'):
                 meses[mes]["gastos"] += val
 
-    # Expenses come only from purchases (journals have annual closing entries that duplicate)
+    # Add journal-only 5xxx expenses per month (nómina, depreciación)
+    pur_5_codes = set()
+    for pur in purchases:
+        if pur.get('annulled'): continue
+        for item in pur.get('items', []):
+            code = item.get('code', '')
+            if code.startswith('5'):
+                pur_5_codes.add(code[:6])
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT s.cuenta, s.mes, ABS(s.saldo)
+        FROM saldos_mensuales s
+        WHERE s.anio = %s AND s.cuenta LIKE '5%%' AND ABS(s.saldo) > 100
+    """, (anio,))
+    for row in cur.fetchall():
+        if row[0][:6] not in pur_5_codes and row[1] in meses:
+            meses[row[1]]["gastos"] += float(row[2])
     cur.close(); conn.close()
 
     result = []
