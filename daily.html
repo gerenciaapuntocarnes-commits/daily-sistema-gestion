@@ -160,6 +160,30 @@ tr:hover .btn-delete { opacity: 1; }
 /* ── Forecast bars ── */
 .forecast-bar { height: 8px; border-radius: 4px; background: var(--tblr-primary-lt); overflow: hidden; }
 .forecast-bar .fill { height: 100%; background: var(--tblr-primary); border-radius: 4px; }
+
+/* ── Mobile sidebar fix ── */
+@media (max-width: 991.98px) {
+  .navbar-vertical.navbar-expand-lg {
+    overflow: visible !important;
+    position: relative;
+  }
+  .navbar-vertical.navbar-expand-lg .navbar-collapse {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    z-index: 1050;
+    background: #1e2433;
+    border-radius: 0 0 8px 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,.35);
+    max-height: 80vh;
+    overflow-y: auto;
+    padding: 8px 0 16px;
+  }
+  [data-bs-theme="dark"] .navbar-vertical.navbar-expand-lg .navbar-collapse {
+    background: #141824;
+  }
+}
 </style>
 <script>
   (function(){var t=localStorage.getItem('daily-theme');if(t)document.documentElement.setAttribute('data-bs-theme',t);})();
