@@ -409,11 +409,17 @@ def _create_tables():
     """)
     # Migraciones: agregar columnas si la tabla ya existía sin ellas
     for col, defn in [
+        ("direccion",           "TEXT"),
+        ("apto",                "TEXT"),
+        ("info_adicional",      "TEXT"),
+        ("zona",                "TEXT"),
+        ("telefono",            "TEXT"),
+        ("email",               "TEXT"),
         ("cedula",              "TEXT"),
         ("shopify_customer_id", "TEXT"),
-        ("info_adicional",      "TEXT"),
-        ("apto",                "TEXT"),
-        ("zona",                "TEXT"),
+        ("origen",              "TEXT DEFAULT 'manual'"),
+        ("fecha_registro",      "DATE DEFAULT CURRENT_DATE"),
+        ("activo",              "BOOLEAN DEFAULT TRUE"),
     ]:
         try:
             cur.execute("SAVEPOINT sp_cl")
