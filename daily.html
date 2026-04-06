@@ -89,6 +89,8 @@ tr:hover .btn-delete { opacity: 1; }
 /* ── Animated rows ── */
 @keyframes rowFadeIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
 .animate-row { animation: rowFadeIn .3s ease both; }
+@keyframes spinAnim { to { transform: rotate(360deg); } }
+.spin { display: inline-block; animation: spinAnim .8s linear infinite; }
 
 /* ── Skeleton placeholders ── */
 .skel-row td { padding: 12px 8px; }
@@ -885,204 +887,244 @@ tr:hover .btn-delete { opacity: 1; }
     <div class="row align-items-center">
       <div class="col-auto">
         <div class="page-pretitle">Ventas / CRM</div>
-        <h2 class="page-title">Gestión de Ventas y Clientes</h2>
+        <h2 class="page-title">Cartera &amp; Clientes</h2>
       </div>
-      <div class="col-auto ms-auto d-flex gap-2">
-        <button class="btn btn-outline-secondary btn-sm" id="btn-shopify-sync" onclick="syncShopify()"><i class="ti ti-refresh me-1"></i>Sync Shopify</button>
-        <button class="btn btn-primary btn-sm" onclick="openModal('modal-venta')"><i class="ti ti-plus me-1"></i>Nueva venta</button>
+      <div class="col-auto ms-auto d-flex gap-2 align-items-center">
+        <span id="crm-modo-badge" class="badge bg-warning text-dark" style="font-size:12px;cursor:pointer" onclick="crmTab('config')" title="Modo prueba activo: no se envía nada a Siigo"><i class="ti ti-flask me-1"></i>MODO PRUEBA</span>
+        <button class="btn btn-sm btn-outline-primary" onclick="crmSyncSiigo()"><i class="ti ti-refresh me-1"></i>Sync Siigo</button>
       </div>
     </div>
   </div>
   <!-- Tabs internos -->
   <ul class="nav nav-tabs mb-3" id="ventas-tabs">
-    <li class="nav-item"><a class="nav-link active" href="#" onclick="ventasTab('dash');return false;"><i class="ti ti-chart-bar me-1"></i>Dashboard</a></li>
-    <li class="nav-item"><a class="nav-link" href="#" onclick="ventasTab('lista');return false;"><i class="ti ti-list me-1"></i>Ventas</a></li>
-    <li class="nav-item"><a class="nav-link" href="#" onclick="ventasTab('clientes');return false;"><i class="ti ti-users me-1"></i>Clientes</a></li>
-    <li class="nav-item"><a class="nav-link" href="#" onclick="ventasTab('config');return false;"><i class="ti ti-settings me-1"></i>Importar / Config</a></li>
+    <li class="nav-item"><a class="nav-link active" href="#" onclick="crmTab('activos');return false;"><i class="ti ti-receipt me-1"></i>Activos</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="crmTab('historicos');return false;"><i class="ti ti-history me-1"></i>Históricos</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="crmTab('conciliacion');return false;"><i class="ti ti-git-compare me-1"></i>Conciliación</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="crmTab('config');return false;"><i class="ti ti-settings me-1"></i>Config</a></li>
   </ul>
 
-  <!-- ── Tab: Dashboard Ventas ── -->
-  <div id="vt-dash">
-    <div class="row row-deck row-cards mb-3" id="ventas-kpis"></div>
-    <div class="row row-cards mb-3">
-      <div class="col-lg-8">
-        <div class="card"><div class="card-header"><h3 class="card-title"><i class="ti ti-chart-area me-2"></i>Ventas últimos 30 días</h3></div>
-          <div class="card-body" id="chart-ventas-30d" style="min-height:260px"></div></div>
-      </div>
-      <div class="col-lg-4">
-        <div class="card"><div class="card-header"><h3 class="card-title"><i class="ti ti-chart-donut me-2"></i>Medios de pago</h3></div>
-          <div class="card-body" id="chart-medios-pago" style="min-height:260px"></div></div>
-      </div>
-    </div>
-    <div class="row row-cards mb-3">
-      <div class="col-lg-4">
-        <div class="card"><div class="card-header"><h3 class="card-title"><i class="ti ti-chart-donut me-2"></i>Canales</h3></div>
-          <div class="card-body" id="chart-canales" style="min-height:260px"></div></div>
-      </div>
-      <div class="col-lg-4">
-        <div class="card"><div class="card-header"><h3 class="card-title"><i class="ti ti-users me-2"></i>Segmentación</h3></div>
-          <div class="card-body" id="chart-segmentos" style="min-height:260px"></div></div>
-      </div>
-      <div class="col-lg-4">
-        <div class="card"><div class="card-header"><h3 class="card-title"><i class="ti ti-alert-triangle me-2 text-warning"></i>Clientes por reactivar</h3></div>
-          <div class="card-body p-0"><div class="table-responsive" style="max-height:260px;overflow-y:auto">
-            <table class="table table-vcenter table-sm card-table"><thead><tr><th>Cliente</th><th class="num">Pedidos</th><th class="num">Días sin compra</th><th></th></tr></thead>
-              <tbody id="ventas-alertas-body"></tbody></table></div></div></div>
-      </div>
-    </div>
-    <div class="row row-cards">
-      <div class="col-12">
-        <div class="card"><div class="card-header"><h3 class="card-title"><i class="ti ti-trophy me-2"></i>Top 10 Clientes</h3></div>
-          <div class="table-responsive"><table class="table table-vcenter card-table">
-            <thead><tr><th>Cliente</th><th class="num"># Pedidos</th><th class="num">Total gastado</th><th>Último pedido</th></tr></thead>
-            <tbody id="ventas-top-body"></tbody></table></div></div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Tab: Lista Ventas ── -->
-  <div id="vt-lista" style="display:none">
+  <!-- ── Tab: Activos ── -->
+  <div id="vt-activos">
     <div class="card mb-3">
       <div class="card-body py-2">
         <div class="row g-2 align-items-center">
-          <div class="col-auto"><input class="form-control form-control-sm" type="date" id="vf-desde" style="width:140px"></div>
-          <div class="col-auto"><input class="form-control form-control-sm" type="date" id="vf-hasta" style="width:140px"></div>
-          <div class="col-auto"><select class="form-select form-select-sm" id="vf-estado" style="width:120px" onchange="loadVentas()"><option value="">Estado</option><option value="pagado">Pagado</option><option value="pendiente">Pendiente</option></select></div>
-          <div class="col-auto"><select class="form-select form-select-sm" id="vf-medio" style="width:150px" onchange="loadVentas()"><option value="">Medio pago</option><option>LINK</option><option>BANCOLOMBIA</option><option>BANCO DE BOGOTA</option><option>EFECTIVO</option><option>CRUCE</option><option>S.MARIA INES</option></select></div>
-          <div class="col-auto"><select class="form-select form-select-sm" id="vf-canal" style="width:150px" onchange="loadVentas()"><option value="">Canal</option><option>CLIENTE DAILY</option><option>PAGINA</option><option>INSTAGRAM</option><option>REFERID@</option></select></div>
-          <div class="col"><div class="input-icon"><span class="input-icon-addon"><i class="ti ti-search"></i></span><input class="form-control form-control-sm" id="vf-buscar" placeholder="Buscar cliente o factura..." oninput="loadVentas()"></div></div>
-          <div class="col-auto"><button class="btn btn-sm btn-outline-success" onclick="exportVentasExcel()"><i class="ti ti-file-spreadsheet me-1"></i>Excel</button></div>
+          <div class="col"><div class="input-icon"><span class="input-icon-addon"><i class="ti ti-search"></i></span>
+            <input class="form-control form-control-sm" id="crm-act-buscar" placeholder="Buscar cliente, cédula..." oninput="loadActivos()">
+          </div></div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-outline-danger" onclick="crmResetData()" title="Borrar todos los datos CRM y reimportar"><i class="ti ti-trash me-1"></i>Reset datos</button>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-success" onclick="generarRcMasivo()"><i class="ti ti-checkup-list me-1"></i>Generar RC masivo</button>
+          </div>
         </div>
       </div>
     </div>
-    <div class="card">
-      <div class="table-responsive">
-        <table class="table table-vcenter card-table table-sm">
-          <thead><tr><th>Fecha</th><th>Cliente</th><th>Factura</th><th class="num">Valor</th><th>Medio</th><th>Canal</th><th>Estado</th><th style="width:60px"></th></tr></thead>
-          <tbody id="ventas-body"></tbody>
-        </table>
-      </div>
+    <div id="crm-activos-list">
+      <div class="text-center text-secondary py-5"><i class="ti ti-loader" style="font-size:32px"></i><div class="mt-2">Cargando facturas activas...</div></div>
     </div>
   </div>
 
-  <!-- ── Tab: Clientes CRM ── -->
-  <div id="vt-clientes" style="display:none">
+  <!-- ── Tab: Históricos ── -->
+  <div id="vt-historicos" style="display:none">
+    <div class="card mb-3">
+      <div class="card-body py-2">
+        <div class="row g-2 align-items-center">
+          <div class="col"><div class="input-icon"><span class="input-icon-addon"><i class="ti ti-search"></i></span>
+            <input class="form-control form-control-sm" id="crm-hist-buscar" placeholder="Buscar cliente, cédula..." oninput="loadHistoricos()">
+          </div></div>
+        </div>
+      </div>
+    </div>
+    <div id="crm-historicos-list">
+      <div class="text-center text-secondary py-5"><i class="ti ti-clock" style="font-size:32px"></i><div class="mt-2">Cargando histórico...</div></div>
+    </div>
+  </div>
+
+  <!-- ── Tab: Conciliación ── -->
+  <div id="vt-conciliacion" style="display:none">
     <div class="row g-2 mb-3 align-items-center">
-      <div class="col-auto d-flex gap-1 flex-wrap" id="clientes-chips">
-        <button class="btn btn-sm btn-primary" onclick="filtrarClientes('todos')">Todos</button>
-        <button class="btn btn-sm btn-outline-purple" onclick="filtrarClientes('vip')"><i class="ti ti-star me-1"></i>VIP</button>
-        <button class="btn btn-sm btn-outline-success" onclick="filtrarClientes('frecuente')">Frecuentes</button>
-        <button class="btn btn-sm btn-outline-warning" onclick="filtrarClientes('unica')">Única compra</button>
-        <button class="btn btn-sm btn-outline-danger" onclick="filtrarClientes('inactivo')">Inactivos</button>
-        <button class="btn btn-sm btn-outline-secondary" onclick="filtrarClientes('prospect')">Prospects</button>
+      <div class="col-auto">
+        <select class="form-select form-select-sm" id="concil-banco" onchange="loadConciliacion()" style="width:160px">
+          <option value="">Todos los bancos</option>
+          <option value="BDB">Banco de Bogotá</option>
+          <option value="BANCOLOMBIA">Bancolombia</option>
+        </select>
       </div>
-      <div class="col"><div class="input-icon"><span class="input-icon-addon"><i class="ti ti-search"></i></span><input class="form-control form-control-sm" id="clientes-buscar" placeholder="Buscar por nombre, email, teléfono..." oninput="loadClientes()"></div></div>
-      <div class="col-auto"><button class="btn btn-sm btn-primary" onclick="openModal('modal-cliente')"><i class="ti ti-plus me-1"></i>Nuevo</button></div>
-    </div>
-    <div class="row" style="align-items:start">
-      <div class="col-lg-7">
-        <div class="card">
-          <div class="table-responsive" style="max-height:600px;overflow-y:auto">
-            <table class="table table-vcenter card-table table-sm table-hover">
-              <thead><tr><th>Cliente</th><th class="num">Pedidos</th><th class="num">Promedio</th><th class="num">Total</th><th>Último</th><th>Segmento</th></tr></thead>
-              <tbody id="clientes-body"></tbody>
-            </table>
-          </div>
-        </div>
+      <div class="col-auto">
+        <label class="form-check">
+          <input type="checkbox" class="form-check-input" id="concil-solo-pend" checked onchange="loadConciliacion()">
+          <span class="form-check-label">Solo no conciliados</span>
+        </label>
       </div>
-      <div class="col-lg-5" id="cliente-perfil-panel">
-        <div class="card"><div class="card-body text-center text-secondary py-4"><i class="ti ti-user" style="font-size:48px;display:block;margin-bottom:8px"></i>Selecciona un cliente para ver su perfil.</div></div>
+      <div class="col text-secondary small" id="concil-hint">
+        Selecciona un movimiento bancario y luego una factura pendiente para vincularlos.
       </div>
     </div>
-  </div>
-
-  <!-- ── Tab: Importar / Config ── -->
-  <div id="vt-config" style="display:none">
-    <div class="row row-cards">
-
-      <!-- Import Excel histórico (MÉTODO PRINCIPAL) -->
-      <div class="col-12">
-        <div class="card border-primary">
-          <div class="card-header bg-primary-lt">
-            <h3 class="card-title"><i class="ti ti-file-spreadsheet me-2 text-primary"></i>Importar historial completo — LIBRO DE CARTERA DAILY.xlsx</h3>
-          </div>
-          <div class="card-body">
-            <p class="text-secondary small mb-2">Sube el archivo Excel original. Importa automáticamente: BASE DATOS (clientes), CLIENTES SIN COMPRA (prospects), SEPTIEMBRE 2025, VENTAS NAVIDAD, VENTAS DAILY 2025, VENTAS DAILY 2026. La cédula es la clave de identificación única de cada cliente (usada también para cruzar con Shopify).</p>
-            <div class="row g-2 align-items-center">
-              <div class="col"><input type="file" class="form-control form-control-sm" id="import-excel-file" accept=".xlsx,.xls"></div>
-              <div class="col-auto"><button class="btn btn-primary" id="btn-import-excel" onclick="importarExcelHistorico()"><i class="ti ti-upload me-1"></i>Importar Excel</button></div>
-            </div>
-            <div id="import-excel-resultado" class="mt-3"></div>
-          </div>
-        </div>
-      </div>
-
+    <div class="row g-3">
+      <!-- Movimientos bancarios -->
       <div class="col-lg-6">
-        <div class="card">
-          <div class="card-header"><h3 class="card-title"><i class="ti ti-brand-shopify me-2"></i>Shopify</h3></div>
-          <div class="card-body" id="shopify-config-panel">
-            <div class="text-secondary small">Cargando estado...</div>
-          </div>
-        </div>
-      </div>
-      <div class="col-lg-6">
-        <div class="card">
-          <div class="card-header"><h3 class="card-title"><i class="ti ti-history me-2"></i>Log de sincronización</h3></div>
+        <div class="card h-100">
+          <div class="card-header"><h3 class="card-title"><i class="ti ti-building-bank me-2"></i>Movimientos bancarios</h3></div>
           <div class="card-body p-0">
-            <div class="table-responsive" style="max-height:200px;overflow-y:auto">
-              <table class="table table-vcenter table-sm card-table">
-                <thead><tr><th>Fecha</th><th>Tipo</th><th class="num">Nuevos</th><th class="num">Actualizados</th></tr></thead>
-                <tbody id="sync-log-body"><tr><td colspan="4" class="text-center text-secondary small py-3">Sin registros aún</td></tr></tbody>
+            <div class="table-responsive" style="max-height:500px;overflow-y:auto">
+              <table class="table table-vcenter table-sm card-table table-hover">
+                <thead><tr><th>Fecha</th><th>Banco</th><th>Descripción</th><th class="text-end">Valor</th><th>Estado</th></tr></thead>
+                <tbody id="concil-movimientos-body"></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Facturas pendientes -->
+      <div class="col-lg-6">
+        <div class="card h-100">
+          <div class="card-header">
+            <h3 class="card-title"><i class="ti ti-file-invoice me-2"></i>Facturas pendientes</h3>
+            <div class="card-actions" id="concil-accion" style="display:none">
+              <button class="btn btn-sm btn-success" onclick="conciliarSeleccion()"><i class="ti ti-link me-1"></i>Vincular seleccionados</button>
+            </div>
+          </div>
+          <div class="card-body p-0">
+            <div class="table-responsive" style="max-height:500px;overflow-y:auto">
+              <table class="table table-vcenter table-sm card-table table-hover">
+                <thead><tr><th>Fecha</th><th>Cliente</th><th>Factura</th><th class="text-end">Saldo</th></tr></thead>
+                <tbody id="concil-facturas-body"></tbody>
               </table>
             </div>
           </div>
         </div>
       </div>
     </div>
-  </div>
-</div>
-
-<!-- Modal nueva venta -->
-<div class="modal-bg" id="modal-venta">
-  <div class="card" style="width:480px;max-width:95vw;max-height:90vh;overflow-y:auto">
-    <div class="card-header"><h3 class="card-title">Nueva Venta</h3><button class="btn-close" onclick="closeModal('modal-venta')"></button></div>
-    <div class="card-body">
-      <div class="row g-3">
-        <div class="col-6"><label class="form-label">Fecha</label><input class="form-control" type="date" id="nv-fecha"></div>
-        <div class="col-6"><label class="form-label">Factura #</label><input class="form-control" id="nv-factura" placeholder="No. FE XXXX"></div>
-        <div class="col-12"><label class="form-label">Cliente</label><input class="form-control" id="nv-cliente" placeholder="Nombre del cliente" list="nv-clientes-list"><datalist id="nv-clientes-list"></datalist></div>
-        <div class="col-6"><label class="form-label">Valor ($)</label><input class="form-control" type="number" id="nv-valor" step="100" placeholder="0"></div>
-        <div class="col-6"><label class="form-label">Estado</label><select class="form-select" id="nv-estado"><option value="pagado">Pagado</option><option value="pendiente">Pendiente</option></select></div>
-        <div class="col-6"><label class="form-label">Medio de pago</label><select class="form-select" id="nv-medio"><option value="">--</option><option>LINK</option><option>BANCOLOMBIA</option><option>BANCO DE BOGOTA</option><option>EFECTIVO</option><option>CRUCE</option><option>S.MARIA INES</option></select></div>
-        <div class="col-6"><label class="form-label">Canal</label><select class="form-select" id="nv-canal"><option value="">--</option><option>CLIENTE DAILY</option><option>PAGINA</option><option>INSTAGRAM</option><option>REFERID@</option></select></div>
-        <div class="col-12"><label class="form-label">Notas</label><textarea class="form-control" id="nv-notas" rows="2"></textarea></div>
+    <!-- Selected for conciliation -->
+    <div id="concil-selected-panel" class="card mt-3" style="display:none">
+      <div class="card-body py-2">
+        <div class="row g-2 align-items-center">
+          <div class="col text-secondary small" id="concil-selected-info"></div>
+          <div class="col-auto">
+            <select class="form-select form-select-sm" id="concil-medio" style="width:160px">
+              <option value="">Medio de pago</option>
+              <option value="Efectivo">Efectivo</option>
+              <option value="Banco de Bogota">Banco de Bogotá</option>
+              <option value="Bancolombia">Bancolombia</option>
+            </select>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-success" onclick="conciliarSeleccion()"><i class="ti ti-check me-1"></i>Confirmar vinculación</button>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-outline-secondary" onclick="concilClearSelection()">Cancelar</button>
+          </div>
+        </div>
       </div>
     </div>
-    <div class="card-footer text-end">
-      <button class="btn" onclick="closeModal('modal-venta')">Cancelar</button>
-      <button class="btn btn-primary ms-2" onclick="crearVenta()"><i class="ti ti-check me-1"></i>Registrar</button>
-    </div>
   </div>
-</div>
 
-<!-- Modal nuevo cliente -->
-<div class="modal-bg" id="modal-cliente">
-  <div class="card" style="width:480px;max-width:95vw;max-height:90vh;overflow-y:auto">
-    <div class="card-header"><h3 class="card-title">Nuevo Cliente</h3><button class="btn-close" onclick="closeModal('modal-cliente')"></button></div>
-    <div class="card-body">
-      <div class="row g-3">
-        <div class="col-12"><label class="form-label">Nombre *</label><input class="form-control" id="nc-nombre"></div>
-        <div class="col-6"><label class="form-label">Teléfono</label><input class="form-control" id="nc-telefono"></div>
-        <div class="col-6"><label class="form-label">Email</label><input class="form-control" type="email" id="nc-email"></div>
-        <div class="col-8"><label class="form-label">Dirección</label><input class="form-control" id="nc-direccion"></div>
-        <div class="col-4"><label class="form-label">Apto</label><input class="form-control" id="nc-apto"></div>
-        <div class="col-6"><label class="form-label">Zona</label><input class="form-control" id="nc-zona"></div>
-        <div class="col-6"><label class="form-label">Cédula</label><input class="form-control" id="nc-cedula"></div>
+  <!-- ── Tab: Config ── -->
+  <div id="vt-config" style="display:none">
+    <div class="row row-cards">
+
+      <!-- Modo prueba -->
+      <div class="col-12">
+        <div class="card border-warning">
+          <div class="card-body">
+            <div class="row align-items-center">
+              <div class="col">
+                <h3 class="card-title mb-1"><i class="ti ti-flask me-2 text-warning"></i>Modo Prueba</h3>
+                <p class="text-secondary small mb-0">Cuando está activo, <strong>ningún recibo de caja</strong> se envía a Siigo. Todo queda como simulación. Desactívalo solo cuando estés seguro de que el sistema funciona correctamente.</p>
+              </div>
+              <div class="col-auto">
+                <label class="form-check form-switch form-check-lg">
+                  <input class="form-check-input" type="checkbox" id="crm-modo-switch" onchange="toggleModoPrueba(this.checked)">
+                  <span class="form-check-label" id="crm-modo-label">Activo</span>
+                </label>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-    </div>
-    <div class="card-footer text-end">
-      <button class="btn" onclick="closeModal('modal-cliente')">Cancelar</button>
-      <button class="btn btn-primary ms-2" onclick="crearCliente()"><i class="ti ti-check me-1"></i>Guardar</button>
+
+      <!-- Sync Siigo -->
+      <div class="col-lg-6">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title"><i class="ti ti-cloud-download me-2"></i>Sincronizar desde Siigo</h3></div>
+          <div class="card-body">
+            <p class="text-secondary small mb-3">Importa todos los clientes y facturas directamente de Siigo. Puede tomar varios minutos (son ~2,155 clientes y años de facturas).</p>
+            <button class="btn btn-primary" onclick="crmSyncSiigo()"><i class="ti ti-refresh me-1"></i>Sync Clientes + Facturas</button>
+            <div id="sync-siigo-result" class="mt-2"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Sync Bancos -->
+      <div class="col-lg-6">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title"><i class="ti ti-building-bank me-2"></i>Sincronizar Movimientos Bancarios</h3></div>
+          <div class="card-body">
+            <p class="text-secondary small mb-3">Jala los movimientos del Google Sheet de conciliación (BDB 2024/2025 + Bancolombia 2024/2025).</p>
+            <button class="btn btn-primary" onclick="crmSyncBancos()"><i class="ti ti-refresh me-1"></i>Sync Movimientos</button>
+            <div id="sync-bancos-result" class="mt-2"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Importar Excel -->
+      <div class="col-12">
+        <div class="card border-primary">
+          <div class="card-header bg-primary-lt">
+            <h3 class="card-title"><i class="ti ti-file-spreadsheet me-2 text-primary"></i>Enriquecer contactos — LIBRO DE CARTERA DAILY.xlsx</h3>
+          </div>
+          <div class="card-body">
+            <p class="text-secondary small mb-2">Sube el Excel para importar teléfonos, direcciones y datos de contacto de BASE DATOS y CLIENTES SIN COMPRA. Se cruzan con los clientes ya importados de Siigo por cédula o nombre.</p>
+            <div class="row g-2 align-items-center">
+              <div class="col"><input type="file" class="form-control form-control-sm" id="crm-excel-file" accept=".xlsx,.xls"></div>
+              <div class="col-auto"><button class="btn btn-primary" onclick="crmSyncExcel()"><i class="ti ti-upload me-1"></i>Importar Excel</button></div>
+            </div>
+            <div id="crm-excel-result" class="mt-2"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats + Log -->
+      <div class="col-lg-4">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title"><i class="ti ti-database me-2"></i>Estado de datos</h3></div>
+          <div class="card-body" id="crm-stats-panel">
+            <div class="text-secondary small">Cargando...</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-8">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title"><i class="ti ti-history me-2"></i>Log de sincronización</h3></div>
+          <div class="card-body p-0">
+            <div class="table-responsive" style="max-height:220px;overflow-y:auto">
+              <table class="table table-vcenter table-sm card-table">
+                <thead><tr><th>Fecha</th><th>Tipo</th><th class="num">Nuevos</th><th class="num">Actualizados</th><th>Detalle</th></tr></thead>
+                <tbody id="crm-log-body"><tr><td colspan="5" class="text-center text-secondary small py-3">Sin registros aún</td></tr></tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Reset zone -->
+      <div class="col-12">
+        <div class="card border-danger">
+          <div class="card-body">
+            <div class="row align-items-center">
+              <div class="col">
+                <h3 class="card-title text-danger mb-1"><i class="ti ti-trash me-2"></i>Resetear datos CRM</h3>
+                <p class="text-secondary small mb-0">Borra todos los clientes, facturas y movimientos del CRM. Úsalo para empezar una sincronización desde cero.</p>
+              </div>
+              <div class="col-auto">
+                <button class="btn btn-outline-danger" onclick="crmResetData()"><i class="ti ti-trash me-1"></i>Borrar todo y reimportar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
     </div>
   </div>
 </div>
@@ -4422,418 +4464,397 @@ document.addEventListener('DOMContentLoaded', function(){
 $('command-palette').addEventListener('click', function(e){ if(e.target === this) closeCommandPalette(); });
 
 // ═══════════════════════════════════════════════════════════════════
-// VENTAS / CRM
+// VENTAS / CRM — nuevo módulo Siigo + Conciliación
 // ═══════════════════════════════════════════════════════════════════
 
-var currentVentasTab = 'dash';
-var currentClienteSegmento = 'todos';
-var chartVentas30d = null, chartMedios = null, chartCanales = null, chartSegmentos = null;
+var currentVentasTab = 'activos';
+var concilMovId = null;  // selected movimiento_id for conciliation
+var concilFactId = null; // selected factura_id for conciliation
 
-function ventasTab(tab) {
+function crmTab(tab) {
   currentVentasTab = tab;
-  ['dash','lista','clientes','config'].forEach(function(t){
+  ['activos','historicos','conciliacion','config'].forEach(function(t){
     var el = $('vt-'+t); if(el) el.style.display = t===tab ? '' : 'none';
   });
   document.querySelectorAll('#ventas-tabs .nav-link').forEach(function(a,i){
-    var tabs = ['dash','lista','clientes','config'];
+    var tabs = ['activos','historicos','conciliacion','config'];
     a.classList.toggle('active', tabs[i]===tab);
   });
-  if(tab==='dash') loadVentasDashboard();
-  else if(tab==='lista') loadVentas();
-  else if(tab==='clientes') loadClientes();
-  else if(tab==='config') loadShopifyStatus();
+  if(tab==='activos') loadActivos();
+  else if(tab==='historicos') loadHistoricos();
+  else if(tab==='conciliacion') loadConciliacion();
+  else if(tab==='config') loadCrmConfig();
 }
 
+// Keep legacy alias for section loader
+function ventasTab(tab) { crmTab(tab); }
+
 function loadVentasSection() {
-  ventasTab(currentVentasTab);
+  crmTab(currentVentasTab);
   updateVentasPendienteBadge();
 }
 
 async function updateVentasPendienteBadge() {
-  var data = await api('/ventas?estado=pendiente&limit=1','GET',null,true).catch(function(){return [];});
+  var data = await api('/crm/activos','GET',null,true).catch(function(){return [];});
   var badge = $('ventas-pendientes-badge');
   if(badge) {
-    if(data.length > 0) { badge.style.display=''; badge.textContent='!'; }
+    var pendiente = data.some(function(c){ return c.total_pendiente > 0; });
+    if(pendiente) { badge.style.display=''; badge.textContent='$'; }
     else { badge.style.display='none'; }
   }
 }
 
-// ── Dashboard Ventas ──
-async function loadVentasDashboard() {
-  var d = await api('/ventas/dashboard','GET',null,true).catch(function(){return {};});
-  if(!d.ventas_mes && d.ventas_mes !== 0) return;
+// ── Helpers renderizado CRM ──
+var MEDIOS_PAGO = ['Efectivo','Banco de Bogota','Bancolombia','Link de pago','Cruce','S.Maria Ines'];
+var CANALES = ['Cliente Daily','Pagina','Instagram','Referido','Sin info'];
 
-  $('ventas-kpis').innerHTML =
-    '<div class="col-sm-6 col-lg-2"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val">$'+fmt(d.ventas_mes)+'</div><div class="text-secondary small mt-1">Ventas del mes</div></div></div></div>' +
-    '<div class="col-sm-6 col-lg-2"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val text-warning">$'+fmt(d.cartera_pendiente)+'</div><div class="text-secondary small mt-1">Cartera pendiente</div></div></div></div>' +
-    '<div class="col-sm-6 col-lg-2"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val">'+d.clientes_unicos+'</div><div class="text-secondary small mt-1">Clientes totales</div></div></div></div>' +
-    '<div class="col-sm-6 col-lg-2"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val text-success">'+d.pct_recompra+'%</div><div class="text-secondary small mt-1">% Recompra</div></div></div></div>' +
-    '<div class="col-sm-6 col-lg-2"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val">$'+fmt(d.pedido_promedio)+'</div><div class="text-secondary small mt-1">Pedido promedio</div></div></div></div>' +
-    '<div class="col-sm-6 col-lg-2"><div class="card"><div class="card-body py-3 text-center"><div class="kpi-val text-primary">'+d.clientes_nuevos_mes+'</div><div class="text-secondary small mt-1">Nuevos este mes</div></div></div></div>';
+function _selectMedio(fid, current) {
+  var opts = ['<option value="">-- Medio --</option>'].concat(MEDIOS_PAGO.map(function(m){
+    return '<option value="'+m+'"'+(current===m?' selected':'')+'>'+m+'</option>';
+  })).join('');
+  return '<select class="form-select form-select-sm" style="min-width:130px" onchange="crmUpdateFactura('+fid+',\'medio_pago\',this.value)">'+opts+'</select>';
+}
 
-  var themeMode = document.documentElement.getAttribute('data-bs-theme') || 'light';
+function _selectCanal(fid, current) {
+  var opts = ['<option value="">-- Canal --</option>'].concat(CANALES.map(function(c){
+    return '<option value="'+c+'"'+(current===c?' selected':'')+'>'+c+'</option>';
+  })).join('');
+  return '<select class="form-select form-select-sm" style="min-width:120px" onchange="crmUpdateFactura('+fid+',\'origen_canal\',this.value)">'+opts+'</select>';
+}
 
-  // Chart ventas 30d
-  if(chartVentas30d) chartVentas30d.destroy();
-  if(d.ventas_30d && d.ventas_30d.length) {
-    chartVentas30d = new ApexCharts($('chart-ventas-30d'), {
-      chart:{type:'area',height:230,toolbar:{show:false},fontFamily:'inherit'}, theme:{mode:themeMode},
-      series:[{name:'Ventas ($)',data:d.ventas_30d.map(function(x){return x.valor;})}],
-      xaxis:{categories:d.ventas_30d.map(function(x){return x.fecha;}),labels:{show:false}},
-      yaxis:{labels:{formatter:function(v){return '$'+fmt(v);}}},
-      stroke:{curve:'smooth',width:2}, fill:{type:'gradient',gradient:{opacityFrom:.5,opacityTo:.05}},
-      colors:['#206bc4'], tooltip:{y:{formatter:function(v){return '$'+fmt(v);}}}
-    }); chartVentas30d.render();
+function _selectEstado(fid, current) {
+  return '<select class="form-select form-select-sm" style="min-width:110px" onchange="crmUpdateFactura('+fid+',\'estado_pago\',this.value)">' +
+    '<option value="pendiente"'+(current==='pendiente'?' selected':'')+'>Pendiente</option>' +
+    '<option value="pagado"'+(current==='pagado'?' selected':'')+'>Pagado</option>' +
+    '</select>';
+}
+
+function _rcBtn(f) {
+  if(f.rc_numero) {
+    var badge = f.rc_modo_prueba ? ' <span class="badge bg-warning-lt ms-1" title="Simulado">PRUEBA</span>' : '';
+    return '<span class="badge bg-success-lt">'+f.rc_numero+'</span>'+badge;
   }
-
-  // Chart medios de pago
-  if(chartMedios) chartMedios.destroy();
-  if(d.por_medio_pago && d.por_medio_pago.length) {
-    chartMedios = new ApexCharts($('chart-medios-pago'), {
-      chart:{type:'donut',height:230,fontFamily:'inherit'}, theme:{mode:themeMode},
-      series:d.por_medio_pago.map(function(x){return x.count;}),
-      labels:d.por_medio_pago.map(function(x){return x.medio;}),
-      legend:{position:'bottom',fontSize:'11px'}
-    }); chartMedios.render();
-  }
-
-  // Chart canales
-  if(chartCanales) chartCanales.destroy();
-  if(d.por_canal && d.por_canal.length) {
-    chartCanales = new ApexCharts($('chart-canales'), {
-      chart:{type:'donut',height:230,fontFamily:'inherit'}, theme:{mode:themeMode},
-      series:d.por_canal.map(function(x){return x.count;}),
-      labels:d.por_canal.map(function(x){return x.canal;}),
-      legend:{position:'bottom',fontSize:'11px'}
-    }); chartCanales.render();
-  }
-
-  // Chart segmentación
-  if(chartSegmentos) chartSegmentos.destroy();
-  var segLabels = ['VIP','Frecuente','Única compra','Inactivo','Prospect'];
-  var segKeys = ['vip','frecuente','unica','inactivo','prospect'];
-  var segColors = ['#ae3ec9','#2fb344','#f76707','#d63939','#868e96'];
-  var segData = segKeys.map(function(k){return (d.segmentacion||{})[k]||0;});
-  chartSegmentos = new ApexCharts($('chart-segmentos'), {
-    chart:{type:'bar',height:230,toolbar:{show:false},fontFamily:'inherit'}, theme:{mode:themeMode},
-    series:[{name:'Clientes',data:segData}],
-    xaxis:{categories:segLabels}, plotOptions:{bar:{horizontal:true,borderRadius:4}},
-    colors:segColors, legend:{show:false}
-  }); chartSegmentos.render();
-
-  // Top clientes
-  $('ventas-top-body').innerHTML = (d.top_clientes||[]).map(function(c,i){
-    return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s"><td><strong>'+c.nombre+'</strong></td><td class="num">'+c.num_pedidos+'</td><td class="num">$'+fmt(c.total)+'</td><td>'+c.ultimo_pedido+'</td></tr>';
-  }).join('') || '<tr><td colspan="4" class="text-center text-secondary small py-3">Sin datos</td></tr>';
-
-  // Alertas inactivos
-  $('ventas-alertas-body').innerHTML = (d.alertas_inactivos||[]).map(function(a,i){
-    var waLink = a.telefono ? 'https://wa.me/57'+a.telefono.replace(/\D/g,'') : '#';
-    return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s"><td>'+a.nombre+'</td><td class="num">'+a.num_pedidos+'</td><td class="num text-danger fw-bold">'+a.dias_sin+' días</td>' +
-      '<td><a href="'+waLink+'" target="_blank" class="btn btn-sm btn-outline-success py-0 px-1" title="WhatsApp"><i class="ti ti-brand-whatsapp"></i></a></td></tr>';
-  }).join('') || '<tr><td colspan="4" class="text-center text-secondary small py-3">Sin clientes por reactivar</td></tr>';
+  return '<button class="btn btn-xs btn-outline-primary" onclick="generarRcFactura('+f.id+')"><i class="ti ti-receipt me-1"></i>RC</button>';
 }
 
-// ── Lista Ventas ──
-async function loadVentas() {
-  var params = [];
-  var desde = $('vf-desde') ? $('vf-desde').value : '';
-  var hasta = $('vf-hasta') ? $('vf-hasta').value : '';
-  var estado = $('vf-estado') ? $('vf-estado').value : '';
-  var medio = $('vf-medio') ? $('vf-medio').value : '';
-  var canal = $('vf-canal') ? $('vf-canal').value : '';
-  var q = $('vf-buscar') ? $('vf-buscar').value : '';
-  if(desde) params.push('fecha_desde='+desde);
-  if(hasta) params.push('fecha_hasta='+hasta);
-  if(estado) params.push('estado='+estado);
-  if(medio) params.push('medio_pago='+encodeURIComponent(medio));
-  if(canal) params.push('canal='+encodeURIComponent(canal));
-  if(q) params.push('q='+encodeURIComponent(q));
-  var url = '/ventas' + (params.length ? '?'+params.join('&') : '');
-  showSkeleton('ventas-body', 8, 3);
-  var data = await api(url,'GET',null,true).catch(function(){return [];});
-  if(!data.length) { $('ventas-body').innerHTML = emptyState('cash-register','Sin ventas','Registra tu primera venta','Nueva venta',"openModal('modal-venta')"); return; }
-  $('ventas-body').innerHTML = data.map(function(v,i){
-    var estadoBadge = v.estado==='pagado' ? '<span class="badge bg-success cursor-pointer" onclick="toggleEstadoVenta('+v.id+',\'pendiente\')">Pagado</span>' : '<span class="badge bg-warning cursor-pointer" onclick="toggleEstadoVenta('+v.id+',\'pagado\')">Pendiente</span>';
-    var shopifyIcon = v.shopify_order_id ? ' <i class="ti ti-brand-shopify text-success" style="font-size:12px" title="Shopify"></i>' : '';
-    return '<tr class="animate-row" style="animation-delay:'+i*0.02+'s">' +
-      '<td>'+v.fecha+'</td><td><strong>'+v.cliente_nombre+'</strong>'+shopifyIcon+'</td>' +
-      '<td>'+(v.factura||'--')+'</td><td class="num">$'+fmt(v.valor)+'</td>' +
-      '<td><span class="badge bg-azure-lt">'+(v.medio_pago||'--')+'</span></td>' +
-      '<td><span class="badge bg-purple-lt">'+(v.canal||'--')+'</span></td>' +
-      '<td>'+estadoBadge+'</td>' +
-      '<td><button class="btn btn-sm btn-ghost-danger btn-delete py-0" onclick="eliminarVenta('+v.id+')"><i class="ti ti-trash"></i></button></td></tr>';
-  }).join('');
-}
+function _renderClienteCard(c, collapsed) {
+  var hasPend = c.total_pendiente > 0;
+  var pendBadge = hasPend ? '<span class="badge bg-warning ms-2">$'+fmt(c.total_pendiente)+' pend</span>' : '<span class="badge bg-success ms-2">Al día</span>';
+  var subinfo = [c.telefono, c.ciudad].filter(Boolean).join(' · ');
+  var collapseId = 'crm-c-'+c.id;
 
-async function toggleEstadoVenta(id, nuevoEstado) {
-  await api('/ventas/'+id+'/estado?estado='+nuevoEstado,'PUT');
-  notyf.success('Estado actualizado');
-  loadVentas();
-  updateVentasPendienteBadge();
-}
+  var factHtml = '<div class="table-responsive"><table class="table table-vcenter table-sm mb-0">' +
+    '<thead><tr><th>Factura</th><th>Fecha</th><th class="text-end">Total</th><th class="text-end">Saldo</th><th>Estado</th><th>Medio pago</th><th>Canal</th><th>RC / Recibo</th></tr></thead><tbody>' +
+    c.facturas.map(function(f){
+      var saldoBadge = f.balance > 0 ? '<span class="text-danger fw-bold">$'+fmt(f.balance)+'</span>' : '<span class="text-success">$0</span>';
+      return '<tr>' +
+        '<td><code class="small">'+f.factura+'</code></td>' +
+        '<td class="small">'+f.fecha+'</td>' +
+        '<td class="text-end small">$'+fmt(f.total)+'</td>' +
+        '<td class="text-end">'+saldoBadge+'</td>' +
+        '<td>'+_selectEstado(f.id, f.estado_pago)+'</td>' +
+        '<td>'+_selectMedio(f.id, f.medio_pago)+'</td>' +
+        '<td>'+_selectCanal(f.id, f.origen_canal)+'</td>' +
+        '<td>'+_rcBtn(f)+'</td>' +
+        '</tr>';
+    }).join('') +
+    '</tbody></table></div>';
 
-async function eliminarVenta(id) {
-  confirmAction('Eliminar esta venta?', async function(){
-    await api('/ventas/'+id,'DELETE');
-    notyf.success('Venta eliminada');
-    loadVentas();
-  });
-}
-
-async function crearVenta() {
-  var nombre = $('nv-cliente').value.trim();
-  if(!nombre) return notyf.error('Escribe el nombre del cliente');
-  var valor = parseFloat($('nv-valor').value) || 0;
-  if(!valor) return notyf.error('El valor no puede ser 0');
-  await api('/ventas','POST',{
-    fecha: $('nv-fecha').value || null,
-    cliente_nombre: nombre,
-    factura: $('nv-factura').value.trim() || null,
-    valor: valor,
-    estado: $('nv-estado').value,
-    medio_pago: $('nv-medio').value || null,
-    canal: $('nv-canal').value || null,
-    notas: $('nv-notas').value.trim() || null
-  });
-  notyf.success('Venta registrada');
-  closeModal('modal-venta');
-  $('nv-cliente').value=''; $('nv-factura').value=''; $('nv-valor').value=''; $('nv-notas').value='';
-  if(currentVentasTab==='lista') loadVentas();
-  else if(currentVentasTab==='dash') loadVentasDashboard();
-}
-
-function exportVentasExcel() {
-  var table = document.querySelector('#vt-lista table');
-  if(!table) return;
-  var wb = XLSX.utils.table_to_book(table, {sheet:'Ventas'});
-  XLSX.writeFile(wb, 'ventas_daily_'+new Date().toISOString().split('T')[0]+'.xlsx');
-}
-
-// ── Clientes CRM ──
-function filtrarClientes(seg) {
-  currentClienteSegmento = seg;
-  document.querySelectorAll('#clientes-chips button').forEach(function(b){
-    b.className = 'btn btn-sm ' + (b.textContent.trim().toLowerCase().includes(seg) || (seg==='todos' && b.textContent.trim()==='Todos') ? 'btn-primary' : 'btn-outline-secondary');
-  });
-  loadClientes();
-}
-
-async function loadClientes() {
-  var q = $('clientes-buscar') ? $('clientes-buscar').value : '';
-  var params = [];
-  if(q) params.push('q='+encodeURIComponent(q));
-  if(currentClienteSegmento && currentClienteSegmento !== 'todos') params.push('segmento='+currentClienteSegmento);
-  var url = '/clientes' + (params.length ? '?'+params.join('&') : '');
-  showSkeleton('clientes-body', 6, 3);
-  var data = await api(url,'GET',null,true).catch(function(){return [];});
-  if(!data.length) { $('clientes-body').innerHTML = emptyState('users','Sin clientes','Importa o registra tu primer cliente','Nuevo cliente',"openModal('modal-cliente')"); return; }
-  var segBadges = {vip:'<span class="badge bg-purple">VIP</span>',frecuente:'<span class="badge bg-success">Frecuente</span>',unica:'<span class="badge bg-warning">Única</span>',inactivo:'<span class="badge bg-danger">Inactivo</span>',prospect:'<span class="badge bg-secondary">Prospect</span>'};
-  $('clientes-body').innerHTML = data.map(function(c,i){
-    return '<tr class="animate-row" style="animation-delay:'+i*0.02+'s;cursor:pointer" onclick="verCliente('+c.id+')">' +
-      '<td><strong>'+c.nombre+'</strong>' + (c.origen==='shopify'?' <i class="ti ti-brand-shopify text-success" style="font-size:11px"></i>':'') + '<div class="small text-secondary">'+(c.telefono||'')+(c.email?' · '+c.email:'')+'</div></td>' +
-      '<td class="num">'+c.num_pedidos+'</td>' +
-      '<td class="num">$'+fmt(c.pedido_promedio)+'</td>' +
-      '<td class="num fw-bold">$'+fmt(c.total_gastado)+'</td>' +
-      '<td>'+(c.ultimo_pedido||'--')+'</td>' +
-      '<td>'+(segBadges[c.segmento]||c.segmento)+'</td></tr>';
-  }).join('');
-}
-
-async function verCliente(id) {
-  var p = await api('/clientes/'+id+'/perfil').catch(function(){return null;});
-  if(!p) { $('cliente-perfil-panel').innerHTML = '<div class="card"><div class="card-body text-center text-danger">Error al cargar.</div></div>'; return; }
-  var m = p.metricas;
-  var waLink = p.telefono ? 'https://wa.me/57'+p.telefono.replace(/\D/g,'') : null;
-  var mailLink = p.email ? 'mailto:'+p.email : null;
-
-  var accionesBtns = '';
-  if(waLink) accionesBtns += '<a href="'+waLink+'" target="_blank" class="btn btn-sm btn-success"><i class="ti ti-brand-whatsapp me-1"></i>WhatsApp</a> ';
-  if(mailLink) accionesBtns += '<a href="'+mailLink+'" class="btn btn-sm btn-outline-primary"><i class="ti ti-mail me-1"></i>Email</a> ';
-
-  var ventasHtml = p.ventas.length ? p.ventas.map(function(v){
-    var badge = v.estado==='pagado' ? '<span class="badge bg-success-lt">Pagado</span>' : '<span class="badge bg-warning-lt">Pendiente</span>';
-    return '<tr><td>'+v.fecha+'</td><td>$'+fmt(v.valor)+'</td><td>'+(v.medio_pago||'--')+'</td><td>'+badge+'</td></tr>';
-  }).join('') : '<tr><td colspan="4" class="text-center text-secondary small">Sin compras</td></tr>';
-
-  $('cliente-perfil-panel').innerHTML =
-    '<div class="card">' +
-      '<div class="card-header"><h3 class="card-title"><i class="ti ti-user me-2"></i>'+p.nombre+'</h3></div>' +
-      '<div class="card-body">' +
-        '<div class="d-flex gap-2 mb-3">'+accionesBtns+'</div>' +
-        '<div class="small mb-3">' +
-          (p.telefono ? '<div><i class="ti ti-phone me-1"></i>'+p.telefono+'</div>' : '') +
-          (p.email ? '<div><i class="ti ti-mail me-1"></i>'+p.email+'</div>' : '') +
-          (p.direccion ? '<div><i class="ti ti-map-pin me-1"></i>'+p.direccion+(p.apto?' Apto '+p.apto:'')+'</div>' : '') +
-          (p.zona ? '<div><i class="ti ti-building me-1"></i>'+p.zona+'</div>' : '') +
-          (p.cedula ? '<div><i class="ti ti-id me-1"></i>CC '+p.cedula+'</div>' : '') +
+  return '<div class="card mb-2">' +
+    '<div class="card-header" style="cursor:pointer" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'\':\'\';this.querySelector(\'.ti-chevron-down,ti-chevron-right\').style.transform=\'\';">' +
+      '<div class="d-flex align-items-center gap-2 w-100">' +
+        '<i class="ti ti-chevron-'+(collapsed?'right':'down')+' text-secondary"></i>' +
+        '<div class="col">' +
+          '<strong>'+c.nombre+'</strong>' + (c.cedula ? ' <span class="text-secondary small">CC '+c.cedula+'</span>' : '') +
+          (subinfo ? '<div class="text-secondary small">'+subinfo+'</div>' : '') +
         '</div>' +
-        '<div class="row row-cards mb-3">' +
-          '<div class="col-6"><div class="card card-sm bg-primary-lt"><div class="card-body py-2 text-center"><div class="fw-bold fs-4">$'+fmt(m.total_gastado)+'</div><div class="text-secondary small">Total gastado</div></div></div></div>' +
-          '<div class="col-6"><div class="card card-sm bg-primary-lt"><div class="card-body py-2 text-center"><div class="fw-bold fs-4">'+m.num_pedidos+'</div><div class="text-secondary small">Pedidos</div></div></div></div>' +
-          '<div class="col-6"><div class="card card-sm"><div class="card-body py-2 text-center"><div class="fw-bold fs-4">$'+fmt(m.pedido_promedio)+'</div><div class="text-secondary small">Promedio</div></div></div></div>' +
-          '<div class="col-6"><div class="card card-sm"><div class="card-body py-2 text-center"><div class="fw-bold fs-4">'+(m.frecuencia_dias ? m.frecuencia_dias+' días' : '--')+'</div><div class="text-secondary small">Frecuencia</div></div></div></div>' +
+        '<div class="d-flex gap-2 align-items-center flex-wrap justify-content-end">' +
+          pendBadge +
+          '<span class="badge bg-azure-lt">'+c.num_facturas+' fact.</span>' +
+          '<span class="text-secondary small">Total: $'+fmt(c.total_ventas)+'</span>' +
+          (c.telefono ? '<a href="https://wa.me/57'+c.telefono.replace(/\D/g,'')+'" target="_blank" class="btn btn-xs btn-outline-success" onclick="event.stopPropagation()"><i class="ti ti-brand-whatsapp"></i></a>' : '') +
         '</div>' +
-        '<div class="d-flex gap-3 mb-3 small">' +
-          '<div><span class="text-secondary">Días sin comprar:</span> <strong class="'+(m.dias_sin_compra>30?'text-danger':'')+'">'+( m.dias_sin_compra !== null ? m.dias_sin_compra : '--')+'</strong></div>' +
-          '<div><span class="text-secondary">Pago favorito:</span> <strong>'+(m.medio_pago_favorito||'--')+'</strong></div>' +
-          '<div><span class="text-secondary">Canal:</span> <strong>'+(m.canal_favorito||'--')+'</strong></div>' +
-        '</div>' +
-        '<div class="fw-bold small text-secondary text-uppercase mb-2" style="letter-spacing:.4px">Historial de pedidos</div>' +
-        '<div class="table-responsive" style="max-height:250px;overflow-y:auto"><table class="table table-vcenter table-sm">' +
-          '<thead><tr><th>Fecha</th><th class="num">Valor</th><th>Medio</th><th>Estado</th></tr></thead>' +
-          '<tbody>'+ventasHtml+'</tbody></table></div>' +
       '</div>' +
-    '</div>';
+    '</div>' +
+    '<div id="'+collapseId+'" style="'+(collapsed?'display:none':'')+'">' +
+      factHtml +
+    '</div>' +
+  '</div>';
 }
 
-async function crearCliente() {
-  var nombre = $('nc-nombre').value.trim();
-  if(!nombre) return notyf.error('El nombre es obligatorio');
-  await api('/clientes','POST',{
-    nombre: nombre, telefono: $('nc-telefono').value.trim()||null,
-    email: $('nc-email').value.trim()||null, direccion: $('nc-direccion').value.trim()||null,
-    apto: $('nc-apto').value.trim()||null, zona: $('nc-zona').value.trim()||null,
-    cedula: $('nc-cedula').value.trim()||null
-  });
-  notyf.success('Cliente creado');
-  closeModal('modal-cliente');
-  $('nc-nombre').value=''; $('nc-telefono').value=''; $('nc-email').value='';
-  $('nc-direccion').value=''; $('nc-apto').value=''; $('nc-zona').value=''; $('nc-cedula').value='';
-  loadClientes();
+// ── Tab: Activos ──
+async function loadActivos() {
+  var q = ($('crm-act-buscar')||{}).value || '';
+  var url = '/crm/activos' + (q ? '?q='+encodeURIComponent(q) : '');
+  var el = $('crm-activos-list');
+  el.innerHTML = '<div class="text-center text-secondary py-4"><i class="ti ti-loader spin" style="font-size:28px"></i></div>';
+  var data = await api(url,'GET',null,true).catch(function(){return null;});
+  if(!data) { el.innerHTML = emptyState('cloud-off','Error al cargar','Verifica la conexión con Siigo','Reintentar','loadActivos()'); return; }
+  if(!data.length) { el.innerHTML = emptyState('receipt','Sin facturas activas','Sincroniza Siigo para cargar facturas de los últimos 6 meses','Sync Siigo','crmSyncSiigo()'); return; }
+  el.innerHTML = data.map(function(c, i){ return _renderClienteCard(c, i > 0); }).join('');
 }
 
-// ── Importar CSV ──
-async function importarClientesCSV() {
-  var file = $('import-clientes-file').files[0];
-  if(!file) return notyf.error('Selecciona un archivo CSV');
-  var text = await file.text();
-  var rows = parseCSV(text);
-  // Map columns: Nombre, Dirección, Apto, Info. Adicional, Zona, Contacto, Cedula, Correo Electronico
-  var mapped = rows.map(function(r){
-    return {nombre: r[0]||'', direccion: r[1]||null, apto: r[2]||null, info_adicional: r[3]||null,
-            zona: r[4]||null, telefono: r[5]||null, cedula: r[6]||null, email: r[7]||null};
-  }).filter(function(r){return r.nombre;});
-  $('import-clientes-resultado').innerHTML = '<div class="text-secondary small">Importando '+mapped.length+' clientes...</div>';
-  var res = await api('/importar/clientes','POST',mapped).catch(function(e){return {error:e};});
+// ── Tab: Históricos ──
+async function loadHistoricos() {
+  var q = ($('crm-hist-buscar')||{}).value || '';
+  var url = '/crm/historicos' + (q ? '?q='+encodeURIComponent(q) : '');
+  var el = $('crm-historicos-list');
+  el.innerHTML = '<div class="text-center text-secondary py-4"><i class="ti ti-loader spin" style="font-size:28px"></i></div>';
+  var data = await api(url,'GET',null,true).catch(function(){return null;});
+  if(!data) { el.innerHTML = emptyState('cloud-off','Error al cargar','','',''); return; }
+  if(!data.length) { el.innerHTML = emptyState('history','Sin clientes históricos','Los clientes con facturas de más de 6 meses aparecerán aquí','',''); return; }
+  el.innerHTML = data.map(function(c, i){ return _renderClienteCard(c, true); }).join('');
+}
+
+// ── Update factura inline ──
+async function crmUpdateFactura(fid, field, value) {
+  var body = {};
+  body[field] = value;
+  await api('/crm/facturas/'+fid,'PUT',body).catch(function(e){ notyf.error('Error: '+e); });
+}
+
+// ── Generar RC individual ──
+async function generarRcFactura(fid) {
+  notyf.open({type:'info', message:'Generando Recibo de Caja...'});
+  var res = await api('/crm/facturas/'+fid+'/generar-rc','POST').catch(function(e){ notyf.error('Error: '+e); return null; });
+  if(!res) return;
   if(res.ok) {
-    $('import-clientes-resultado').innerHTML = '<div class="alert alert-success py-2 small">'+res.nuevos+' clientes nuevos, '+res.existentes+' ya existían.</div>';
-    notyf.success(res.nuevos+' clientes importados');
+    var msg = res.simulado ? 'RC simulado: '+res.rc_numero+' (Modo prueba)' : 'RC creado en Siigo: '+res.rc_numero;
+    notyf.success(msg);
+    loadActivos();
   } else {
-    $('import-clientes-resultado').innerHTML = '<div class="alert alert-danger py-2 small">Error al importar.</div>';
+    notyf.error('Error: '+(res.mensaje || res.error || 'Desconocido'));
   }
 }
 
-async function importarVentasCSV() {
-  var file = $('import-ventas-file').files[0];
-  if(!file) return notyf.error('Selecciona un archivo CSV');
-  var text = await file.text();
-  var rows = parseCSV(text);
-  // Map: Fecha, Cliente, # Factura, Valor, Estado(E), Medio de Pago, Proviene Cliente
-  var mapped = rows.map(function(r){
-    var valor = parseFloat((r[3]||'0').replace(/[$,.]/g,'').replace(/\./g,'')) || 0;
-    if(r[3] && r[3].includes(',')) valor = parseFloat(r[3].replace(/\$/g,'').replace(/\./g,'').replace(',','.')) || 0;
-    var estadoRaw = (r[4]||'').trim().toLowerCase();
-    var estado = (estadoRaw === 'pagado' || estadoRaw === 'pago' || estadoRaw === 'si' || estadoRaw === 'sí') ? 'pagado' : 'pendiente';
-    return {fecha: r[0]||null, cliente_nombre: r[1]||'', factura: r[2]||null,
-            valor: valor, estado: estado, medio_pago: r[5]||null, canal: r[6]||null};
-  }).filter(function(r){return r.cliente_nombre && r.valor > 0;});
-  $('import-ventas-resultado').innerHTML = '<div class="text-secondary small">Importando '+mapped.length+' ventas...</div>';
-  // Send in batches of 200
-  var total = {nuevos:0, duplicados:0};
-  for(var i=0; i<mapped.length; i+=200) {
-    var batch = mapped.slice(i, i+200);
-    var res = await api('/importar/ventas','POST',batch).catch(function(){return {nuevos:0, duplicados:0};});
-    total.nuevos += res.nuevos||0;
-    total.duplicados += res.duplicados||0;
-  }
-  $('import-ventas-resultado').innerHTML = '<div class="alert alert-success py-2 small">'+total.nuevos+' ventas importadas, '+total.duplicados+' duplicados omitidos.</div>';
-  notyf.success(total.nuevos+' ventas importadas');
+// ── Generar RC masivo ──
+async function generarRcMasivo() {
+  confirmAction('¿Generar Recibo de Caja para todas las facturas marcadas como PAGADO sin RC aún?', async function(){
+    notyf.open({type:'info', message:'Procesando...'});
+    var res = await api('/crm/generar-rc-masivo','POST').catch(function(e){ notyf.error('Error: '+e); return null; });
+    if(!res) return;
+    var modo = res.modo_prueba ? ' (Modo prueba)' : '';
+    notyf.success(res.exitosas+' RC generados'+modo);
+    if(res.errores && res.errores.length) notyf.error(res.errores.length+' errores — ver consola');
+    loadActivos();
+  });
 }
 
-function parseCSV(text) {
-  var lines = text.split('\n');
-  var result = [];
-  for(var i=1; i<lines.length; i++) { // Skip header
-    var line = lines[i].trim();
-    if(!line) continue;
-    // Simple CSV parse (handles quoted fields)
-    var cols = []; var cur = ''; var inQ = false;
-    for(var j=0; j<line.length; j++) {
-      var ch = line[j];
-      if(ch === '"') { inQ = !inQ; }
-      else if(ch === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
-      else { cur += ch; }
+// ── Reset CRM ──
+async function crmResetData() {
+  confirmAction('¿Borrar TODOS los datos del CRM (clientes, facturas, movimientos)? Tendrás que volver a sincronizar desde Siigo.', async function(){
+    var res = await api('/crm/reset','POST').catch(function(e){ notyf.error('Error: '+e); return null; });
+    if(res && res.ok) {
+      notyf.success('Datos CRM eliminados');
+      loadActivos();
+      loadCrmConfig();
     }
-    cols.push(cur.trim());
-    result.push(cols);
-  }
-  return result;
+  });
 }
 
-// ── Shopify ──
-async function loadShopifyStatus() {
-  var s = await api('/shopify/status','GET',null,true).catch(function(){return {configured:false};});
-  var panel = $('shopify-config-panel');
-  if(s.configured) {
-    panel.innerHTML = '<div class="d-flex align-items-center gap-2 mb-2"><span class="status-dot status-dot-animated bg-success"></span><strong class="text-success">Conectado</strong></div>' +
-      '<div class="small text-secondary mb-2">Tienda: '+s.store_url+'</div>' +
-      (s.last_sync ? '<div class="small">Última sync: '+s.last_sync.fecha+' — '+s.last_sync.nuevos+' nuevos</div>' : '<div class="small text-secondary">Sin sincronizaciones aún</div>') +
-      '<div class="mt-3"><button class="btn btn-sm btn-primary" onclick="syncShopify()"><i class="ti ti-refresh me-1"></i>Sincronizar ahora</button></div>';
-  } else {
-    panel.innerHTML = '<div class="d-flex align-items-center gap-2 mb-2"><span class="status-dot bg-secondary"></span><strong class="text-secondary">No configurado</strong></div>' +
-      '<div class="small text-secondary">Para conectar, agregar las variables de entorno en Railway:<br><code>SHOPIFY_STORE_URL</code> y <code>SHOPIFY_ACCESS_TOKEN</code></div>';
+// ── Sync Siigo ──
+async function crmSyncSiigo() {
+  var resultEl = $('sync-siigo-result');
+  if(resultEl) resultEl.innerHTML = '<div class="text-secondary small"><i class="ti ti-loader spin me-1"></i>Sincronizando con Siigo — puede tomar 2-5 minutos...</div>';
+  notyf.open({type:'info', message:'Sincronizando Siigo...'});
+
+  // Also update header button state
+  var btns = document.querySelectorAll('[onclick="crmSyncSiigo()"]');
+  btns.forEach(function(b){ b.disabled=true; b.innerHTML='<i class="ti ti-loader me-1 spin"></i>Sincronizando...'; });
+
+  var res = await api('/crm/sync/siigo','POST').catch(function(e){
+    notyf.error('Error Siigo: '+e);
+    if(resultEl) resultEl.innerHTML = '<div class="alert alert-danger small">Error: '+e+'</div>';
+    return null;
+  });
+
+  btns.forEach(function(b){ b.disabled=false; b.innerHTML='<i class="ti ti-refresh me-1"></i>Sync Siigo'; });
+
+  if(res && res.ok) {
+    var msg = 'Clientes: +'+res.clientes.nuevos+' nuevos. Facturas: +'+res.facturas.nuevas+' nuevas.';
+    notyf.success(msg);
+    if(resultEl) resultEl.innerHTML = '<div class="alert alert-success small">'+msg+'</div>';
+    if(currentVentasTab==='activos') loadActivos();
+    loadCrmConfig();
   }
 }
 
-async function importarExcelHistorico() {
-  var file = $('import-excel-file') && $('import-excel-file').files[0];
+// ── Sync Bancos (Google Sheets) ──
+async function crmSyncBancos() {
+  var resultEl = $('sync-bancos-result');
+  if(resultEl) resultEl.innerHTML = '<div class="text-secondary small"><i class="ti ti-loader spin me-1"></i>Jalaando movimientos del Sheet...</div>';
+  var res = await api('/crm/sync/bancos','POST').catch(function(e){
+    notyf.error('Error: '+e);
+    if(resultEl) resultEl.innerHTML = '<div class="alert alert-danger small">Error: '+e+'</div>';
+    return null;
+  });
+  if(res && res.ok) {
+    var msg = res.nuevos+' movimientos nuevos cargados.';
+    notyf.success(msg);
+    if(resultEl) resultEl.innerHTML = '<div class="alert alert-success small">'+msg+'</div>';
+    if(currentVentasTab==='conciliacion') loadConciliacion();
+    loadCrmConfig();
+  }
+}
+
+// ── Sync Excel ──
+async function crmSyncExcel() {
+  var file = $('crm-excel-file') && $('crm-excel-file').files[0];
   if(!file) return notyf.error('Selecciona el archivo Excel');
-  var btn = $('btn-import-excel');
-  btn.disabled = true;
-  btn.innerHTML = '<i class="ti ti-loader me-1 spin"></i>Importando...';
-  var res_div = $('import-excel-resultado');
-  res_div.innerHTML = '<div class="text-secondary small">Procesando el archivo, esto puede tomar 30-60 segundos...</div>';
+  var resultEl = $('crm-excel-result');
+  if(resultEl) resultEl.innerHTML = '<div class="text-secondary small"><i class="ti ti-loader spin me-1"></i>Importando contactos del Excel...</div>';
 
   var fd = new FormData();
   fd.append('file', file);
   try {
-    var resp = await fetch(API + '/importar/excel-historico', { method: 'POST', body: fd });
+    var resp = await fetch(API + '/crm/sync/excel', { method:'POST', body:fd });
     var data = await resp.json();
     if(data.ok) {
-      var r = data.resultado;
-      var html = '<div class="alert alert-success"><strong>✅ Importación completa</strong><ul class="mb-0 mt-2">';
-      if(r.clientes_base_datos) html += '<li>Clientes BASE DATOS: <b>' + r.clientes_base_datos.insertados + '</b> nuevos, ' + r.clientes_base_datos.actualizados + ' actualizados</li>';
-      if(r.prospects)           html += '<li>Prospects (sin compra): <b>' + r.prospects.insertados + '</b> nuevos</li>';
-      if(r.septiembre_2025)     html += '<li>Ventas Sep 2025: <b>' + r.septiembre_2025.insertadas + '</b> registradas</li>';
-      if(r.ventas_navidad)      html += '<li>Ventas Navidad: <b>' + r.ventas_navidad.insertadas + '</b> registradas</li>';
-      if(r.ventas_2025)         html += '<li>Ventas Daily 2025: <b>' + r.ventas_2025.insertadas + '</b> registradas</li>';
-      if(r.ventas_2026)         html += '<li>Ventas Daily 2026: <b>' + r.ventas_2026.insertadas + '</b> registradas</li>';
-      html += '</ul></div>';
-      res_div.innerHTML = html;
-      notyf.success('Historial importado exitosamente');
-      loadVentasDashboard();
+      var msg = data.nuevos+' nuevos, '+data.actualizados+' actualizados.';
+      notyf.success('Excel importado: '+msg);
+      if(resultEl) resultEl.innerHTML = '<div class="alert alert-success small">'+msg+'</div>';
+      loadCrmConfig();
     } else {
-      res_div.innerHTML = '<div class="alert alert-danger">Error: ' + JSON.stringify(data) + '</div>';
+      if(resultEl) resultEl.innerHTML = '<div class="alert alert-danger small">Error: '+JSON.stringify(data)+'</div>';
     }
   } catch(e) {
-    res_div.innerHTML = '<div class="alert alert-danger">Error: ' + e + '</div>';
+    if(resultEl) resultEl.innerHTML = '<div class="alert alert-danger small">Error: '+e+'</div>';
     notyf.error('Error al importar');
   }
-  btn.disabled = false;
-  btn.innerHTML = '<i class="ti ti-upload me-1"></i>Importar Excel';
 }
 
-async function syncShopify() {
-  var btn = $('btn-shopify-sync');
-  if(btn) { btn.disabled=true; btn.innerHTML='<i class="ti ti-loader me-1 spin"></i>Sincronizando...'; }
-  var res = await api('/shopify/sync','POST').catch(function(e){notyf.error('Error: '+e); return null;});
-  if(btn) { btn.disabled=false; btn.innerHTML='<i class="ti ti-refresh me-1"></i>Sync Shopify'; }
+// ── Config / Stats ──
+async function loadCrmConfig() {
+  var cfg = await api('/crm/config','GET',null,true).catch(function(){return null;});
+  if(!cfg) return;
+
+  // Modo prueba toggle
+  var sw = $('crm-modo-switch');
+  var lbl = $('crm-modo-label');
+  var badge = $('crm-modo-badge');
+  if(sw) {
+    sw.checked = cfg.modo_prueba;
+    if(lbl) lbl.textContent = cfg.modo_prueba ? 'Activo — no toca Siigo' : 'Desactivado — RC se envían a Siigo';
+  }
+  if(badge) badge.style.display = cfg.modo_prueba ? '' : 'none';
+
+  // Stats
+  var el = $('crm-stats-panel');
+  if(el && cfg.stats) {
+    el.innerHTML =
+      '<div class="d-flex justify-content-between mb-1"><span class="text-secondary">Clientes CRM</span><strong>'+cfg.stats.clientes+'</strong></div>' +
+      '<div class="d-flex justify-content-between mb-1"><span class="text-secondary">Facturas</span><strong>'+cfg.stats.facturas+'</strong></div>' +
+      '<div class="d-flex justify-content-between mb-1"><span class="text-secondary">Movimientos bancarios</span><strong>'+cfg.stats.movimientos+'</strong></div>';
+  }
+
+  // Log
+  var logData = await api('/crm/sync/log','GET',null,true).catch(function(){return [];});
+  var logEl = $('crm-log-body');
+  if(logEl) {
+    logEl.innerHTML = logData.length ? logData.map(function(r){
+      var d = r.fecha ? r.fecha.replace('T',' ').slice(0,16) : '--';
+      return '<tr><td class="small">'+d+'</td><td><code class="small">'+r.tipo+'</code></td>' +
+        '<td class="num">'+r.nuevos+'</td><td class="num">'+r.actualizados+'</td>' +
+        '<td class="small text-secondary">'+((r.detalle||'').slice(0,60))+'</td></tr>';
+    }).join('') : '<tr><td colspan="5" class="text-center text-secondary small py-3">Sin registros aún</td></tr>';
+  }
+}
+
+async function toggleModoPrueba(checked) {
+  // checked=true means switch is ON = modo_prueba=true
+  var res = await api('/crm/config','PUT',{modo_prueba: checked}).catch(function(e){ notyf.error('Error: '+e); return null; });
   if(res && res.ok) {
-    notyf.success(res.nuevos+' nuevos, '+res.actualizados+' actualizados');
-    if(currentVentasTab==='dash') loadVentasDashboard();
-    else if(currentVentasTab==='lista') loadVentas();
-    else if(currentVentasTab==='config') loadShopifyStatus();
+    var msg = checked ? 'Modo prueba activado — Siigo no recibirá datos' : '⚠️ Modo real activado — los RC se enviarán a Siigo';
+    notyf.success(msg);
+    loadCrmConfig();
+  }
+}
+
+// ── Conciliación ──
+async function loadConciliacion() {
+  var banco = ($('concil-banco')||{}).value || '';
+  var soloPend = ($('concil-solo-pend')||{}).checked !== false;
+  var url = '/crm/conciliacion?solo_pendientes='+soloPend + (banco ? '&banco='+banco : '');
+  var data = await api(url,'GET',null,true).catch(function(){return {movimientos:[],facturas_pendientes:[]};});
+
+  // Render movimientos
+  var movEl = $('concil-movimientos-body');
+  var movs = data.movimientos || [];
+  movEl.innerHTML = movs.length ? movs.map(function(m){
+    var sel = concilMovId === m.id;
+    var concilClass = m.conciliado ? 'text-success' : '';
+    var concilIcon = m.conciliado ? '<i class="ti ti-check text-success ms-1" title="Conciliado"></i>' : '';
+    return '<tr class="'+(sel?'table-primary':'')+' '+concilClass+'" style="cursor:pointer" onclick="concilSelectMov('+m.id+')">' +
+      '<td class="small">'+m.fecha+'</td>' +
+      '<td><span class="badge '+(m.banco==='BDB'?'bg-blue-lt':'bg-green-lt')+'">'+m.banco+'</span></td>' +
+      '<td class="small" style="max-width:180px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="'+(m.descripcion||'')+'">'+((m.descripcion||'--').slice(0,40))+'</td>' +
+      '<td class="text-end fw-bold">$'+fmt(m.valor)+'</td>' +
+      '<td>'+(m.conciliado?'<span class="badge bg-success-lt">Concil.</span>':'<span class="badge bg-warning-lt">Pend.</span>')+concilIcon+'</td>' +
+      '</tr>';
+  }).join('') : '<tr><td colspan="5" class="text-center text-secondary small py-4">Sin movimientos</td></tr>';
+
+  // Render facturas pendientes
+  var factEl = $('concil-facturas-body');
+  var facts = data.facturas_pendientes || [];
+  factEl.innerHTML = facts.length ? facts.map(function(f){
+    var sel = concilFactId === f.id;
+    return '<tr class="'+(sel?'table-success':'')+'" style="cursor:pointer" onclick="concilSelectFact('+f.id+')">' +
+      '<td class="small">'+f.fecha+'</td>' +
+      '<td class="small" style="max-width:150px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">'+f.cliente_nombre+'</td>' +
+      '<td><code class="small">'+f.factura+'</code></td>' +
+      '<td class="text-end fw-bold text-danger">$'+fmt(f.balance)+'</td>' +
+      '</tr>';
+  }).join('') : '<tr><td colspan="4" class="text-center text-secondary small py-4">Sin facturas pendientes</td></tr>';
+}
+
+function concilSelectMov(id) {
+  concilMovId = (concilMovId === id) ? null : id;
+  _updateConcilPanel();
+  loadConciliacion();
+}
+
+function concilSelectFact(id) {
+  concilFactId = (concilFactId === id) ? null : id;
+  _updateConcilPanel();
+  loadConciliacion();
+}
+
+function _updateConcilPanel() {
+  var panel = $('concil-selected-panel');
+  var accion = $('concil-accion');
+  var info = $('concil-selected-info');
+  if(concilMovId && concilFactId) {
+    panel.style.display = '';
+    if(accion) accion.style.display = '';
+    if(info) info.textContent = 'Movimiento #'+concilMovId+' → Factura #'+concilFactId+'. Selecciona el medio de pago y confirma.';
+  } else {
+    panel.style.display = 'none';
+    if(accion) accion.style.display = 'none';
+  }
+}
+
+function concilClearSelection() {
+  concilMovId = null;
+  concilFactId = null;
+  _updateConcilPanel();
+  loadConciliacion();
+}
+
+async function conciliarSeleccion() {
+  if(!concilMovId || !concilFactId) return notyf.error('Selecciona un movimiento y una factura');
+  var medio = ($('concil-medio')||{}).value || '';
+  var res = await api('/crm/conciliar','POST',{
+    movimiento_id: concilMovId,
+    factura_id: concilFactId,
+    medio_pago: medio || null
+  }).catch(function(e){ notyf.error('Error: '+e); return null; });
+  if(res && res.ok) {
+    notyf.success('Vinculados correctamente');
+    concilMovId = null;
+    concilFactId = null;
+    _updateConcilPanel();
+    loadConciliacion();
+    updateVentasPendienteBadge();
   }
 }
 

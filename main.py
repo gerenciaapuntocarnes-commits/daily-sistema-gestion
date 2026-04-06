@@ -4,6 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from database import init_db
 from routers import router
+from crm_router import router as crm_router
 
 app = FastAPI(title="Daily Sistema Gestión API", version="1.0.0")
 
@@ -15,6 +16,7 @@ app.add_middleware(
 )
 
 app.include_router(router, prefix="/api")
+app.include_router(crm_router, prefix="/api")
 
 app.mount("/static", StaticFiles(directory="."), name="static")
 

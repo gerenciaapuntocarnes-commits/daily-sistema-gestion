@@ -478,6 +478,92 @@ def _create_tables():
         )
     """)
 
+    # ── CRM: clientes unificados (Siigo + Excel) ─────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS crm_clientes (
+            id                  SERIAL PRIMARY KEY,
+            siigo_id            TEXT UNIQUE,
+            cedula              TEXT,
+            nombre              TEXT NOT NULL,
+            telefono            TEXT,
+            email               TEXT,
+            direccion           TEXT,
+            ciudad              TEXT,
+            origen_canal        TEXT,          -- 'CLIENTE DAILY','PAGINA','INSTAGRAM','REFERIDO','SIN INFO'
+            notas               TEXT,
+            activo              BOOLEAN DEFAULT TRUE,
+            creado_en           TIMESTAMP DEFAULT NOW(),
+            actualizado_en      TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_crm_cedula  ON crm_clientes(cedula)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_crm_siigo   ON crm_clientes(siigo_id)")
+
+    # ── CRM: facturas desde Siigo ────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS crm_facturas (
+            id                  SERIAL PRIMARY KEY,
+            siigo_invoice_id    TEXT UNIQUE NOT NULL,
+            numero              INTEGER,
+            prefix              TEXT,
+            cliente_id          INTEGER REFERENCES crm_clientes(id) ON DELETE SET NULL,
+            cliente_nombre      TEXT,
+            cliente_cedula      TEXT,
+            fecha               DATE NOT NULL,
+            total               NUMERIC(14,2) NOT NULL DEFAULT 0,
+            balance             NUMERIC(14,2) NOT NULL DEFAULT 0,
+            estado_pago         TEXT DEFAULT 'pendiente',  -- 'pendiente','pagado'
+            medio_pago          TEXT,                      -- 'Efectivo','Bancolombia','Banco de Bogota'
+            cuenta_debito       TEXT,                      -- código cuenta contable para RC
+            origen_canal        TEXT,                      -- canal de venta
+            movimiento_id       INTEGER,                   -- FK a movimientos_bancarios cuando se concilia
+            rc_siigo_id         TEXT,                      -- ID del RC creado en Siigo
+            rc_numero           TEXT,                      -- número RC (RC-1-XXXX)
+            rc_modo_prueba      BOOLEAN DEFAULT TRUE,      -- TRUE = simulado, FALSE = real en Siigo
+            sync_at             TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_crm_fact_cliente ON crm_facturas(cliente_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_crm_fact_fecha   ON crm_facturas(fecha)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_crm_fact_estado  ON crm_facturas(estado_pago)")
+
+    # ── CRM: movimientos bancarios (desde Google Sheets) ─────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS movimientos_bancarios (
+            id              SERIAL PRIMARY KEY,
+            banco           TEXT NOT NULL,      -- 'BDB','BANCOLOMBIA'
+            fecha           DATE NOT NULL,
+            descripcion     TEXT,
+            valor           NUMERIC(14,2) NOT NULL,  -- positivo=crédito, negativo=débito
+            estado          TEXT,               -- 'CONCILIADO' u otro valor del Sheet
+            rc_sheet        TEXT,               -- número RC que pusieron en el Sheet
+            cliente_sheet   TEXT,               -- nombre cliente que pusieron en el Sheet
+            conciliado      BOOLEAN DEFAULT FALSE,
+            factura_id      INTEGER REFERENCES crm_facturas(id) ON DELETE SET NULL,
+            sheet_row       INTEGER,            -- fila en el Sheet para referencia
+            sheet_tab       TEXT,               -- pestaña del Sheet
+            sync_at         TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_mov_banco ON movimientos_bancarios(banco)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_mov_fecha ON movimientos_bancarios(fecha)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_mov_valor ON movimientos_bancarios(valor)")
+
+    # ── CRM: log de sync ─────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS crm_sync_log (
+            id          SERIAL PRIMARY KEY,
+            tipo        TEXT,   -- 'siigo_clientes','siigo_facturas','bancos','excel'
+            registros   INTEGER DEFAULT 0,
+            nuevos      INTEGER DEFAULT 0,
+            actualizados INTEGER DEFAULT 0,
+            fecha       TIMESTAMP DEFAULT NOW(),
+            detalle     TEXT
+        )
+    """)
+
+    conn.commit()
+
     # ── Seed INVIMA programs if empty ──────────────────────────
     cur.execute("SELECT COUNT(*) FROM invima_programas")
     if cur.fetchone()[0] == 0:
