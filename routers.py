@@ -2895,3 +2895,37 @@ async def importar_excel_historico(file: UploadFile = File(...)):
 
     cur.close(); conn.close()
     return {"ok": True, "resultado": result}
+
+
+@router.post("/admin/migrate-clientes")
+def admin_migrate_clientes():
+    """Endpoint de emergencia: agrega columnas faltantes a la tabla clientes."""
+    conn = get_conn()
+    cur = conn.cursor()
+    results = []
+    cols = [
+        ("direccion", "TEXT"),
+        ("apto", "TEXT"),
+        ("info_adicional", "TEXT"),
+        ("zona", "TEXT"),
+        ("telefono", "TEXT"),
+        ("email", "TEXT"),
+        ("cedula", "TEXT"),
+        ("shopify_customer_id", "TEXT"),
+        ("origen", "TEXT DEFAULT 'manual'"),
+        ("fecha_registro", "DATE DEFAULT CURRENT_DATE"),
+        ("activo", "BOOLEAN DEFAULT TRUE"),
+    ]
+    for col, defn in cols:
+        try:
+            cur.execute("SAVEPOINT sp")
+            cur.execute(f"ALTER TABLE clientes ADD COLUMN IF NOT EXISTS {col} {defn}")
+            cur.execute("RELEASE SAVEPOINT sp")
+            results.append(f"{col}: ok")
+        except Exception as e:
+            cur.execute("ROLLBACK TO SAVEPOINT sp")
+            results.append(f"{col}: {e}")
+    conn.commit()
+    cur.close()
+    conn.close()
+    return {"ok": True, "results": results}

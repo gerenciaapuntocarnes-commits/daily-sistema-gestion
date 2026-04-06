@@ -440,6 +440,9 @@ def _create_tables():
     except Exception:
         cur.execute("ROLLBACK TO SAVEPOINT sp_idx_sh")
 
+    # Commit explícito de todas las migraciones de clientes
+    conn.commit()
+
     # ── Ventas ───────────────────────────────────────────────────
     cur.execute("""
         CREATE TABLE IF NOT EXISTS ventas (
