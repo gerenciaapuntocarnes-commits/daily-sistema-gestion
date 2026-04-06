@@ -161,11 +161,14 @@ tr:hover .btn-delete { opacity: 1; }
 .forecast-bar { height: 8px; border-radius: 4px; background: var(--tblr-primary-lt); overflow: hidden; }
 .forecast-bar .fill { height: 100%; background: var(--tblr-primary); border-radius: 4px; }
 
-/* ── Mobile sidebar fix ── */
+/* ══ RESPONSIVE MOBILE / TABLET ══════════════════════════════════ */
+
+/* ── Mobile sidebar: dropdown overlay al expandir ── */
 @media (max-width: 991.98px) {
   .navbar-vertical.navbar-expand-lg {
     overflow: visible !important;
     position: relative;
+    z-index: 1030;
   }
   .navbar-vertical.navbar-expand-lg .navbar-collapse {
     position: absolute;
@@ -183,6 +186,77 @@ tr:hover .btn-delete { opacity: 1; }
   [data-bs-theme="dark"] .navbar-vertical.navbar-expand-lg .navbar-collapse {
     background: #141824;
   }
+
+  /* ── Page header: botones envuelven al siguiente renglon ── */
+  .page-header .row { flex-wrap: wrap; gap: 8px 0; }
+  .page-header .col-auto.ms-auto { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-start; margin-left: 0 !important; }
+  .page-header .col-auto.ms-auto .btn-group,
+  .page-header .col-auto.ms-auto .btn { flex-shrink: 0; }
+
+  /* ── Filtros de fecha: full-width en mobile ── */
+  .row.g-2 .col-auto input[type="date"],
+  .row.g-2 .col-auto input[type="date"].form-control {
+    width: 100% !important;
+    min-width: 0;
+  }
+  .row.g-2 > .col-auto { flex: 1 1 auto; min-width: 140px; }
+
+  /* ── Filtros ventas: wrap en cards ── */
+  #vt-lista .card-body .row { flex-wrap: wrap; }
+  #vt-lista .card-body .row > .col-auto {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 130px;
+  }
+  #vt-lista .card-body .row > .col-auto input[type="date"],
+  #vt-lista .card-body .row > .col-auto select {
+    width: 100% !important;
+  }
+  #vt-lista .card-body .row > .col { flex: 1 1 100%; }
+  #vt-lista .card-body .row > .col-auto:last-child { flex: 1 1 100%; }
+
+  /* ── Nav tabs: scroll horizontal si desbordan ── */
+  .nav-tabs, .nav-pills {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+  }
+  .nav-tabs::-webkit-scrollbar,
+  .nav-pills::-webkit-scrollbar { display: none; }
+  .nav-tabs .nav-link, .nav-pills .nav-link { white-space: nowrap; }
+
+  /* ── Paneles two-column: apilan en mobile ── */
+  .col-lg-5, .col-lg-7, .col-lg-6, .col-lg-8, .col-lg-4, .col-lg-3 {
+    /* Bootstrap ya los apila, esto asegura orden correcto */
+  }
+
+  /* ── Panel de detalle (receta, cliente, lote): viene después de la lista ── */
+  #receta-detalle-panel,
+  #cliente-perfil-panel,
+  #traza-detalle-panel,
+  #proc-detalle-panel,
+  #invima-registros-panel { margin-top: 12px; }
+
+  /* ── KPI cards: 2 por fila en mobile ── */
+  #dash-stats > .col-lg-3,
+  #dash-stats > .col-sm-6 { flex: 0 0 50%; max-width: 50%; }
+
+  /* ── Tabla de ordenes/clientes: texto más compacto ── */
+  .table-sm td, .table-sm th { padding: 6px 8px; font-size: 13px; }
+
+  /* ── Chips filtro clientes: wrap correcto ── */
+  #clientes-chips { flex: 1 1 100%; }
+  #vt-clientes .row.g-2 { flex-wrap: wrap; }
+  #vt-clientes .row.g-2 > .col-auto { flex: 1 1 100%; }
+  #vt-clientes .row.g-2 > .col { flex: 1 1 100%; }
+}
+
+/* ── Tablet (md): ajustes intermedios ── */
+@media (min-width: 576px) and (max-width: 991.98px) {
+  .page-header .col-auto.ms-auto { flex-basis: auto; justify-content: flex-end; margin-left: auto !important; }
+  #vt-lista .card-body .row > .col-auto { flex: 0 0 auto; }
+  #vt-lista .card-body .row > .col-auto input[type="date"],
+  #vt-lista .card-body .row > .col-auto select { width: auto !important; }
 }
 </style>
 <script>
@@ -2225,8 +2299,7 @@ function goto(sec) {
   // Close mobile sidebar
   var collapse = document.querySelector('#sidebar-menu');
   if(collapse && collapse.classList.contains('show')) {
-    var bsCollapse = bootstrap.Collapse.getInstance(collapse);
-    if(bsCollapse) bsCollapse.hide();
+    bootstrap.Collapse.getOrCreateInstance(collapse).hide();
   }
   var loaders = {
     dashboard: loadDashboard,
