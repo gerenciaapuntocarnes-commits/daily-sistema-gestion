@@ -5,3 +5,4 @@ aiofiles
 requests
 httpx
 openpyxl
+python-multipart
