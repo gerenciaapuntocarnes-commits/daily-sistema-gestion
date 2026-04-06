@@ -2109,3 +2109,591 @@ def plan_produccion(semanas_historico: int = 4):
         "total_costo_mp": round(sum(m["costo_estimado"] for m in plan_compras), 2),
         "total_costo_fijos": round(sum(p.get("costo_mo_und", 0) * p["producir"] + p.get("costo_sv_und", 0) * p["producir"] for p in plan_productos), 2),
     }
+
+
+# ═══════════════════════════════════════════════════════════════
+# CLIENTES (CRM)
+# ═══════════════════════════════════════════════════════════════
+
+class ClienteIn(BaseModel):
+    nombre: str
+    direccion: Optional[str] = None
+    apto: Optional[str] = None
+    info_adicional: Optional[str] = None
+    zona: Optional[str] = None
+    telefono: Optional[str] = None
+    cedula: Optional[str] = None
+    email: Optional[str] = None
+
+@router.get("/clientes")
+def listar_clientes(q: Optional[str] = None, segmento: Optional[str] = None):
+    conn = get_conn(); cur = conn.cursor()
+    cur.execute("""
+        SELECT c.id, c.nombre, c.direccion, c.apto, c.zona, c.telefono, c.cedula, c.email,
+               c.shopify_customer_id, c.origen, c.fecha_registro,
+               COUNT(v.id) AS num_pedidos,
+               COALESCE(SUM(v.valor),0) AS total_gastado,
+               MAX(v.fecha) AS ultimo_pedido
+        FROM clientes c
+        LEFT JOIN ventas v ON v.cliente_id = c.id
+        WHERE c.activo = TRUE
+        GROUP BY c.id
+        ORDER BY ultimo_pedido DESC NULLS LAST, c.nombre
+    """)
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    result = []
+    for r in rows:
+        num = int(r[11]); total = float(r[12]); ultimo = str(r[13]) if r[13] else None
+        promedio = total / num if num > 0 else 0
+        # Calcular días sin comprar
+        if r[13]:
+            dias_sin = (date.today() - r[13]).days
+        else:
+            dias_sin = None
+        # Segmento
+        if num == 0:
+            seg = 'prospect'
+        elif num == 1:
+            seg = 'unica'
+        elif dias_sin and dias_sin > 60 and num >= 2:
+            seg = 'inactivo'
+        elif num >= 5:
+            seg = 'vip'
+        elif num >= 2:
+            seg = 'frecuente'
+        else:
+            seg = 'unica'
+        item = {
+            "id": r[0], "nombre": r[1], "direccion": r[2], "apto": r[3],
+            "zona": r[4], "telefono": r[5], "cedula": r[6], "email": r[7],
+            "shopify_customer_id": r[8], "origen": r[9], "fecha_registro": str(r[10]) if r[10] else None,
+            "num_pedidos": num, "total_gastado": total, "pedido_promedio": round(promedio, 2),
+            "ultimo_pedido": ultimo, "dias_sin_compra": dias_sin, "segmento": seg
+        }
+        # Filtro por texto
+        if q:
+            ql = q.lower()
+            if not (ql in (r[1] or '').lower() or ql in (r[5] or '').lower()
+                    or ql in (r[7] or '').lower() or ql in (r[6] or '').lower()):
+                continue
+        # Filtro por segmento
+        if segmento and segmento != 'todos' and seg != segmento:
+            continue
+        result.append(item)
+    return result
+
+@router.get("/clientes/{cliente_id}/perfil")
+def perfil_cliente(cliente_id: int):
+    conn = get_conn(); cur = conn.cursor()
+    cur.execute("""
+        SELECT id, nombre, direccion, apto, info_adicional, zona, telefono,
+               cedula, email, shopify_customer_id, origen, fecha_registro
+        FROM clientes WHERE id=%s
+    """, (cliente_id,))
+    c = cur.fetchone()
+    if not c:
+        raise HTTPException(404, "Cliente no encontrado")
+    cur.execute("""
+        SELECT id, fecha, factura, valor, estado, medio_pago, canal, notas,
+               shopify_order_id, shopify_order_name
+        FROM ventas WHERE cliente_id=%s ORDER BY fecha DESC
+    """, (cliente_id,))
+    ventas_list = [{"id": v[0], "fecha": str(v[1]), "factura": v[2], "valor": float(v[3]),
+                    "estado": v[4], "medio_pago": v[5], "canal": v[6], "notas": v[7],
+                    "shopify_order_id": v[8], "shopify_order_name": v[9]}
+                   for v in cur.fetchall()]
+    cur.close(); conn.close()
+
+    num = len(ventas_list)
+    total = sum(v["valor"] for v in ventas_list)
+    promedio = total / num if num > 0 else 0
+    # Frecuencia promedio (días entre pedidos)
+    frecuencia_dias = None
+    if num >= 2:
+        fechas = sorted([datetime.strptime(v["fecha"], "%Y-%m-%d").date() for v in ventas_list])
+        diffs = [(fechas[i+1] - fechas[i]).days for i in range(len(fechas)-1)]
+        frecuencia_dias = round(sum(diffs) / len(diffs), 1) if diffs else None
+    # Días sin comprar
+    dias_sin = None
+    if ventas_list:
+        ultima = datetime.strptime(ventas_list[0]["fecha"], "%Y-%m-%d").date()
+        dias_sin = (date.today() - ultima).days
+    # Medio de pago favorito
+    medios = {}
+    canales = {}
+    for v in ventas_list:
+        if v["medio_pago"]:
+            medios[v["medio_pago"]] = medios.get(v["medio_pago"], 0) + 1
+        if v["canal"]:
+            canales[v["canal"]] = canales.get(v["canal"], 0) + 1
+    medio_fav = max(medios, key=medios.get) if medios else None
+    canal_fav = max(canales, key=canales.get) if canales else None
+
+    return {
+        "id": c[0], "nombre": c[1], "direccion": c[2], "apto": c[3],
+        "info_adicional": c[4], "zona": c[5], "telefono": c[6],
+        "cedula": c[7], "email": c[8], "shopify_customer_id": c[9],
+        "origen": c[10], "fecha_registro": str(c[11]) if c[11] else None,
+        "metricas": {
+            "total_gastado": round(total, 2),
+            "num_pedidos": num,
+            "pedido_promedio": round(promedio, 2),
+            "frecuencia_dias": frecuencia_dias,
+            "dias_sin_compra": dias_sin,
+            "medio_pago_favorito": medio_fav,
+            "canal_favorito": canal_fav
+        },
+        "ventas": ventas_list
+    }
+
+@router.post("/clientes")
+def crear_cliente(data: ClienteIn):
+    conn = get_conn(); cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO clientes (nombre, direccion, apto, info_adicional, zona, telefono, cedula, email)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+    """, (data.nombre, data.direccion, data.apto, data.info_adicional,
+          data.zona, data.telefono, data.cedula, data.email))
+    new_id = cur.fetchone()[0]
+    conn.commit(); cur.close(); conn.close()
+    return {"id": new_id, "ok": True}
+
+@router.put("/clientes/{cliente_id}")
+def editar_cliente(cliente_id: int, data: ClienteIn):
+    conn = get_conn(); cur = conn.cursor()
+    cur.execute("""
+        UPDATE clientes SET nombre=%s, direccion=%s, apto=%s, info_adicional=%s,
+               zona=%s, telefono=%s, cedula=%s, email=%s
+        WHERE id=%s
+    """, (data.nombre, data.direccion, data.apto, data.info_adicional,
+          data.zona, data.telefono, data.cedula, data.email, cliente_id))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════
+# VENTAS
+# ═══════════════════════════════════════════════════════════════
+
+class VentaIn(BaseModel):
+    fecha: Optional[str] = None
+    cliente_nombre: str
+    cliente_id: Optional[int] = None
+    factura: Optional[str] = None
+    valor: float = 0
+    estado: Optional[str] = "pendiente"
+    medio_pago: Optional[str] = None
+    canal: Optional[str] = None
+    notas: Optional[str] = None
+
+@router.get("/ventas")
+def listar_ventas(fecha_desde: Optional[str] = None, fecha_hasta: Optional[str] = None,
+                  estado: Optional[str] = None, medio_pago: Optional[str] = None,
+                  canal: Optional[str] = None, q: Optional[str] = None, limit: int = 200):
+    conn = get_conn(); cur = conn.cursor()
+    where = ["1=1"]
+    params = []
+    if fecha_desde:
+        where.append("v.fecha >= %s"); params.append(fecha_desde)
+    if fecha_hasta:
+        where.append("v.fecha <= %s"); params.append(fecha_hasta)
+    if estado:
+        where.append("v.estado = %s"); params.append(estado)
+    if medio_pago:
+        where.append("v.medio_pago = %s"); params.append(medio_pago)
+    if canal:
+        where.append("v.canal = %s"); params.append(canal)
+    if q:
+        where.append("(v.cliente_nombre ILIKE %s OR v.factura ILIKE %s)")
+        params.extend([f"%{q}%", f"%{q}%"])
+    params.append(limit)
+    cur.execute(f"""
+        SELECT v.id, v.fecha, v.cliente_nombre, v.cliente_id, v.factura, v.valor,
+               v.estado, v.medio_pago, v.canal, v.notas,
+               v.shopify_order_id, v.shopify_order_name
+        FROM ventas v
+        WHERE {' AND '.join(where)}
+        ORDER BY v.fecha DESC, v.id DESC
+        LIMIT %s
+    """, params)
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return [{"id": r[0], "fecha": str(r[1]), "cliente_nombre": r[2], "cliente_id": r[3],
+             "factura": r[4], "valor": float(r[5]), "estado": r[6], "medio_pago": r[7],
+             "canal": r[8], "notas": r[9], "shopify_order_id": r[10],
+             "shopify_order_name": r[11]} for r in rows]
+
+@router.post("/ventas")
+def crear_venta(data: VentaIn):
+    conn = get_conn(); cur = conn.cursor()
+    fecha = data.fecha or str(date.today())
+    # Auto-vincular cliente si hay nombre exacto
+    cliente_id = data.cliente_id
+    if not cliente_id and data.cliente_nombre:
+        cur.execute("SELECT id FROM clientes WHERE LOWER(nombre) = LOWER(%s) LIMIT 1",
+                    (data.cliente_nombre,))
+        match = cur.fetchone()
+        if match:
+            cliente_id = match[0]
+    cur.execute("""
+        INSERT INTO ventas (fecha, cliente_id, cliente_nombre, factura, valor, estado, medio_pago, canal, notas)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+    """, (fecha, cliente_id, data.cliente_nombre, data.factura, data.valor,
+          data.estado or 'pendiente', data.medio_pago, data.canal, data.notas))
+    new_id = cur.fetchone()[0]
+    conn.commit(); cur.close(); conn.close()
+    return {"id": new_id, "ok": True}
+
+@router.put("/ventas/{venta_id}")
+def editar_venta(venta_id: int, data: VentaIn):
+    conn = get_conn(); cur = conn.cursor()
+    cur.execute("""
+        UPDATE ventas SET fecha=%s, cliente_nombre=%s, cliente_id=%s, factura=%s,
+               valor=%s, estado=%s, medio_pago=%s, canal=%s, notas=%s
+        WHERE id=%s
+    """, (data.fecha, data.cliente_nombre, data.cliente_id, data.factura,
+          data.valor, data.estado, data.medio_pago, data.canal, data.notas, venta_id))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+@router.put("/ventas/{venta_id}/estado")
+def cambiar_estado_venta(venta_id: int, estado: str):
+    conn = get_conn(); cur = conn.cursor()
+    cur.execute("UPDATE ventas SET estado=%s WHERE id=%s", (estado, venta_id))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+@router.delete("/ventas/{venta_id}")
+def eliminar_venta(venta_id: int):
+    conn = get_conn(); cur = conn.cursor()
+    cur.execute("DELETE FROM ventas WHERE id=%s", (venta_id,))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+
+# ═══════════════════════════════════════════════════════════════
+# DASHBOARD VENTAS
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/ventas/dashboard")
+def dashboard_ventas():
+    conn = get_conn(); cur = conn.cursor()
+    # KPIs del mes actual
+    cur.execute("""
+        SELECT COALESCE(SUM(valor),0), COUNT(*)
+        FROM ventas WHERE fecha >= date_trunc('month', CURRENT_DATE)
+    """)
+    ventas_mes, ventas_mes_count = cur.fetchone()
+
+    cur.execute("SELECT COALESCE(SUM(valor),0), COUNT(*) FROM ventas WHERE estado='pendiente'")
+    cartera_pendiente, cartera_count = cur.fetchone()
+
+    cur.execute("SELECT COUNT(DISTINCT cliente_nombre) FROM ventas")
+    clientes_unicos = cur.fetchone()[0]
+
+    # Recompra: clientes con 2+ compras / total clientes con compras
+    cur.execute("""
+        SELECT COUNT(*) FROM (
+            SELECT cliente_nombre FROM ventas GROUP BY cliente_nombre HAVING COUNT(*) >= 2
+        ) sub
+    """)
+    clientes_recompra = cur.fetchone()[0]
+    pct_recompra = round(clientes_recompra / clientes_unicos * 100, 1) if clientes_unicos > 0 else 0
+
+    cur.execute("SELECT COALESCE(AVG(valor),0) FROM ventas")
+    pedido_promedio = float(cur.fetchone()[0])
+
+    cur.execute("""
+        SELECT COUNT(DISTINCT cliente_nombre) FROM ventas
+        WHERE fecha >= date_trunc('month', CURRENT_DATE)
+          AND cliente_nombre NOT IN (
+              SELECT DISTINCT cliente_nombre FROM ventas WHERE fecha < date_trunc('month', CURRENT_DATE)
+          )
+    """)
+    clientes_nuevos_mes = cur.fetchone()[0]
+
+    # Ventas últimos 30 días
+    cur.execute("""
+        SELECT fecha, COALESCE(SUM(valor),0), COUNT(*)
+        FROM ventas WHERE fecha >= CURRENT_DATE - INTERVAL '30 days'
+        GROUP BY fecha ORDER BY fecha
+    """)
+    ventas_30d = [{"fecha": str(r[0]), "valor": float(r[1]), "count": int(r[2])} for r in cur.fetchall()]
+
+    # Ventas por medio de pago
+    cur.execute("""
+        SELECT COALESCE(medio_pago,'Sin definir'), COUNT(*), COALESCE(SUM(valor),0)
+        FROM ventas GROUP BY medio_pago ORDER BY COUNT(*) DESC
+    """)
+    por_medio = [{"medio": r[0], "count": int(r[1]), "valor": float(r[2])} for r in cur.fetchall()]
+
+    # Ventas por canal
+    cur.execute("""
+        SELECT COALESCE(canal,'Sin definir'), COUNT(*), COALESCE(SUM(valor),0)
+        FROM ventas GROUP BY canal ORDER BY COUNT(*) DESC
+    """)
+    por_canal = [{"canal": r[0], "count": int(r[1]), "valor": float(r[2])} for r in cur.fetchall()]
+
+    # Segmentación clientes
+    cur.execute("""
+        SELECT segmento, COUNT(*) FROM (
+            SELECT
+                CASE
+                    WHEN cnt = 0 THEN 'prospect'
+                    WHEN cnt = 1 THEN 'unica'
+                    WHEN cnt >= 5 AND dias_sin <= 60 THEN 'vip'
+                    WHEN cnt >= 2 AND dias_sin <= 60 THEN 'frecuente'
+                    WHEN cnt >= 2 AND dias_sin > 60 THEN 'inactivo'
+                    ELSE 'unica'
+                END AS segmento
+            FROM (
+                SELECT c.id,
+                       COUNT(v.id) AS cnt,
+                       COALESCE(CURRENT_DATE - MAX(v.fecha), 999) AS dias_sin
+                FROM clientes c LEFT JOIN ventas v ON v.cliente_id = c.id
+                WHERE c.activo = TRUE
+                GROUP BY c.id
+            ) sub
+        ) seg
+        GROUP BY segmento
+    """)
+    segmentacion = {r[0]: int(r[1]) for r in cur.fetchall()}
+
+    # Top 10 clientes por valor
+    cur.execute("""
+        SELECT cliente_nombre, COUNT(*) AS cnt, SUM(valor) AS total, MAX(fecha) AS ultimo
+        FROM ventas GROUP BY cliente_nombre
+        ORDER BY total DESC LIMIT 10
+    """)
+    top_clientes = [{"nombre": r[0], "num_pedidos": int(r[1]),
+                     "total": float(r[2]), "ultimo_pedido": str(r[3])} for r in cur.fetchall()]
+
+    # Alertas: clientes que antes compraban frecuente pero llevan 30+ días sin comprar
+    cur.execute("""
+        SELECT c.id, c.nombre, c.telefono, c.email,
+               COUNT(v.id) AS num_pedidos,
+               SUM(v.valor) AS total_gastado,
+               MAX(v.fecha) AS ultimo,
+               CURRENT_DATE - MAX(v.fecha) AS dias_sin
+        FROM clientes c
+        JOIN ventas v ON v.cliente_id = c.id
+        WHERE c.activo = TRUE
+        GROUP BY c.id
+        HAVING COUNT(v.id) >= 2 AND CURRENT_DATE - MAX(v.fecha) > 30
+        ORDER BY SUM(v.valor) DESC
+        LIMIT 10
+    """)
+    alertas_inactivos = [{"id": r[0], "nombre": r[1], "telefono": r[2], "email": r[3],
+                          "num_pedidos": int(r[4]), "total_gastado": float(r[5]),
+                          "ultimo_pedido": str(r[6]), "dias_sin": int(r[7])}
+                         for r in cur.fetchall()]
+
+    # Última sync Shopify
+    cur.execute("SELECT fecha, tipo, registros_nuevos FROM shopify_sync_log ORDER BY fecha DESC LIMIT 1")
+    sync_row = cur.fetchone()
+    ultima_sync = {"fecha": str(sync_row[0]), "tipo": sync_row[1],
+                   "registros": int(sync_row[2])} if sync_row else None
+
+    cur.close(); conn.close()
+    return {
+        "ventas_mes": float(ventas_mes),
+        "ventas_mes_count": int(ventas_mes_count),
+        "cartera_pendiente": float(cartera_pendiente),
+        "cartera_count": int(cartera_count),
+        "clientes_unicos": int(clientes_unicos),
+        "pct_recompra": pct_recompra,
+        "clientes_recompra": int(clientes_recompra),
+        "pedido_promedio": round(pedido_promedio, 2),
+        "clientes_nuevos_mes": int(clientes_nuevos_mes),
+        "ventas_30d": ventas_30d,
+        "por_medio_pago": por_medio,
+        "por_canal": por_canal,
+        "segmentacion": segmentacion,
+        "top_clientes": top_clientes,
+        "alertas_inactivos": alertas_inactivos,
+        "ultima_sync": ultima_sync
+    }
+
+
+# ═══════════════════════════════════════════════════════════════
+# IMPORTACIÓN CSV (Ventas + Clientes desde Google Sheets)
+# ═══════════════════════════════════════════════════════════════
+
+class ImportClienteRow(BaseModel):
+    nombre: str
+    direccion: Optional[str] = None
+    apto: Optional[str] = None
+    info_adicional: Optional[str] = None
+    zona: Optional[str] = None
+    telefono: Optional[str] = None
+    cedula: Optional[str] = None
+    email: Optional[str] = None
+
+class ImportVentaRow(BaseModel):
+    fecha: Optional[str] = None
+    cliente_nombre: str
+    factura: Optional[str] = None
+    valor: float = 0
+    estado: Optional[str] = "pendiente"
+    medio_pago: Optional[str] = None
+    canal: Optional[str] = None
+
+@router.post("/importar/clientes")
+def importar_clientes(rows: List[ImportClienteRow]):
+    conn = get_conn(); cur = conn.cursor()
+    nuevos = 0; existentes = 0
+    for r in rows:
+        # Check si ya existe por nombre (case insensitive)
+        cur.execute("SELECT id FROM clientes WHERE LOWER(nombre) = LOWER(%s) LIMIT 1", (r.nombre,))
+        match = cur.fetchone()
+        if match:
+            existentes += 1
+            continue
+        cur.execute("""
+            INSERT INTO clientes (nombre, direccion, apto, info_adicional, zona, telefono, cedula, email, origen)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'sheet_import')
+        """, (r.nombre, r.direccion, r.apto, r.info_adicional, r.zona, r.telefono, r.cedula, r.email))
+        nuevos += 1
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True, "nuevos": nuevos, "existentes": existentes}
+
+@router.post("/importar/ventas")
+def importar_ventas(rows: List[ImportVentaRow]):
+    conn = get_conn(); cur = conn.cursor()
+    nuevos = 0; dup = 0
+    for r in rows:
+        # Check duplicado por factura
+        if r.factura:
+            cur.execute("SELECT id FROM ventas WHERE factura = %s LIMIT 1", (r.factura,))
+            if cur.fetchone():
+                dup += 1; continue
+        # Auto-vincular cliente
+        cliente_id = None
+        cur.execute("SELECT id FROM clientes WHERE LOWER(nombre) = LOWER(%s) LIMIT 1", (r.cliente_nombre,))
+        cm = cur.fetchone()
+        if cm:
+            cliente_id = cm[0]
+        else:
+            # Crear cliente auto
+            cur.execute("INSERT INTO clientes (nombre, origen) VALUES (%s, 'sheet_import') RETURNING id",
+                        (r.cliente_nombre,))
+            cliente_id = cur.fetchone()[0]
+        cur.execute("""
+            INSERT INTO ventas (fecha, cliente_id, cliente_nombre, factura, valor, estado, medio_pago, canal)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+        """, (r.fecha or str(date.today()), cliente_id, r.cliente_nombre, r.factura,
+              r.valor, r.estado or 'pendiente', r.medio_pago, r.canal))
+        nuevos += 1
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True, "nuevos": nuevos, "duplicados": dup}
+
+
+# ═══════════════════════════════════════════════════════════════
+# SHOPIFY SYNC (preparado para credenciales)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/shopify/status")
+def shopify_status():
+    """Check if Shopify credentials are configured."""
+    import os
+    store = os.environ.get("SHOPIFY_STORE_URL", "")
+    token = os.environ.get("SHOPIFY_ACCESS_TOKEN", "")
+    conn = get_conn(); cur = conn.cursor()
+    cur.execute("SELECT fecha, tipo, registros_nuevos, registros_actualizados FROM shopify_sync_log ORDER BY fecha DESC LIMIT 1")
+    last = cur.fetchone()
+    cur.close(); conn.close()
+    return {
+        "configured": bool(store and token),
+        "store_url": store[:30] + "..." if len(store) > 30 else store,
+        "last_sync": {
+            "fecha": str(last[0]), "tipo": last[1],
+            "nuevos": int(last[2]), "actualizados": int(last[3])
+        } if last else None
+    }
+
+@router.post("/shopify/sync")
+def shopify_sync():
+    """Sync orders and customers from Shopify. Requires SHOPIFY_STORE_URL and SHOPIFY_ACCESS_TOKEN env vars."""
+    import os, httpx
+    store = os.environ.get("SHOPIFY_STORE_URL", "")
+    token = os.environ.get("SHOPIFY_ACCESS_TOKEN", "")
+    if not store or not token:
+        raise HTTPException(400, "Shopify no configurado. Agregar SHOPIFY_STORE_URL y SHOPIFY_ACCESS_TOKEN en Railway.")
+
+    headers = {"X-Shopify-Access-Token": token, "Content-Type": "application/json"}
+    base = f"https://{store}/admin/api/2024-01"
+    conn = get_conn(); cur = conn.cursor()
+
+    # Get last sync date
+    cur.execute("SELECT MAX(fecha) FROM shopify_sync_log WHERE tipo IN ('orders','full')")
+    last_sync_row = cur.fetchone()
+    last_sync = last_sync_row[0] if last_sync_row and last_sync_row[0] else None
+
+    nuevos = 0; actualizados = 0; errores = 0
+
+    try:
+        # ── Sync Orders ──
+        url = f"{base}/orders.json?status=any&limit=250"
+        if last_sync:
+            url += f"&updated_at_min={last_sync.isoformat()}"
+        resp = httpx.get(url, headers=headers, timeout=30)
+        resp.raise_for_status()
+        orders = resp.json().get("orders", [])
+
+        for order in orders:
+            shopify_id = str(order["id"])
+            cur.execute("SELECT id FROM ventas WHERE shopify_order_id = %s", (shopify_id,))
+            existing = cur.fetchone()
+            nombre = ""
+            if order.get("customer"):
+                nombre = f"{order['customer'].get('first_name','')} {order['customer'].get('last_name','')}".strip()
+            if not nombre:
+                nombre = order.get("email", "Sin nombre")
+            fecha = order["created_at"][:10]
+            valor = float(order.get("total_price", 0))
+            financial = order.get("financial_status", "pending")
+            estado = "pagado" if financial == "paid" else "pendiente"
+            gateway = order.get("gateway", order.get("payment_gateway_names", [""])[0] if order.get("payment_gateway_names") else "")
+
+            if existing:
+                cur.execute("UPDATE ventas SET estado=%s WHERE id=%s", (estado, existing[0]))
+                actualizados += 1
+            else:
+                # Try to match or create client
+                cliente_id = None
+                if order.get("customer"):
+                    cust_id = str(order["customer"]["id"])
+                    cur.execute("SELECT id FROM clientes WHERE shopify_customer_id = %s", (cust_id,))
+                    cm = cur.fetchone()
+                    if cm:
+                        cliente_id = cm[0]
+                    else:
+                        email = order["customer"].get("email", "")
+                        phone = order["customer"].get("phone", "")
+                        cur.execute("""
+                            INSERT INTO clientes (nombre, email, telefono, shopify_customer_id, origen)
+                            VALUES (%s,%s,%s,%s,'shopify') RETURNING id
+                        """, (nombre, email, phone, cust_id))
+                        cliente_id = cur.fetchone()[0]
+                cur.execute("""
+                    INSERT INTO ventas (fecha, cliente_id, cliente_nombre, factura, valor, estado,
+                                        medio_pago, shopify_order_id, shopify_order_name)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (fecha, cliente_id, nombre, None, valor, estado,
+                      gateway, shopify_id, order.get("name", "")))
+                nuevos += 1
+
+        conn.commit()
+    except httpx.HTTPError as e:
+        errores += 1
+        conn.rollback()
+        raise HTTPException(502, f"Error conectando a Shopify: {str(e)}")
+    finally:
+        cur.execute("""
+            INSERT INTO shopify_sync_log (tipo, registros_nuevos, registros_actualizados, errores)
+            VALUES ('orders', %s, %s, %s)
+        """, (nuevos, actualizados, errores))
+        conn.commit(); cur.close(); conn.close()
+
+    return {"ok": True, "nuevos": nuevos, "actualizados": actualizados, "errores": errores}

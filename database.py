@@ -381,6 +381,63 @@ def _create_tables():
         )
     """)
 
+    # ── Clientes (CRM / Ventas) ────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS clientes (
+            id                 SERIAL PRIMARY KEY,
+            nombre             TEXT NOT NULL,
+            direccion          TEXT,
+            apto               TEXT,
+            info_adicional     TEXT,
+            zona               TEXT,
+            telefono           TEXT,
+            cedula             TEXT,
+            email              TEXT,
+            shopify_customer_id TEXT,
+            origen             TEXT DEFAULT 'manual',
+            fecha_registro     DATE DEFAULT CURRENT_DATE,
+            activo             BOOLEAN DEFAULT TRUE,
+            creado_en          TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_cedula ON clientes(cedula) WHERE cedula IS NOT NULL AND cedula != ''")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_clientes_shopify ON clientes(shopify_customer_id) WHERE shopify_customer_id IS NOT NULL")
+
+    # ── Ventas ───────────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ventas (
+            id                SERIAL PRIMARY KEY,
+            fecha             DATE NOT NULL DEFAULT CURRENT_DATE,
+            cliente_id        INTEGER REFERENCES clientes(id) ON DELETE SET NULL,
+            cliente_nombre    TEXT NOT NULL,
+            factura           TEXT,
+            valor             NUMERIC(14,2) NOT NULL DEFAULT 0,
+            estado            TEXT NOT NULL DEFAULT 'pendiente',
+            medio_pago        TEXT,
+            canal             TEXT,
+            shopify_order_id  TEXT,
+            shopify_order_name TEXT,
+            notas             TEXT,
+            creado_en         TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_ventas_shopify ON ventas(shopify_order_id) WHERE shopify_order_id IS NOT NULL")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_ventas_cliente ON ventas(cliente_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_ventas_fecha ON ventas(fecha)")
+
+    # ── Shopify Sync Log ─────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS shopify_sync_log (
+            id                    SERIAL PRIMARY KEY,
+            fecha                 TIMESTAMP DEFAULT NOW(),
+            tipo                  TEXT,
+            registros_nuevos      INTEGER DEFAULT 0,
+            registros_actualizados INTEGER DEFAULT 0,
+            errores               INTEGER DEFAULT 0,
+            detalle               TEXT
+        )
+    """)
+
     # ── Seed INVIMA programs if empty ──────────────────────────
     cur.execute("SELECT COUNT(*) FROM invima_programas")
     if cur.fetchone()[0] == 0:
