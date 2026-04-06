@@ -3873,7 +3873,7 @@ function finTab(tab) {
 
 async function syncFinanzas() {
   notyf.success('Sincronizando contabilidad desde Siigo...');
-  var res = await api('/finanzas/sync','POST').catch(function(e){notyf.error('Error: '+e);return null;});
+  var res = await api('/finanzas/sync','POST').catch(function(e){return null;});
   if(res && res.ok) {
     notyf.success(res.registros+' asientos, '+res.cuentas+' cuentas sincronizadas');
     loadFinDashboard();
@@ -4072,7 +4072,7 @@ async function fillCuentasPresupuesto() {
 // ── SYNC MP DESDE SIIGO ─────────────────────────────────────────
 async function syncMPSiigo() {
   notyf.success('Importando MP e Ingredientes de Siigo...');
-  var res = await api('/materias-primas/sync-siigo','POST').catch(function(e){notyf.error('Error: '+e);return null;});
+  var res = await api('/materias-primas/sync-siigo','POST').catch(function(e){return null;});
   if(res && res.ok) {
     notyf.success(res.creados + ' nuevas, ' + res.actualizados + ' actualizadas (' + res.total + ' total)');
     loadMP();
@@ -4109,7 +4109,7 @@ async function loadProductosSiigo() {
 
 async function syncProductosSiigo() {
   notyf.success('Sincronizando con Siigo...');
-  var res = await api('/producto-receta/sync','POST').catch(function(e){notyf.error('Error: '+e);return null;});
+  var res = await api('/producto-receta/sync','POST').catch(function(e){return null;});
   if(res && res.ok) {
     notyf.success(res.synced + ' productos sincronizados');
     loadProductosSiigo();
@@ -4610,13 +4610,13 @@ async function loadHistoricos() {
 async function crmUpdateFactura(fid, field, value) {
   var body = {};
   body[field] = value;
-  await api('/crm/facturas/'+fid,'PUT',body).catch(function(e){ notyf.error('Error: '+e); });
+  await api('/crm/facturas/'+fid,'PUT',body).catch(function(e){  });
 }
 
 // ── Generar RC individual ──
 async function generarRcFactura(fid) {
   notyf.open({type:'info', message:'Generando Recibo de Caja...'});
-  var res = await api('/crm/facturas/'+fid+'/generar-rc','POST').catch(function(e){ notyf.error('Error: '+e); return null; });
+  var res = await api('/crm/facturas/'+fid+'/generar-rc','POST').catch(function(e){  return null; });
   if(!res) return;
   if(res.ok) {
     var msg = res.simulado ? 'RC simulado: '+res.rc_numero+' (Modo prueba)' : 'RC creado en Siigo: '+res.rc_numero;
@@ -4631,7 +4631,7 @@ async function generarRcFactura(fid) {
 async function generarRcMasivo() {
   confirmAction('¿Generar Recibo de Caja para todas las facturas marcadas como PAGADO sin RC aún?', async function(){
     notyf.open({type:'info', message:'Procesando...'});
-    var res = await api('/crm/generar-rc-masivo','POST').catch(function(e){ notyf.error('Error: '+e); return null; });
+    var res = await api('/crm/generar-rc-masivo','POST').catch(function(e){  return null; });
     if(!res) return;
     var modo = res.modo_prueba ? ' (Modo prueba)' : '';
     notyf.success(res.exitosas+' RC generados'+modo);
@@ -4643,7 +4643,7 @@ async function generarRcMasivo() {
 // ── Reset CRM ──
 async function crmResetData() {
   confirmAction('¿Borrar TODOS los datos del CRM (clientes, facturas, movimientos)? Tendrás que volver a sincronizar desde Siigo.', async function(){
-    var res = await api('/crm/reset','POST').catch(function(e){ notyf.error('Error: '+e); return null; });
+    var res = await api('/crm/reset','POST').catch(function(e){  return null; });
     if(res && res.ok) {
       notyf.success('Datos CRM eliminados');
       loadActivos();
@@ -4663,8 +4663,8 @@ async function crmSyncSiigo() {
   btns.forEach(function(b){ b.disabled=true; b.innerHTML='<i class="ti ti-loader me-1 spin"></i>Sincronizando...'; });
 
   var res = await api('/crm/sync/siigo','POST').catch(function(e){
-    notyf.error('Error Siigo: '+e);
-    if(resultEl) resultEl.innerHTML = '<div class="alert alert-danger small">Error: '+e+'</div>';
+    var msg = (e && (e.detail || e.message)) ? (e.detail || e.message) : 'Error de conexión con Siigo';
+    if(resultEl) resultEl.innerHTML = '<div class="alert alert-danger small">'+msg+'</div>';
     return null;
   });
 
@@ -4684,8 +4684,8 @@ async function crmSyncBancos() {
   var resultEl = $('sync-bancos-result');
   if(resultEl) resultEl.innerHTML = '<div class="text-secondary small"><i class="ti ti-loader spin me-1"></i>Jalaando movimientos del Sheet...</div>';
   var res = await api('/crm/sync/bancos','POST').catch(function(e){
-    notyf.error('Error: '+e);
-    if(resultEl) resultEl.innerHTML = '<div class="alert alert-danger small">Error: '+e+'</div>';
+    var msg = (e && (e.detail || e.message)) ? (e.detail || e.message) : 'Error de conexión';
+    if(resultEl) resultEl.innerHTML = '<div class="alert alert-danger small">'+msg+'</div>';
     return null;
   });
   if(res && res.ok) {
@@ -4762,7 +4762,7 @@ async function loadCrmConfig() {
 
 async function toggleModoPrueba(checked) {
   // checked=true means switch is ON = modo_prueba=true
-  var res = await api('/crm/config','PUT',{modo_prueba: checked}).catch(function(e){ notyf.error('Error: '+e); return null; });
+  var res = await api('/crm/config','PUT',{modo_prueba: checked}).catch(function(e){  return null; });
   if(res && res.ok) {
     var msg = checked ? 'Modo prueba activado — Siigo no recibirá datos' : '⚠️ Modo real activado — los RC se enviarán a Siigo';
     notyf.success(msg);
@@ -4847,7 +4847,7 @@ async function conciliarSeleccion() {
     movimiento_id: concilMovId,
     factura_id: concilFactId,
     medio_pago: medio || null
-  }).catch(function(e){ notyf.error('Error: '+e); return null; });
+  }).catch(function(e){  return null; });
   if(res && res.ok) {
     notyf.success('Vinculados correctamente');
     concilMovId = null;
