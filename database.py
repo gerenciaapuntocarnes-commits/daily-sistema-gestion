@@ -165,7 +165,12 @@ def _create_tables():
         )
     """)
 
+    # Commit todas las tablas creadas hasta aquí antes de las migraciones
+    # (evita que un rollback en el loop deshaga los CREATE TABLE)
+    conn.commit()
+
     # Migraciones — columnas que pueden faltar en tablas existentes
+    # Usa SAVEPOINT para que un fallo no deshaga las otras migraciones
     migrations = [
         ('fecha', 'remisiones', "DATE NOT NULL DEFAULT CURRENT_DATE"),
         ('actualizado_en', 'remisiones', "TIMESTAMP DEFAULT NOW()"),
@@ -182,9 +187,11 @@ def _create_tables():
     ]
     for col, tbl, default in migrations:
         try:
+            cur.execute("SAVEPOINT sp_migration")
             cur.execute(f"ALTER TABLE {tbl} ADD COLUMN IF NOT EXISTS {col} {default}")
+            cur.execute("RELEASE SAVEPOINT sp_migration")
         except Exception:
-            conn.rollback()
+            cur.execute("ROLLBACK TO SAVEPOINT sp_migration")
 
     # ── Ítems de Remisión ────────────────────────────────────────────
     cur.execute("""
@@ -408,9 +415,24 @@ def _create_tables():
         ("apto",                "TEXT"),
         ("zona",                "TEXT"),
     ]:
-        cur.execute(f"ALTER TABLE clientes ADD COLUMN IF NOT EXISTS {col} {defn}")
-    cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_cedula ON clientes(cedula) WHERE cedula IS NOT NULL AND cedula != ''")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_clientes_shopify ON clientes(shopify_customer_id) WHERE shopify_customer_id IS NOT NULL")
+        try:
+            cur.execute("SAVEPOINT sp_cl")
+            cur.execute(f"ALTER TABLE clientes ADD COLUMN IF NOT EXISTS {col} {defn}")
+            cur.execute("RELEASE SAVEPOINT sp_cl")
+        except Exception:
+            cur.execute("ROLLBACK TO SAVEPOINT sp_cl")
+    try:
+        cur.execute("SAVEPOINT sp_idx_ced")
+        cur.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_cedula ON clientes(cedula) WHERE cedula IS NOT NULL AND cedula != ''")
+        cur.execute("RELEASE SAVEPOINT sp_idx_ced")
+    except Exception:
+        cur.execute("ROLLBACK TO SAVEPOINT sp_idx_ced")
+    try:
+        cur.execute("SAVEPOINT sp_idx_sh")
+        cur.execute("CREATE INDEX IF NOT EXISTS idx_clientes_shopify ON clientes(shopify_customer_id) WHERE shopify_customer_id IS NOT NULL")
+        cur.execute("RELEASE SAVEPOINT sp_idx_sh")
+    except Exception:
+        cur.execute("ROLLBACK TO SAVEPOINT sp_idx_sh")
 
     # ── Ventas ───────────────────────────────────────────────────
     cur.execute("""
