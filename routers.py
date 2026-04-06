@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional, List
 from datetime import date, datetime
 import uuid
+import re
 import psycopg2
 from database import get_conn
 
@@ -2660,22 +2661,53 @@ def shopify_sync():
                 cur.execute("UPDATE ventas SET estado=%s WHERE id=%s", (estado, existing[0]))
                 actualizados += 1
             else:
-                # Try to match or create client
+                # Match cliente: shopify_id → cédula → email → teléfono → nombre
                 cliente_id = None
                 if order.get("customer"):
-                    cust_id = str(order["customer"]["id"])
+                    cust = order["customer"]
+                    cust_id = str(cust["id"])
+                    email = (cust.get("email") or "").strip()
+                    phone = re.sub(r"[^0-9+]", "", cust.get("phone") or "")
+                    # Shopify puede guardar cédula en note_attributes
+                    cedula = None
+                    for attr in (cust.get("note_attributes") or []):
+                        n = (attr.get("name") or "").lower()
+                        if "cedula" in n or "nit" in n or "documento" in n or "identificacion" in n:
+                            cedula = re.sub(r"[^0-9a-zA-Z\-]", "", str(attr.get("value") or ""))
+                            break
+
+                    # 1) Ya vinculado
                     cur.execute("SELECT id FROM clientes WHERE shopify_customer_id = %s", (cust_id,))
                     cm = cur.fetchone()
                     if cm:
                         cliente_id = cm[0]
                     else:
-                        email = order["customer"].get("email", "")
-                        phone = order["customer"].get("phone", "")
-                        cur.execute("""
-                            INSERT INTO clientes (nombre, email, telefono, shopify_customer_id, origen)
-                            VALUES (%s,%s,%s,%s,'shopify') RETURNING id
-                        """, (nombre, email, phone, cust_id))
-                        cliente_id = cur.fetchone()[0]
+                        # 2) Por cédula (clave principal de cruce con historial)
+                        if cedula:
+                            cur.execute("SELECT id FROM clientes WHERE cedula = %s", (cedula,))
+                            cm = cur.fetchone()
+                        # 3) Por email
+                        if not cm and email:
+                            cur.execute("SELECT id FROM clientes WHERE email ILIKE %s", (email,))
+                            cm = cur.fetchone()
+                        # 4) Por teléfono
+                        if not cm and phone:
+                            cur.execute("SELECT id FROM clientes WHERE telefono = %s", (phone,))
+                            cm = cur.fetchone()
+                        # 5) Por nombre exacto
+                        if not cm:
+                            cur.execute("SELECT id FROM clientes WHERE nombre ILIKE %s LIMIT 1", (nombre,))
+                            cm = cur.fetchone()
+
+                        if cm:
+                            cur.execute("UPDATE clientes SET shopify_customer_id=%s WHERE id=%s", (cust_id, cm[0]))
+                            cliente_id = cm[0]
+                        else:
+                            cur.execute("""
+                                INSERT INTO clientes (nombre, email, telefono, cedula, shopify_customer_id, origen)
+                                VALUES (%s,%s,%s,%s,%s,'shopify') RETURNING id
+                            """, (nombre, email, phone or None, cedula, cust_id))
+                            cliente_id = cur.fetchone()[0]
                 cur.execute("""
                     INSERT INTO ventas (fecha, cliente_id, cliente_nombre, factura, valor, estado,
                                         medio_pago, shopify_order_id, shopify_order_name)
@@ -2697,3 +2729,169 @@ def shopify_sync():
         conn.commit(); cur.close(); conn.close()
 
     return {"ok": True, "nuevos": nuevos, "actualizados": actualizados, "errores": errores}
+
+
+# ═══════════════════════════════════════════════════════════════
+# IMPORTACIÓN HISTÓRICA — LIBRO DE CARTERA DAILY.xlsx
+# ═══════════════════════════════════════════════════════════════
+import re, io
+from datetime import date as date_type
+
+def _clean_str(v):
+    if v is None: return None
+    s = str(v).strip().strip('\n').strip()
+    return s if s else None
+
+def _clean_cedula(v):
+    if v is None: return None
+    s = re.sub(r'\.0$', '', str(v).strip())
+    s = re.sub(r'[^0-9a-zA-Z\-]', '', s)
+    return s if s else None
+
+def _clean_phone(v):
+    if v is None: return None
+    s = re.sub(r'\.0$', '', str(v).strip())
+    s = re.sub(r'[^0-9+]', '', s)
+    return s if s else None
+
+def _to_date(v):
+    if v is None: return None
+    if isinstance(v, datetime): return v.date()
+    if isinstance(v, date_type): return v
+    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%m/%d/%Y'):
+        try:
+            return datetime.strptime(str(v).strip(), fmt).date()
+        except ValueError: pass
+    return None
+
+def _clean_valor(v):
+    if v is None: return None
+    if isinstance(v, (int, float)): return float(v)
+    s = re.sub(r'[$,. ]', '', str(v).strip())
+    try: return float(s)
+    except ValueError: return None
+
+def _normalize_medio(medio):
+    if not medio: return medio
+    m = medio.upper()
+    if 'BOGOT' in m: return 'BANCO DE BOGOTA'
+    if 'BANCOLOMBIA' in m: return 'BANCOLOMBIA'
+    if 'LINK' in m or 'PAGO' in m: return 'LINK'
+    if 'EFECTIVO' in m: return 'EFECTIVO'
+    return medio.strip()
+
+
+@router.post("/importar/excel-historico")
+async def importar_excel_historico(file: UploadFile = File(...)):
+    """Importa el LIBRO DE CARTERA DAILY.xlsx completo al sistema."""
+    import openpyxl
+    content = await file.read()
+    wb = openpyxl.load_workbook(io.BytesIO(content), read_only=True, data_only=True)
+    conn = get_conn()
+    cur = conn.cursor()
+    result = {}
+
+    # ── 1. BASE DATOS → clientes ──────────────────────────────────
+    if ' BASE DATOS' in wb.sheetnames:
+        ws = wb[' BASE DATOS']
+        ins = upd = 0
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            nombre = _clean_str(row[0])
+            if not nombre: continue
+            direccion = _clean_str(row[1])
+            apto      = _clean_str(row[2])
+            info_adic = _clean_str(row[3])
+            zona      = _clean_str(row[4])
+            telefono  = _clean_phone(row[5])
+            cedula    = _clean_cedula(row[6])
+            email     = _clean_str(row[7])
+
+            if cedula:
+                cur.execute("SELECT id FROM clientes WHERE cedula = %s", (cedula,))
+                ex = cur.fetchone()
+                if ex:
+                    cur.execute("UPDATE clientes SET nombre=%s,direccion=%s,apto=%s,info_adicional=%s,zona=%s,telefono=%s,email=%s WHERE id=%s",
+                                (nombre,direccion,apto,info_adic,zona,telefono,email,ex[0]))
+                    upd += 1; continue
+
+            cur.execute("SELECT id FROM clientes WHERE nombre ILIKE %s LIMIT 1", (nombre,))
+            ex = cur.fetchone()
+            if ex:
+                cur.execute("""UPDATE clientes SET
+                    direccion=COALESCE(clientes.direccion,%s), apto=COALESCE(clientes.apto,%s),
+                    zona=COALESCE(clientes.zona,%s), telefono=COALESCE(clientes.telefono,%s),
+                    cedula=COALESCE(clientes.cedula,%s), email=COALESCE(clientes.email,%s) WHERE id=%s""",
+                    (direccion,apto,zona,telefono,cedula,email,ex[0]))
+                upd += 1; continue
+
+            cur.execute("INSERT INTO clientes (nombre,direccion,apto,info_adicional,zona,telefono,cedula,email,origen) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,'sheet_import')",
+                        (nombre,direccion,apto,info_adic,zona,telefono,cedula,email))
+            ins += 1
+        conn.commit()
+        result['clientes_base_datos'] = {'insertados': ins, 'actualizados': upd}
+
+    # ── 2. CLIENTES SIN COMPRA → prospects ───────────────────────
+    if 'CLIENTES SIN COMPRA ' in wb.sheetnames:
+        ws = wb['CLIENTES SIN COMPRA ']
+        ins = 0
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            nombre = _clean_str(row[0])
+            if not nombre: continue
+            cur.execute("SELECT id FROM clientes WHERE nombre ILIKE %s LIMIT 1", (nombre,))
+            if cur.fetchone(): continue
+            direccion = _clean_str(row[1])
+            apto      = _clean_str(row[2])
+            zona      = _clean_str(row[4]) if len(row) > 4 else None
+            telefono  = _clean_phone(row[5]) if len(row) > 5 else None
+            cur.execute("INSERT INTO clientes (nombre,direccion,apto,zona,telefono,origen) VALUES (%s,%s,%s,%s,%s,'prospect')",
+                        (nombre,direccion,apto,zona,telefono))
+            ins += 1
+        conn.commit()
+        result['prospects'] = {'insertados': ins}
+
+    # ── Helper importar ventas ────────────────────────────────────
+    def _import_ventas_sheet(ws, canal_default=None, fallback_year=2025):
+        ins = skip = 0
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            cliente_nombre = _clean_str(row[1])
+            if not cliente_nombre: skip += 1; continue
+            fecha   = _to_date(row[0]) or date_type(fallback_year, 12, 1)
+            factura = _clean_str(row[2])
+            valor   = _clean_valor(row[3])
+            medio   = _normalize_medio(_clean_str(row[5]))
+            canal   = _clean_str(row[6]) if len(row) > 6 else None
+            if not canal: canal = canal_default
+            if not valor or valor <= 0: skip += 1; continue
+            if factura:
+                cur.execute("SELECT id FROM ventas WHERE factura=%s", (factura,))
+                if cur.fetchone(): skip += 1; continue
+            cur.execute("SELECT id FROM clientes WHERE nombre ILIKE %s LIMIT 1", (cliente_nombre.strip(),))
+            c = cur.fetchone()
+            cur.execute("INSERT INTO ventas (fecha,cliente_id,cliente_nombre,factura,valor,estado,medio_pago,canal,notas) VALUES (%s,%s,%s,%s,%s,'pagado',%s,%s,'importado del historial')",
+                        (fecha, c[0] if c else None, cliente_nombre, factura, valor, medio, canal))
+            ins += 1
+        conn.commit()
+        return ins, skip
+
+    # ── 3. SEPTIEMBRE 2025 ────────────────────────────────────────
+    if 'SEPTIEMBRE 2025' in wb.sheetnames:
+        ins, sk = _import_ventas_sheet(wb['SEPTIEMBRE 2025'], fallback_year=2025)
+        result['septiembre_2025'] = {'insertadas': ins, 'ignoradas': sk}
+
+    # ── 4. VENTAS NAVIDAD ─────────────────────────────────────────
+    if 'VENTAS NAVIDAD' in wb.sheetnames:
+        ins, sk = _import_ventas_sheet(wb['VENTAS NAVIDAD'], canal_default='NAVIDAD', fallback_year=2025)
+        result['ventas_navidad'] = {'insertadas': ins, 'ignoradas': sk}
+
+    # ── 5. VENTAS DAILY 2025 ──────────────────────────────────────
+    if 'VENTAS DAILY 2025' in wb.sheetnames:
+        ins, sk = _import_ventas_sheet(wb['VENTAS DAILY 2025'], fallback_year=2025)
+        result['ventas_2025'] = {'insertadas': ins, 'ignoradas': sk}
+
+    # ── 6. VENTAS DAILY 2026 ──────────────────────────────────────
+    if 'VENTAS DAILY 2026' in wb.sheetnames:
+        ins, sk = _import_ventas_sheet(wb['VENTAS DAILY 2026'], fallback_year=2026)
+        result['ventas_2026'] = {'insertadas': ins, 'ignoradas': sk}
+
+    cur.close(); conn.close()
+    return {"ok": True, "resultado": result}

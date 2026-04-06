@@ -999,28 +999,24 @@ tr:hover .btn-delete { opacity: 1; }
   <!-- ── Tab: Importar / Config ── -->
   <div id="vt-config" style="display:none">
     <div class="row row-cards">
-      <div class="col-lg-6">
-        <div class="card">
-          <div class="card-header"><h3 class="card-title"><i class="ti ti-file-import me-2"></i>Importar Clientes (CSV)</h3></div>
+
+      <!-- Import Excel histórico (MÉTODO PRINCIPAL) -->
+      <div class="col-12">
+        <div class="card border-primary">
+          <div class="card-header bg-primary-lt">
+            <h3 class="card-title"><i class="ti ti-file-spreadsheet me-2 text-primary"></i>Importar historial completo — LIBRO DE CARTERA DAILY.xlsx</h3>
+          </div>
           <div class="card-body">
-            <p class="text-secondary small">Sube el CSV exportado de la hoja "BASE DATOS" del Google Sheet.</p>
-            <input type="file" class="form-control form-control-sm mb-2" id="import-clientes-file" accept=".csv">
-            <button class="btn btn-sm btn-primary" onclick="importarClientesCSV()"><i class="ti ti-upload me-1"></i>Importar clientes</button>
-            <div id="import-clientes-resultado" class="mt-2"></div>
+            <p class="text-secondary small mb-2">Sube el archivo Excel original. Importa automáticamente: BASE DATOS (clientes), CLIENTES SIN COMPRA (prospects), SEPTIEMBRE 2025, VENTAS NAVIDAD, VENTAS DAILY 2025, VENTAS DAILY 2026. La cédula es la clave de identificación única de cada cliente (usada también para cruzar con Shopify).</p>
+            <div class="row g-2 align-items-center">
+              <div class="col"><input type="file" class="form-control form-control-sm" id="import-excel-file" accept=".xlsx,.xls"></div>
+              <div class="col-auto"><button class="btn btn-primary" id="btn-import-excel" onclick="importarExcelHistorico()"><i class="ti ti-upload me-1"></i>Importar Excel</button></div>
+            </div>
+            <div id="import-excel-resultado" class="mt-3"></div>
           </div>
         </div>
       </div>
-      <div class="col-lg-6">
-        <div class="card">
-          <div class="card-header"><h3 class="card-title"><i class="ti ti-file-import me-2"></i>Importar Ventas (CSV)</h3></div>
-          <div class="card-body">
-            <p class="text-secondary small">Sube el CSV exportado de la hoja "VENTAS DAILY 2026" del Google Sheet.</p>
-            <input type="file" class="form-control form-control-sm mb-2" id="import-ventas-file" accept=".csv">
-            <button class="btn btn-sm btn-primary" onclick="importarVentasCSV()"><i class="ti ti-upload me-1"></i>Importar ventas</button>
-            <div id="import-ventas-resultado" class="mt-2"></div>
-          </div>
-        </div>
-      </div>
+
       <div class="col-lg-6">
         <div class="card">
           <div class="card-header"><h3 class="card-title"><i class="ti ti-brand-shopify me-2"></i>Shopify</h3></div>
@@ -4788,6 +4784,44 @@ async function loadShopifyStatus() {
     panel.innerHTML = '<div class="d-flex align-items-center gap-2 mb-2"><span class="status-dot bg-secondary"></span><strong class="text-secondary">No configurado</strong></div>' +
       '<div class="small text-secondary">Para conectar, agregar las variables de entorno en Railway:<br><code>SHOPIFY_STORE_URL</code> y <code>SHOPIFY_ACCESS_TOKEN</code></div>';
   }
+}
+
+async function importarExcelHistorico() {
+  var file = $('import-excel-file') && $('import-excel-file').files[0];
+  if(!file) return notyf.error('Selecciona el archivo Excel');
+  var btn = $('btn-import-excel');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="ti ti-loader me-1 spin"></i>Importando...';
+  var res_div = $('import-excel-resultado');
+  res_div.innerHTML = '<div class="text-secondary small">Procesando el archivo, esto puede tomar 30-60 segundos...</div>';
+
+  var fd = new FormData();
+  fd.append('file', file);
+  try {
+    var resp = await fetch(API + '/importar/excel-historico', { method: 'POST', body: fd });
+    var data = await resp.json();
+    if(data.ok) {
+      var r = data.resultado;
+      var html = '<div class="alert alert-success"><strong>✅ Importación completa</strong><ul class="mb-0 mt-2">';
+      if(r.clientes_base_datos) html += '<li>Clientes BASE DATOS: <b>' + r.clientes_base_datos.insertados + '</b> nuevos, ' + r.clientes_base_datos.actualizados + ' actualizados</li>';
+      if(r.prospects)           html += '<li>Prospects (sin compra): <b>' + r.prospects.insertados + '</b> nuevos</li>';
+      if(r.septiembre_2025)     html += '<li>Ventas Sep 2025: <b>' + r.septiembre_2025.insertadas + '</b> registradas</li>';
+      if(r.ventas_navidad)      html += '<li>Ventas Navidad: <b>' + r.ventas_navidad.insertadas + '</b> registradas</li>';
+      if(r.ventas_2025)         html += '<li>Ventas Daily 2025: <b>' + r.ventas_2025.insertadas + '</b> registradas</li>';
+      if(r.ventas_2026)         html += '<li>Ventas Daily 2026: <b>' + r.ventas_2026.insertadas + '</b> registradas</li>';
+      html += '</ul></div>';
+      res_div.innerHTML = html;
+      notyf.success('Historial importado exitosamente');
+      loadVentasDashboard();
+    } else {
+      res_div.innerHTML = '<div class="alert alert-danger">Error: ' + JSON.stringify(data) + '</div>';
+    }
+  } catch(e) {
+    res_div.innerHTML = '<div class="alert alert-danger">Error: ' + e + '</div>';
+    notyf.error('Error al importar');
+  }
+  btn.disabled = false;
+  btn.innerHTML = '<i class="ti ti-upload me-1"></i>Importar Excel';
 }
 
 async function syncShopify() {
