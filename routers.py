@@ -376,6 +376,7 @@ def eliminar_receta(receta_id: int):
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("UPDATE recetas SET activo=FALSE WHERE id=%s", (receta_id,))
+    cur.execute("UPDATE producto_receta SET receta_id=NULL WHERE receta_id=%s", (receta_id,))
     conn.commit(); cur.close(); conn.close()
     return {"ok": True}
 
@@ -1727,8 +1728,10 @@ def listar_producto_receta():
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT pr.id, pr.siigo_code, pr.siigo_name, pr.siigo_group, pr.receta_id,
-               r.nombre AS receta_nombre, pr.activo, COALESCE(pr.precio_venta, 0)
+        SELECT pr.id, pr.siigo_code, pr.siigo_name, pr.siigo_group,
+               CASE WHEN r.activo = TRUE THEN pr.receta_id ELSE NULL END AS receta_id,
+               CASE WHEN r.activo = TRUE THEN r.nombre ELSE NULL END AS receta_nombre,
+               pr.activo, COALESCE(pr.precio_venta, 0)
         FROM producto_receta pr
         LEFT JOIN recetas r ON r.id = pr.receta_id
         WHERE pr.activo = TRUE
