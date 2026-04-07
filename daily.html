@@ -125,6 +125,16 @@ tr:hover .btn-delete { opacity: 1; }
 #command-palette .cmd-item .cmd-label { flex: 1; font-size: 14px; }
 #command-palette .cmd-item .cmd-hint { font-size: 11px; color: var(--tblr-secondary); }
 
+/* ── Predictive select dropdown ── */
+.predictive-select { position: relative; }
+.predictive-dropdown { position: absolute; z-index: 1050; width: 100%; max-height: 230px; overflow-y: auto; background: var(--tblr-card-bg); border: 1px solid var(--tblr-border-color); border-radius: var(--tblr-border-radius); box-shadow: 0 4px 20px rgba(0,0,0,.18); margin-top: 2px; }
+.predictive-dropdown .pd-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid var(--tblr-border-color-translucent); }
+.predictive-dropdown .pd-item:last-child { border-bottom: none; }
+.predictive-dropdown .pd-item:hover, .predictive-dropdown .pd-item.active { background: rgba(32,107,196,.08); }
+.predictive-dropdown .pd-name { font-weight: 500; font-size: 13px; }
+.predictive-dropdown .pd-meta { font-size: 11px; color: var(--tblr-muted); margin-top: 1px; }
+.predictive-dropdown .pd-empty { padding: 10px 12px; color: var(--tblr-muted); font-size: 13px; }
+
 /* ── Inventory status bars ── */
 .stock-bar { height: 6px; border-radius: 3px; background: var(--tblr-border-color); overflow: hidden; min-width: 60px; }
 .stock-bar .stock-fill { height: 100%; border-radius: 3px; transition: width .3s; }
@@ -1729,9 +1739,14 @@ tr:hover .btn-delete { opacity: 1; }
       <div class="row g-3">
         <div class="col-12">
           <label class="form-label"><i class="ti ti-link me-1"></i>Ligar a producto Siigo <span class="text-secondary">(opcional)</span></label>
-          <select class="form-select" id="rec-producto-siigo" onchange="autoFillFromProducto()">
-            <option value="">-- No ligar a producto --</option>
-          </select>
+          <div class="predictive-select">
+            <input class="form-control" id="rec-producto-text" placeholder="Buscar por nombre o código..." autocomplete="off"
+              oninput="filterProductoDropdown(this.value)"
+              onfocus="showProductoDropdown()"
+              onblur="hideProductoDropdown()">
+            <input type="hidden" id="rec-producto-siigo">
+            <div class="predictive-dropdown" id="rec-producto-dropdown" style="display:none"></div>
+          </div>
           <div class="form-text">Solo muestra productos sin receta asignada</div>
         </div>
         <div class="col-md-6">
@@ -2368,7 +2383,7 @@ function goto(sec) {
 // ── Modales ────────────────────────────────────────────────────────
 function openModal(id) {
   $(id).classList.add('open');
-  if(id === 'modal-receta')   { fillSelectProductosSinReceta(); $('rec-nombre').value=''; $('rec-descripcion').value=''; $('rec-porciones').value='1'; $('rec-precio').value='0'; }
+  if(id === 'modal-receta')   { fillSelectProductosSinReceta(); $('rec-producto-text').value=''; $('rec-producto-siigo').value=''; $('rec-nombre').value=''; $('rec-descripcion').value=''; $('rec-porciones').value='1'; $('rec-precio').value='0'; }
   if(id === 'modal-compra')   { fillSelectMP('compra-mp'); $('compra-fecha').value = today(); }
   if(id === 'modal-prod')     { fillSelectRecetas(); $('prod-fecha').value = today(); }
   if(id === 'modal-gasto')    { $('gasto-fecha').value = today(); }
@@ -2712,37 +2727,67 @@ async function loadRecetas() {
 let productosSinRecetaCache = [];
 
 async function fillSelectProductosSinReceta() {
-  var sel = $('rec-producto-siigo');
-  sel.innerHTML = '<option value="">-- No ligar a producto --</option><option disabled>Cargando...</option>';
+  var input = $('rec-producto-text');
+  input.placeholder = 'Cargando...'; input.disabled = true;
   try {
     var all = await api('/producto-receta','GET',null,true);
     productosSinRecetaCache = all.filter(function(p){ return !p.receta_id; });
-    sel.innerHTML = '<option value="">-- No ligar a producto --</option>' +
-      productosSinRecetaCache.map(function(p){
-        return '<option value="'+p.id+'" data-name="'+p.siigo_name.replace(/"/g,'&quot;')+'" data-group="'+(p.siigo_group||'')+'" data-code="'+p.siigo_code+'" data-precio="'+(p.precio_venta||0)+'">'+ p.siigo_code+' — '+p.siigo_name+(p.precio_venta?' ($'+fmt(p.precio_venta)+')':'')+'</option>';
-      }).join('');
-  } catch(e) {
-    sel.innerHTML = '<option value="">-- No ligar (error cargando) --</option>';
+  } catch(e) { productosSinRecetaCache = []; }
+  input.disabled = false;
+  input.placeholder = 'Buscar por nombre o código...';
+}
+
+function renderProductoDropdown(items) {
+  var dd = $('rec-producto-dropdown');
+  if(!items.length) {
+    dd.innerHTML = '<div class="pd-empty">Sin resultados</div>';
+  } else {
+    dd.innerHTML = items.map(function(p){
+      var safe = p.siigo_name.replace(/'/g,"\\'").replace(/"/g,'&quot;');
+      return '<div class="pd-item" onmousedown="selectProducto('+p.id+',\''+safe+'\')">' +
+        '<div class="pd-name">'+p.siigo_name+'</div>' +
+        '<div class="pd-meta">'+p.siigo_code+(p.precio_venta?' &nbsp;·&nbsp; $'+fmt(p.precio_venta):'')+'</div>' +
+        '</div>';
+    }).join('');
+  }
+  dd.style.display = '';
+}
+
+function filterProductoDropdown(val) {
+  var q = val.trim().toLowerCase();
+  var filtered = !q ? productosSinRecetaCache :
+    productosSinRecetaCache.filter(function(p){
+      return (p.siigo_name+' '+p.siigo_code).toLowerCase().includes(q);
+    });
+  renderProductoDropdown(filtered);
+  if(!val) $('rec-producto-siigo').value = '';
+}
+
+function showProductoDropdown() {
+  filterProductoDropdown($('rec-producto-text').value);
+}
+
+function hideProductoDropdown() {
+  setTimeout(function(){ $('rec-producto-dropdown').style.display = 'none'; }, 160);
+}
+
+function selectProducto(id, name) {
+  $('rec-producto-siigo').value = id;
+  $('rec-producto-text').value = name;
+  $('rec-producto-dropdown').style.display = 'none';
+  var p = productosSinRecetaCache.find(function(x){ return x.id === id; });
+  if(!p) return;
+  $('rec-nombre').value = p.siigo_name;
+  if(p.precio_venta > 0) $('rec-precio').value = p.precio_venta;
+  var catMap = {'Proteinas':'Proteinas','Sopas':'Sopas','Salsas':'Salsas','Acompañamientos':'Acompañamientos','Navidad':'Navidad'};
+  var cat = catMap[p.siigo_group] || 'General';
+  var catSel = $('rec-categoria');
+  for(var i=0;i<catSel.options.length;i++){
+    if(catSel.options[i].value === cat){ catSel.selectedIndex = i; break; }
   }
 }
 
-function autoFillFromProducto() {
-  var sel = $('rec-producto-siigo');
-  var opt = sel.options[sel.selectedIndex];
-  if(!opt || !opt.value) return;
-  var name = opt.getAttribute('data-name') || '';
-  var group = opt.getAttribute('data-group') || '';
-  var precio = parseFloat(opt.getAttribute('data-precio')) || 0;
-  $('rec-nombre').value = name;
-  if(precio > 0) $('rec-precio').value = precio;
-  // Map Siigo group to receta category
-  var catMap = {'Proteinas':'Proteinas','Sopas':'Sopas','Salsas':'Salsas','Acompañamientos':'Acompañamientos','Navidad':'Navidad'};
-  var cat = catMap[group] || 'General';
-  var catSel = $('rec-categoria');
-  for(var i=0;i<catSel.options.length;i++){
-    if(catSel.options[i].value === cat) { catSel.selectedIndex = i; break; }
-  }
-}
+function autoFillFromProducto() {}
 
 async function crearReceta() {
   var nombre = $('rec-nombre').value.trim();
