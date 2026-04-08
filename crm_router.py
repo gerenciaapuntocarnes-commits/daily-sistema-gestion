@@ -1090,8 +1090,10 @@ def get_conciliacion(banco: Optional[str] = None, solo_pendientes: bool = True):
     cur.execute("""
         SELECT f.id, f.siigo_invoice_id, f.numero, f.prefix, f.fecha,
                f.total, f.balance, f.estado_pago, f.medio_pago,
-               f.cliente_nombre, f.cliente_cedula
+               COALESCE(NULLIF(TRIM(c.nombre), ''), NULLIF(f.cliente_nombre, '(Sin nombre)'), f.cliente_nombre) AS cliente_nombre,
+               COALESCE(c.cedula, f.cliente_cedula) AS cliente_cedula
         FROM crm_facturas f
+        LEFT JOIN crm_clientes c ON c.id = f.cliente_id
         WHERE f.estado_pago = 'pendiente' AND f.balance > 0
         ORDER BY f.fecha DESC
         LIMIT 500
