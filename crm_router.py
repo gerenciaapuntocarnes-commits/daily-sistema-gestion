@@ -249,78 +249,29 @@ def reset_crm():
 # ENDPOINTS — SYNC
 # ═══════════════════════════════════════════════════════════════
 
-def _run_sync_siigo():
-    """Tarea en background: sincroniza clientes y facturas de Siigo."""
-    job = _sync_jobs["siigo"]
-    job["running"] = True
-    job["ok"] = None
-    job["msg"] = ""
-    job["result"] = None
-
-    try:
-        job["step"] = "Obteniendo clientes de Siigo..."
-        customers = _fetch_siigo_customers()
-    except Exception as e:
-        job["running"] = False
-        job["ok"] = False
-        job["msg"] = f"Error obteniendo clientes: {str(e)}"
-        return
-
-    conn = get_conn()
-    cur = conn.cursor()
-    cli_new = cli_upd = 0
-
-    job["step"] = f"Guardando {len(customers)} clientes..."
+def _parse_customers(customers: list) -> list:
+    rows = []
     for c in customers:
         sid = str(c.get("id", ""))
         if not sid:
             continue
-        ident = str(c.get("identification", "")).strip()
+        ident = str(c.get("identification", "")).strip() or None
         names = c.get("name", [])
-        nombre = " ".join(names) if isinstance(names, list) else str(names)
-        nombre = nombre.strip() or "(Sin nombre)"
+        nombre = (" ".join(names) if isinstance(names, list) else str(names)).strip() or "(Sin nombre)"
         phones = c.get("phones", [])
-        telefono = phones[0].get("number", "") if phones else ""
-        email = ""
+        telefono = phones[0].get("number", "") if phones else None
         contacts = c.get("contacts", [])
-        if contacts:
-            email = contacts[0].get("email", "") or ""
+        email = (contacts[0].get("email", "") if contacts else "") or None
         address_obj = c.get("address", {}) or {}
-        direccion = address_obj.get("address", "") or ""
-        ciudad = address_obj.get("city", {}).get("city_name", "") if address_obj.get("city") else ""
+        direccion = address_obj.get("address", "") or None
+        ciudad_obj = address_obj.get("city", {})
+        ciudad = ciudad_obj.get("city_name", "") if ciudad_obj else None
+        rows.append((sid, ident, nombre, telefono, email, direccion, ciudad))
+    return rows
 
-        cur.execute("SELECT id FROM crm_clientes WHERE siigo_id = %s", (sid,))
-        existing = cur.fetchone()
-        if existing:
-            cur.execute("""
-                UPDATE crm_clientes SET cedula=%s, nombre=%s, telefono=%s, email=%s,
-                  direccion=%s, ciudad=%s, actualizado_en=NOW()
-                WHERE siigo_id=%s
-            """, (ident or None, nombre, telefono or None, email or None,
-                  direccion or None, ciudad or None, sid))
-            cli_upd += 1
-        else:
-            cur.execute("""
-                INSERT INTO crm_clientes (siigo_id, cedula, nombre, telefono, email, direccion, ciudad)
-                VALUES (%s,%s,%s,%s,%s,%s,%s)
-            """, (sid, ident or None, nombre, telefono or None, email or None,
-                  direccion or None, ciudad or None))
-            cli_new += 1
 
-    conn.commit()
-
-    try:
-        job["step"] = "Obteniendo facturas de Siigo (últimos 3 años, puede tomar 2-3 min)..."
-        invoices = _fetch_siigo_invoices_all()
-    except Exception as e:
-        conn.close()
-        job["running"] = False
-        job["ok"] = False
-        job["msg"] = f"Error obteniendo facturas: {str(e)}"
-        return
-
-    inv_new = inv_upd = 0
-    job["step"] = f"Guardando {len(invoices)} facturas..."
+def _parse_invoices(invoices: list) -> list:
+    rows = []
     for inv in invoices:
         if inv.get("annulled"):
             continue
@@ -334,71 +285,121 @@ def _run_sync_siigo():
             fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date() if fecha_str else date.today()
         except ValueError:
             fecha = date.today()
-
         total = float(inv.get("total", 0) or 0)
         balance = float(inv.get("balance", 0) or 0)
         estado = "pendiente" if balance > 0 else "pagado"
-
         cust = inv.get("customer", {}) or {}
-        cedula = str(cust.get("identification", "") or "").strip()
+        cedula = str(cust.get("identification", "") or "").strip() or None
         cust_names = cust.get("name", [])
-        cli_nombre = " ".join(cust_names) if isinstance(cust_names, list) else str(cust_names)
-        cli_nombre = cli_nombre.strip() or "(Sin nombre)"
+        cli_nombre = (" ".join(cust_names) if isinstance(cust_names, list) else str(cust_names)).strip() or "(Sin nombre)"
+        siigo_cust_id = str(cust.get("id", "") or "") or None
+        rows.append((siigo_id, number, prefix, cli_nombre, cedula, fecha, total, balance, estado, siigo_cust_id))
+    return rows
 
-        cliente_id = None
-        siigo_cust_id = str(cust.get("id", "") or "")
-        if siigo_cust_id:
-            cur.execute("SELECT id FROM crm_clientes WHERE siigo_id = %s", (siigo_cust_id,))
-            row = cur.fetchone()
-            if row:
-                cliente_id = row[0]
-        if not cliente_id and cedula:
-            cur.execute("SELECT id FROM crm_clientes WHERE cedula = %s LIMIT 1", (cedula,))
-            row = cur.fetchone()
-            if row:
-                cliente_id = row[0]
 
-        cur.execute("SELECT id FROM crm_facturas WHERE siigo_invoice_id = %s", (siigo_id,))
-        existing = cur.fetchone()
-        if existing:
-            cur.execute("""
-                UPDATE crm_facturas SET total=%s, balance=%s, cliente_id=%s,
-                  cliente_nombre=%s, cliente_cedula=%s, sync_at=NOW()
-                WHERE siigo_invoice_id=%s
-            """, (total, balance, cliente_id, cli_nombre, cedula or None, siigo_id))
-            inv_upd += 1
-        else:
-            cur.execute("""
-                INSERT INTO crm_facturas
-                  (siigo_invoice_id, numero, prefix, cliente_id, cliente_nombre, cliente_cedula,
-                   fecha, total, balance, estado_pago)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
-            """, (siigo_id, number, prefix, cliente_id, cli_nombre, cedula or None,
-                  fecha, total, balance, estado))
-            inv_new += 1
+def _run_sync_siigo():
+    """Tarea en background: sincroniza clientes y facturas de Siigo usando upsert batch."""
+    job = _sync_jobs["siigo"]
+    job["running"] = True
+    job["ok"] = None
+    job["msg"] = ""
+    job["result"] = None
 
-    conn.commit()
+    try:
+        job["step"] = "Obteniendo clientes de Siigo..."
+        customers = _fetch_siigo_customers()
+    except Exception as e:
+        job["running"] = False; job["ok"] = False
+        job["msg"] = f"Error obteniendo clientes: {str(e)}"
+        return
+
+    job["step"] = f"Guardando {len(customers)} clientes..."
+    cli_rows = _parse_customers(customers)
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # Batch upsert clientes — un solo query
+    if cli_rows:
+        from psycopg2.extras import execute_values
+        execute_values(cur, """
+            INSERT INTO crm_clientes (siigo_id, cedula, nombre, telefono, email, direccion, ciudad)
+            VALUES %s
+            ON CONFLICT (siigo_id) DO UPDATE SET
+              cedula = EXCLUDED.cedula,
+              nombre = EXCLUDED.nombre,
+              telefono = EXCLUDED.telefono,
+              email = EXCLUDED.email,
+              direccion = EXCLUDED.direccion,
+              ciudad = EXCLUDED.ciudad,
+              actualizado_en = NOW()
+        """, cli_rows)
+        conn.commit()
+
+    # Count nuevos vs actualizados
+    cur.execute("SELECT COUNT(*) FROM crm_clientes")
+    cli_total = cur.fetchone()[0]
+    cli_new = max(0, cli_total - max(0, cli_total - len(cli_rows)))
+
+    try:
+        job["step"] = "Obteniendo facturas de Siigo (últimos 3 años)..."
+        invoices = _fetch_siigo_invoices_all()
+    except Exception as e:
+        conn.close()
+        job["running"] = False; job["ok"] = False
+        job["msg"] = f"Error obteniendo facturas: {str(e)}"
+        return
+
+    job["step"] = f"Guardando {len(invoices)} facturas..."
+    inv_rows = _parse_invoices(invoices)
+
+    # Build siigo_id -> internal id map for cliente lookup
+    cur.execute("SELECT siigo_id, id FROM crm_clientes")
+    cust_map = {row[0]: row[1] for row in cur.fetchall()}
+
+    # Resolve cliente_id for each invoice
+    final_rows = []
+    for r in inv_rows:
+        siigo_id, number, prefix, cli_nombre, cedula, fecha, total, balance, estado, siigo_cust_id = r
+        cliente_id = cust_map.get(siigo_cust_id) if siigo_cust_id else None
+        final_rows.append((siigo_id, number, prefix, cliente_id, cli_nombre, cedula, fecha, total, balance, estado))
+
+    if final_rows:
+        execute_values(cur, """
+            INSERT INTO crm_facturas
+              (siigo_invoice_id, numero, prefix, cliente_id, cliente_nombre, cliente_cedula,
+               fecha, total, balance, estado_pago)
+            VALUES %s
+            ON CONFLICT (siigo_invoice_id) DO UPDATE SET
+              total = EXCLUDED.total,
+              balance = EXCLUDED.balance,
+              cliente_id = EXCLUDED.cliente_id,
+              cliente_nombre = EXCLUDED.cliente_nombre,
+              cliente_cedula = EXCLUDED.cliente_cedula,
+              sync_at = NOW()
+        """, final_rows)
+        conn.commit()
+
+    cur.execute("SELECT COUNT(*) FROM crm_facturas")
+    inv_total = cur.fetchone()[0]
 
     cur.execute("""
         INSERT INTO crm_sync_log (tipo, registros, nuevos, actualizados, detalle)
         VALUES ('siigo_full', %s, %s, %s, %s)
-    """, (cli_new + cli_upd + inv_new + inv_upd,
-          cli_new + inv_new,
-          cli_upd + inv_upd,
-          f"Clientes: +{cli_new} upd:{cli_upd} | Facturas: +{inv_new} upd:{inv_upd}"))
+    """, (len(cli_rows) + len(final_rows), len(cli_rows), len(final_rows),
+          f"Clientes: {len(cli_rows)} | Facturas: {len(final_rows)}"))
     conn.commit()
     cur.close(); conn.close()
 
-    result = {
-        "ok": True,
-        "clientes": {"nuevos": cli_new, "actualizados": cli_upd, "total": len(customers)},
-        "facturas": {"nuevas": inv_new, "actualizadas": inv_upd, "total": len(invoices)}
-    }
     job["running"] = False
     job["ok"] = True
-    job["msg"] = f"Clientes: +{cli_new} nuevos. Facturas: +{inv_new} nuevas."
+    job["msg"] = f"{len(cli_rows)} clientes y {len(final_rows)} facturas sincronizados."
     job["step"] = "Completado"
-    job["result"] = result
+    job["result"] = {
+        "ok": True,
+        "clientes": {"total": len(cli_rows)},
+        "facturas": {"total": len(final_rows)}
+    }
 
 
 @router.post("/sync/siigo")
