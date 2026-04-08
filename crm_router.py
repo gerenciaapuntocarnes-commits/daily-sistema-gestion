@@ -1610,7 +1610,9 @@ def get_conciliados(q: Optional[str] = None, filtro_rc: Optional[str] = None):
         # Fecha de pago: usar mov_fecha si existe, si no fecha de la factura
         d["fecha_pago"] = d["mov_fecha"] or d["fecha"]
         # Registrado en: banco del movimiento, medio_pago manual, o "Siigo" si se pagó directo allá
-        d["banco_display"] = d.get("banco") or d.get("medio_pago") or "Siigo"
+        _banco_nombres = {"BDB": "Banco de Bogotá", "BANCOLOMBIA": "Bancolombia"}
+        banco_raw = d.get("banco") or d.get("medio_pago") or "Siigo"
+        d["banco_display"] = _banco_nombres.get(banco_raw, banco_raw)
         result.append(d)
 
     cur.close(); conn.close()

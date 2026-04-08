@@ -927,7 +927,7 @@ tr:hover .btn-delete { opacity: 1; }
           <div class="col-auto">
             <select class="form-select form-select-sm" id="concil-banco" onchange="loadConciliacion()" style="width:160px">
               <option value="">Todos los bancos</option>
-              <option value="BDB">BDB</option>
+              <option value="BDB">Banco de Bogotá</option>
               <option value="BANCOLOMBIA">Bancolombia</option>
             </select>
           </div>
@@ -1046,7 +1046,7 @@ tr:hover .btn-delete { opacity: 1; }
         <div class="card">
           <div class="card-header"><h3 class="card-title"><i class="ti ti-building-bank me-2"></i>Sincronizar Movimientos Bancarios</h3></div>
           <div class="card-body">
-            <p class="text-secondary small mb-3">Jala los movimientos del Google Sheet de conciliación (BDB 2024/2025 + Bancolombia 2024/2025).</p>
+            <p class="text-secondary small mb-3">Jala los movimientos del Google Sheet de conciliación (Banco de Bogotá 2024/2025 + Bancolombia 2024/2025).</p>
             <div class="d-flex gap-2 flex-wrap">
               <button class="btn btn-primary" onclick="crmSyncBancos()"><i class="ti ti-refresh me-1"></i>Sync Movimientos</button>
               <button class="btn btn-outline-warning" onclick="crmResetBancos()"><i class="ti ti-trash me-1"></i>Borrar movimientos y re-sync</button>
@@ -2764,6 +2764,8 @@ let chartTendencia = null;
 const $ = id => document.getElementById(id);
 const fmt  = n => n == null ? '--' : Number(n).toLocaleString('es-CO', {minimumFractionDigits:0, maximumFractionDigits:0});
 const fmtD = (n, d=2) => n == null ? '--' : Number(n).toLocaleString('es-CO', {minimumFractionDigits:d, maximumFractionDigits:d});
+const BANCO_NOMBRES = {'BDB': 'Banco de Bogotá', 'BANCOLOMBIA': 'Bancolombia'};
+const fmtBanco = b => BANCO_NOMBRES[b] || b || '--';
 const today = () => new Date().toISOString().split('T')[0];
 
 // ── Notyf init ─────────────────────────────────────────────────
@@ -5516,7 +5518,7 @@ async function concilSelectFact(id, nombre, balance) {
         '<div class="row align-items-center g-2">' +
           '<div class="col">' +
             '<div class="d-flex align-items-center gap-2 mb-1">' +
-              '<span class="badge '+(s.banco==='BDB'?'bg-blue-lt':'bg-lime-lt')+'">'+s.banco+'</span>' +
+              '<span class="badge '+(s.banco==='BDB'?'bg-blue-lt':'bg-lime-lt')+'">'+fmtBanco(s.banco)+'</span>' +
               '<span class="small fw-bold">'+s.fecha+'</span>' +
               matchBadge +
             '</div>' +
@@ -5615,8 +5617,9 @@ async function loadConciliados() {
         '</div>'
       : '<button class="btn btn-xs btn-outline-primary" onclick="generarRcFactura('+f.id+')"><i class="ti ti-receipt me-1"></i>Generar RC</button>';
     var bd = f.banco_display || 'Siigo';
+    var bdLabel = fmtBanco(bd);
     var bdColor = bd === 'Siigo' ? 'bg-purple-lt' : (bd === 'Efectivo' ? 'bg-green-lt' : 'bg-azure-lt');
-    var medioBadge = '<span class="badge '+bdColor+'">'+bd+'</span>';
+    var medioBadge = '<span class="badge '+bdColor+'">'+bdLabel+'</span>';
     var canRevert = !f.rc_numero || f.rc_modo_prueba;
     return '<tr class="'+(sel?'table-warning':'')+'">' +
       '<td><input type="checkbox" class="form-check-input" '+(sel?'checked':'')+' onchange="toggleConciliadoSelect('+f.id+',this.checked)"></td>' +
