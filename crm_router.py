@@ -151,7 +151,7 @@ def _fetch_sheet_tab(service, tab_name: str) -> list:
     try:
         result = service.spreadsheets().values().get(
             spreadsheetId=SHEET_ID,
-            range=f"{tab_name}!A1:J5000"
+            range=f"{tab_name}!A:J"  # Sin límite de filas
         ).execute()
         return result.get("values", [])
     except Exception as e:
@@ -622,22 +622,24 @@ def sync_bancos():
 
     conn = get_conn()
     cur = conn.cursor()
-    ins = skip = 0
+
+    # Asegurar índice único por posición en sheet para upsert
+    cur.execute("""
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_mov_sheet_pos
+        ON movimientos_bancarios (sheet_tab, sheet_row)
+    """)
+    conn.commit()
+
+    ins = upd = skip = 0
 
     for tab_name, banco in SHEET_TABS:
         rows = _fetch_sheet_tab(service, tab_name)
         if not rows or len(rows) < 2:
             continue
 
-        # Detect column layout from header
-        header = [str(h).strip().upper() for h in rows[0]]
-
-        # BDB layout: Fecha(0), Transacción(1), Débitos(2), Créditos(3), ESTADO(4), RC(5), CLIENTE(6), VALOR_CLI(7)
-        # BANCOLOMBIA: FECHA(0), CONCEPTO(1), VALOR BANCO(2), ESTADO(3), RC(4), CLIENTE(5)
         is_bdb = banco == "BDB"
 
         for row_idx, row in enumerate(rows[1:], start=2):
-            # Extend row to avoid index errors
             row = list(row) + [""] * 10
 
             if is_bdb:
@@ -648,10 +650,8 @@ def sync_bancos():
                 estado    = str(row[4]).strip() if row[4] else None
                 rc_sheet  = str(row[5]).strip() if row[5] else None
                 cli_sheet = str(row[6]).strip() if row[6] else None
-                # For BDB, we care about credits (ingresos)
                 valor = credito if credito and credito > 0 else (-(debito) if debito and debito > 0 else None)
             else:
-                # Bancolombia
                 fecha_raw = row[0]
                 desc_raw  = row[1]
                 valor_raw = _clean_valor_sheet(row[2])
@@ -667,36 +667,42 @@ def sync_bancos():
                 skip += 1
                 continue
 
-            # Skip zero or negative (debits) — we only want credits/ingresos
             if valor <= 0:
                 skip += 1
                 continue
 
-            # Avoid duplicates by (banco, fecha, valor, desc)
-            cur.execute("""
-                SELECT id FROM movimientos_bancarios
-                WHERE banco=%s AND fecha=%s AND valor=%s AND (descripcion=%s OR (descripcion IS NULL AND %s IS NULL))
-                LIMIT 1
-            """, (banco, fecha, valor, desc, desc))
-            if cur.fetchone():
-                skip += 1
-                continue
-
-            # Auto-detect conciliado: ya conciliado o factura marcada con medio de pago
-            conciliado = bool(estado and (
+            # Auto-detect conciliado por estado del sheet
+            conciliado_sheet = bool(estado and (
                 "CONCILI" in estado.upper() or
                 "MEDIO DE PAGO" in estado.upper() or
                 "QUEDO CON MEDIO" in estado.upper()
             ))
 
+            # Upsert por (sheet_tab, sheet_row) — siempre refleja el estado actual del sheet
+            # No pisar conciliado=TRUE si ya fue conciliado manualmente en la app
             cur.execute("""
                 INSERT INTO movimientos_bancarios
                   (banco, fecha, descripcion, valor, estado, rc_sheet, cliente_sheet,
                    conciliado, sheet_row, sheet_tab)
                 VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                ON CONFLICT (sheet_tab, sheet_row) DO UPDATE SET
+                  fecha        = EXCLUDED.fecha,
+                  descripcion  = EXCLUDED.descripcion,
+                  valor        = EXCLUDED.valor,
+                  estado       = EXCLUDED.estado,
+                  rc_sheet     = EXCLUDED.rc_sheet,
+                  cliente_sheet= EXCLUDED.cliente_sheet,
+                  conciliado   = CASE
+                    WHEN movimientos_bancarios.conciliado = TRUE THEN TRUE
+                    ELSE EXCLUDED.conciliado
+                  END
             """, (banco, fecha, desc, valor, estado, rc_sheet or None, cli_sheet or None,
-                  conciliado, row_idx, tab_name))
-            ins += 1
+                  conciliado_sheet, row_idx, tab_name))
+
+            if cur.statusmessage == "INSERT 0 1":
+                ins += 1
+            else:
+                upd += 1
 
     # Marcar como conciliados los registros existentes con estado "MEDIO DE PAGO"
     cur.execute("""
@@ -714,10 +720,11 @@ def sync_bancos():
     cur.execute("""
         INSERT INTO crm_sync_log (tipo, registros, nuevos, actualizados, detalle)
         VALUES ('bancos', %s, %s, %s, %s)
-    """, (ins + marcados, ins, marcados, f"Movimientos bancarios: {ins} nuevos, {skip} ignorados, {marcados} marcados conciliados por estado"))
+    """, (ins + upd + marcados, ins, upd + marcados,
+          f"Movimientos bancarios: {ins} nuevos, {upd} actualizados, {skip} ignorados, {marcados} marcados conciliados por estado"))
     conn.commit()
     cur.close(); conn.close()
-    return {"ok": True, "nuevos": ins, "ignorados": skip, "marcados_conciliados": marcados}
+    return {"ok": True, "nuevos": ins, "actualizados": upd, "ignorados": skip, "marcados_conciliados": marcados}
 
 
 # ═══════════════════════════════════════════════════════════════
