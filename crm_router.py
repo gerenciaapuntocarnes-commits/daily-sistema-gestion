@@ -1277,14 +1277,19 @@ def get_sugerencias(factura_id: int):
         if score_total < 0.1:
             continue
 
+        diff_abs = round(mov_valor - monto_ref, 0)
         scored.append({
             "id": m[0], "banco": m[1],
             "fecha": m[2].isoformat() if m[2] else None,
             "descripcion": m[3], "valor": mov_valor,
             "estado": m[4], "rc_sheet": m[6], "cliente_sheet": m[7], "sheet_tab": m[8],
             "score": score_total,
-            "diff_monto": round(mov_valor - monto_ref, 0),
-            "match_exacto": diff_pct < 0.01
+            "score_monto": round(score_monto, 3),
+            "score_fecha": round(score_fecha, 3),
+            "diff_monto": diff_abs,
+            "diff_pct": round(diff_pct * 100, 2),   # porcentaje real de diferencia de monto
+            "match_exacto": diff_pct < 0.001,         # realmente exacto: < 0.1%
+            "match_cercano": 0.001 <= diff_pct <= 0.01  # cercano: entre 0.1% y 1%
         })
 
     scored.sort(key=lambda x: -x["score"])

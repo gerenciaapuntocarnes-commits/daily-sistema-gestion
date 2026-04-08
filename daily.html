@@ -5461,24 +5461,40 @@ async function concilSelectFact(id, nombre, balance) {
 
   bodyEl2.innerHTML = sugs.map(function(s){
     var pct = Math.round(s.score * 100);
+    var montoPct = Math.round((s.score_monto||0) * 100);
+    var borderColor = pct >= 80 ? '#2fb344' : pct >= 50 ? '#f76707' : '#adb5bd';
     var barColor = pct >= 80 ? 'bg-success' : pct >= 50 ? 'bg-warning' : 'bg-secondary';
-    var matchBadge = s.match_exacto ? '<span class="badge bg-success ms-1">Exacto</span>' : '';
-    var diffStr = s.diff_monto === 0 ? '' : '<span class="text-secondary small ms-1">('+(s.diff_monto>0?'+':'')+fmt(s.diff_monto)+')</span>';
-    return '<div class="card mb-2" style="border-left:3px solid var(--tblr-'+(pct>=80?'success':pct>=50?'warning':'secondary')+');">' +
+
+    // Badge de coincidencia
+    var matchBadge = '';
+    if(s.match_exacto) {
+      matchBadge = '<span class="badge bg-success-lt text-success" style="font-size:10px;font-weight:600;">✓ Exacto</span>';
+    } else if(s.match_cercano) {
+      matchBadge = '<span class="badge bg-teal-lt text-teal" style="font-size:10px;font-weight:600;">≈ Cercano</span>';
+    }
+
+    // Diferencia de monto
+    var diffStr = '';
+    if(s.diff_monto !== 0) {
+      var diffColor = Math.abs(s.diff_pct) <= 5 ? 'text-warning' : 'text-danger';
+      diffStr = '<span class="'+diffColor+' small ms-1">'+(s.diff_monto>0?'+':'')+fmt(s.diff_monto)+' ('+s.diff_pct+'%)</span>';
+    }
+
+    return '<div class="card mb-2" style="border-left:3px solid '+borderColor+';">' +
       '<div class="card-body py-2 px-3">' +
         '<div class="row align-items-center g-2">' +
           '<div class="col">' +
             '<div class="d-flex align-items-center gap-2 mb-1">' +
-              '<span class="badge '+(s.banco==='BDB'?'bg-blue-lt':'bg-green-lt')+'">'+s.banco+'</span>' +
+              '<span class="badge '+(s.banco==='BDB'?'bg-blue-lt':'bg-lime-lt')+'">'+s.banco+'</span>' +
               '<span class="small fw-bold">'+s.fecha+'</span>' +
               matchBadge +
             '</div>' +
             '<div class="small text-secondary" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px" title="'+(s.descripcion||'')+'">'+((s.descripcion||'--').slice(0,50))+'</div>' +
-            (s.cliente_sheet ? '<div class="small text-muted">Cliente Sheet: '+s.cliente_sheet+'</div>' : '') +
+            (s.cliente_sheet ? '<div class="small text-muted"><i class="ti ti-user me-1"></i>'+s.cliente_sheet+'</div>' : '') +
           '</div>' +
           '<div class="col-auto text-end">' +
-            '<div class="fw-bold">$'+fmt(s.valor)+diffStr+'</div>' +
-            '<div class="d-flex align-items-center gap-1 mt-1">' +
+            '<div class="fw-bold fs-6">$'+fmt(s.valor)+diffStr+'</div>' +
+            '<div class="d-flex align-items-center gap-1 mt-1 justify-content-end">' +
               '<div style="width:60px;height:4px;background:var(--tblr-border-color);border-radius:2px"><div class="'+barColor+'" style="width:'+pct+'%;height:100%;border-radius:2px"></div></div>' +
               '<span class="small text-secondary">'+pct+'%</span>' +
             '</div>' +
