@@ -347,7 +347,10 @@ def _parse_invoices(invoices: list) -> list:
         cust_names = cust.get("name", [])
         cli_nombre = (" ".join(n for n in cust_names if n) if isinstance(cust_names, list) else str(cust_names or "")).strip() or "(Sin nombre)"
         siigo_cust_id = str(cust.get("id", "") or "") or None
-        rows.append((siigo_id, number, prefix, cli_nombre, cedula, fecha, total, balance, estado, siigo_cust_id))
+        # Extraer medio de pago desde Siigo (payments[0].name si existe)
+        payments = inv.get("payments") or []
+        medio_pago_siigo = payments[0].get("name", "").strip() if payments else None
+        rows.append((siigo_id, number, prefix, cli_nombre, cedula, fecha, total, balance, estado, siigo_cust_id, medio_pago_siigo))
     return rows
 
 
@@ -426,15 +429,15 @@ def _run_sync_siigo_inner(job):
     # Resolve cliente_id for each invoice
     final_rows = []
     for r in inv_rows:
-        siigo_id, number, prefix, cli_nombre, cedula, fecha, total, balance, estado, siigo_cust_id = r
+        siigo_id, number, prefix, cli_nombre, cedula, fecha, total, balance, estado, siigo_cust_id, medio_pago_siigo = r
         cliente_id = cust_map.get(siigo_cust_id) if siigo_cust_id else None
-        final_rows.append((siigo_id, number, prefix, cliente_id, cli_nombre, cedula, fecha, total, balance, estado))
+        final_rows.append((siigo_id, number, prefix, cliente_id, cli_nombre, cedula, fecha, total, balance, estado, medio_pago_siigo))
 
     if final_rows:
         execute_values(cur, """
             INSERT INTO crm_facturas
               (siigo_invoice_id, numero, prefix, cliente_id, cliente_nombre, cliente_cedula,
-               fecha, total, balance, estado_pago)
+               fecha, total, balance, estado_pago, medio_pago)
             VALUES %s
             ON CONFLICT (siigo_invoice_id) DO UPDATE SET
               total = EXCLUDED.total,
@@ -448,6 +451,8 @@ def _run_sync_siigo_inner(job):
                 WHEN EXCLUDED.balance = 0 THEN 'pagado'
                 ELSE crm_facturas.estado_pago
               END,
+              -- Solo poner medio_pago de Siigo si no está ya definido manualmente
+              medio_pago = COALESCE(crm_facturas.medio_pago, EXCLUDED.medio_pago),
               sync_at = NOW()
         """, final_rows)
         conn.commit()
@@ -1345,6 +1350,28 @@ def auto_conciliar():
 # ═══════════════════════════════════════════════════════════════
 # ENDPOINTS — SYNC LOG
 # ═══════════════════════════════════════════════════════════════
+
+@router.get("/debug/factura-siigo")
+def debug_factura_siigo():
+    """Muestra los primeros campos crudos de una factura reciente de Siigo para diagnóstico."""
+    try:
+        from siigo import fetch_invoices
+        from datetime import date, timedelta
+        hoy = date.today()
+        facturas = fetch_invoices((hoy - timedelta(days=30)).isoformat(), hoy.isoformat())
+        if not facturas:
+            return {"msg": "Sin facturas en los últimos 30 días"}
+        sample = facturas[0]
+        # Solo devolver campos relevantes, no todo el objeto
+        return {
+            "keys": list(sample.keys()),
+            "payments": sample.get("payments"),
+            "balance": sample.get("balance"),
+            "total": sample.get("total"),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 
 @router.get("/sync/log")
 def get_sync_log():
