@@ -262,6 +262,19 @@ def reset_crm():
     return {"ok": True, "mensaje": "Datos CRM eliminados. Listo para sincronizar desde Siigo."}
 
 
+@router.post("/reset/bancos")
+def reset_bancos():
+    """Elimina solo los movimientos bancarios, conservando clientes y facturas."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM movimientos_bancarios")
+    # También limpiar movimiento_id en facturas para no dejar referencias huérfanas
+    cur.execute("UPDATE crm_facturas SET movimiento_id = NULL WHERE movimiento_id IS NOT NULL")
+    conn.commit()
+    cur.close(); conn.close()
+    return {"ok": True}
+
+
 # ═══════════════════════════════════════════════════════════════
 # ENDPOINTS — SYNC
 # ═══════════════════════════════════════════════════════════════

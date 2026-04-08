@@ -1072,7 +1072,10 @@ tr:hover .btn-delete { opacity: 1; }
           <div class="card-header"><h3 class="card-title"><i class="ti ti-building-bank me-2"></i>Sincronizar Movimientos Bancarios</h3></div>
           <div class="card-body">
             <p class="text-secondary small mb-3">Jala los movimientos del Google Sheet de conciliación (BDB 2024/2025 + Bancolombia 2024/2025).</p>
-            <button class="btn btn-primary" onclick="crmSyncBancos()"><i class="ti ti-refresh me-1"></i>Sync Movimientos</button>
+            <div class="d-flex gap-2 flex-wrap">
+              <button class="btn btn-primary" onclick="crmSyncBancos()"><i class="ti ti-refresh me-1"></i>Sync Movimientos</button>
+              <button class="btn btn-outline-warning" onclick="crmResetBancos()"><i class="ti ti-trash me-1"></i>Borrar movimientos y re-sync</button>
+            </div>
             <div id="sync-bancos-result" class="mt-2"></div>
           </div>
         </div>
@@ -4693,6 +4696,18 @@ async function crmResetData() {
       notyf.success('Datos CRM eliminados');
       loadActivos();
       loadCrmConfig();
+    }
+  });
+}
+
+async function crmResetBancos() {
+  confirmAction('¿Borrar todos los movimientos bancarios y re-sincronizar? Los clientes y facturas de Siigo no se tocan.', async function(){
+    var resultEl = $('sync-bancos-result');
+    if(resultEl) resultEl.innerHTML = '<div class="text-secondary small"><i class="ti ti-loader spin me-1"></i>Borrando movimientos...</div>';
+    var res = await api('/crm/reset/bancos','POST').catch(function(){ return null; });
+    if(res && res.ok) {
+      notyf.success('Movimientos borrados');
+      crmSyncBancos();
     }
   });
 }
