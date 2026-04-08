@@ -1048,12 +1048,15 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
             "mensaje": "Modo prueba: RC no creado en Siigo"
         }
 
-    # Build RC payload
-    # We need siigo_id from crm_clientes to get customer data
+    # ── Validaciones ──
+    if not factura.get("siigo_invoice_id"):
+        return {"ok": False, "error": "Factura sin ID de Siigo — sincroniza primero con Siigo"}
+
+    # Datos del cliente
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT c.siigo_id, c.cedula, c.nombre, c.id_type_code, c.person_type
+        SELECT c.siigo_id, c.cedula, c.nombre
         FROM crm_clientes c
         JOIN crm_facturas f ON f.cliente_id = c.id
         WHERE f.id = %s
@@ -1064,46 +1067,47 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
     if not cli:
         return {"ok": False, "error": "Cliente no encontrado para la factura"}
 
-    if not factura.get("siigo_invoice_id"):
-        return {"ok": False, "error": "Factura sin ID de Siigo — sincroniza primero con Siigo"}
+    cedula = cli[1] or ""
+    if not cedula:
+        return {"ok": False, "error": "Cliente sin cédula/NIT — no se puede crear RC en Siigo"}
 
     balance_val = float(factura.get("balance") or 0)
     total_val   = float(factura.get("total")   or 0)
     if balance_val <= 0 and total_val <= 0:
         return {"ok": False, "error": "Factura sin monto válido (balance y total son 0 o nulos)"}
-    monto = balance_val if balance_val > 0 else total_val
+    monto = round(balance_val if balance_val > 0 else total_val, 2)
 
-    cedula        = cli[1] or ""
-    nombre        = cli[2] or ""
-    id_type_code  = cli[3] or "13"
-    person_type   = cli[4] or "Person"
     cuenta = factura.get("cuenta_debito") or _cuenta_for_medio(factura.get("medio_pago", ""))
-    factura_ref = f"{factura.get('prefix','')}-{factura.get('numero','')}"
+    prefix  = factura.get("prefix", "") or ""
+    numero  = factura.get("numero", "") or ""
+    factura_ref = f"{prefix}-{numero}" if prefix else str(numero)
 
+    # ── Payload según documentación Siigo API (Detailed voucher) ──
     payload = {
         "document": {"id": 3619},
+        "type": "Detailed",
         "date": date.today().isoformat(),
         "customer": {
-            "person_type": person_type,
-            "id_type": {"code": id_type_code},
             "identification": cedula,
-            "name": [nombre]
+            "branch_office": 0
         },
-        "stamp": {"send": False},
         "observations": f"Pago factura {factura_ref}",
         "items": [
             {
-                "account": {"code": cuenta},
-                "value": monto,
+                "account": {"code": cuenta, "movement": "Debit"},
                 "description": f"Recibo pago {factura_ref}",
-                "taxes": []
+                "value": monto
             },
             {
-                "account": {"code": "130505"},
-                "value": -monto,
+                "account": {"code": "13050501", "movement": "Credit"},
                 "description": f"Abono {factura_ref}",
-                "invoice": {"id": factura["siigo_invoice_id"]},
-                "taxes": []
+                "value": monto,
+                "due": {
+                    "prefix": prefix,
+                    "consecutive": int(numero) if str(numero).isdigit() else 0,
+                    "quote": 0,
+                    "date": date.today().isoformat()
+                }
             }
         ]
     }
@@ -1115,15 +1119,19 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
             json=payload,
             timeout=30
         )
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            err_body = resp.text[:500]
+            return {"ok": False, "error": f"Siigo HTTP {resp.status_code}: {err_body}"}
         data = resp.json()
         rc_id = str(data.get("id", ""))
         prefix_rc = data.get("prefix", "RC")
         number_rc = data.get("number", "")
         rc_numero = f"{prefix_rc}-{number_rc}" if number_rc else rc_id
         return {"ok": True, "simulado": False, "rc_id": rc_id, "rc_numero": rc_numero}
+    except requests.exceptions.RequestException as e:
+        return {"ok": False, "error": f"Error de red: {str(e)}"}
     except Exception as e:
-        return {"ok": False, "error": str(e)}
+        return {"ok": False, "error": f"Error inesperado: {str(e)}"}
 
 
 @router.post("/facturas/{factura_id}/generar-rc")
