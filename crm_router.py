@@ -1556,6 +1556,31 @@ def debug_sheet_tabs():
         return {"error": str(e)}
 
 
+@router.get("/debug/vouchers-siigo")
+def debug_vouchers_siigo():
+    """Muestra los primeros 3 vouchers de Siigo para ver su estructura real."""
+    from siigo import fetch_vouchers_paginated
+    try:
+        data = fetch_vouchers_paginated(page=1, page_size=5)
+        results = data.get("results", [])
+        total = data.get("pagination", {}).get("total_results", 0)
+        sample = []
+        for v in results[:3]:
+            sample.append({
+                "id": v.get("id"),
+                "document": v.get("document"),
+                "number": v.get("number"),
+                "consecutive": v.get("consecutive"),
+                "date": v.get("date"),
+                "total": v.get("total"),
+                "customer": v.get("customer"),
+                "keys": list(v.keys()),
+            })
+        return {"total_en_siigo": total, "muestra": sample}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/debug/factura-siigo")
 def debug_factura_siigo():
     """Muestra los primeros campos crudos de una factura reciente de Siigo para diagnóstico."""
