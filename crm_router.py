@@ -1448,8 +1448,8 @@ def get_conciliados(q: Optional[str] = None, filtro_rc: Optional[str] = None):
         d["factura"] = f"{d['prefix']}-{d['numero']}" if d.get("prefix") else str(d.get("numero", ""))
         # Fecha de pago: usar mov_fecha si existe, si no fecha de la factura
         d["fecha_pago"] = d["mov_fecha"] or d["fecha"]
-        # Banco/Efectivo display: banco del movimiento o medio_pago
-        d["banco_display"] = d.get("banco") or d.get("medio_pago") or "Sin especificar"
+        # Registrado en: banco del movimiento, medio_pago manual, o "Siigo" si se pagó directo allá
+        d["banco_display"] = d.get("banco") or d.get("medio_pago") or "Siigo"
         result.append(d)
 
     cur.close(); conn.close()
