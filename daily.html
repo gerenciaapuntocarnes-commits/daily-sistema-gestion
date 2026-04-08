@@ -5641,12 +5641,12 @@ async function loadConciliados() {
           '<code class="small text-success fw-bold">'+f.rc_numero+'</code>' +
           (f.rc_modo_prueba ? '<span class="badge bg-warning-lt" style="font-size:9px">PRUEBA</span>' : '') +
         '</div>';
-    } else if(f.banco_display === 'Siigo' && !f.movimiento_id) {
-      // Pagado directo en Siigo sin pasar por nuestra conciliación — probablemente ya tiene RC
-      rcNumCell = '<span class="text-secondary small" title="Pagado en Siigo — usa \'Verificar RC en Siigo\' para traer el número">' +
-          '<i class="ti ti-alert-circle me-1"></i>Verificar</span>';
+    } else if((f.balance || 0) === 0) {
+      // balance=0 en Siigo → Siigo ya tiene la factura como pagada, no generar RC duplicado
+      rcNumCell = '<span class="text-secondary small" title="Siigo ya registró este pago (balance=0). Usa \'Verificar RC\' para traer el número.">' +
+          '<i class="ti ti-circle-check me-1"></i>Pagado en Siigo</span>';
     } else {
-      // Conciliado por nosotros, RC pendiente de generar
+      // balance>0 en Siigo → aún pendiente de pago formal, se puede generar RC
       rcNumCell = '<button class="btn btn-xs btn-outline-primary" onclick="generarRcFactura('+f.id+')"><i class="ti ti-receipt me-1"></i>Generar RC</button>';
     }
     var bd = f.banco_display || 'Siigo';
