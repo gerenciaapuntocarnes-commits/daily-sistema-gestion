@@ -442,6 +442,12 @@ def _run_sync_siigo_inner(job):
               cliente_id = EXCLUDED.cliente_id,
               cliente_nombre = EXCLUDED.cliente_nombre,
               cliente_cedula = EXCLUDED.cliente_cedula,
+              -- Si Siigo dice balance=0 → pagado (Siigo es fuente de verdad)
+              -- Si Siigo dice balance>0 → solo actualizar si era pendiente (no revertir pagos manuales)
+              estado_pago = CASE
+                WHEN EXCLUDED.balance = 0 THEN 'pagado'
+                ELSE crm_facturas.estado_pago
+              END,
               sync_at = NOW()
         """, final_rows)
         conn.commit()
