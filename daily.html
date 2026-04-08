@@ -4700,28 +4700,70 @@ async function crmResetData() {
 // ── Sync Siigo ──
 async function crmSyncSiigo() {
   var resultEl = $('sync-siigo-result');
-  if(resultEl) resultEl.innerHTML = '<div class="text-secondary small"><i class="ti ti-loader spin me-1"></i>Sincronizando con Siigo — puede tomar 2-5 minutos...</div>';
-  notyf.open({type:'info', message:'Sincronizando Siigo...'});
-
-  // Also update header button state
   var btns = document.querySelectorAll('[onclick="crmSyncSiigo()"]');
-  btns.forEach(function(b){ b.disabled=true; b.innerHTML='<i class="ti ti-loader me-1 spin"></i>Sincronizando...'; });
 
-  var res = await api('/crm/sync/siigo','POST').catch(function(e){
-    var msg = (e && (e.detail || e.message)) ? (e.detail || e.message) : 'Error de conexión con Siigo';
+  function setBtnsLoading(on) {
+    btns.forEach(function(b){
+      b.disabled = on;
+      b.innerHTML = on
+        ? '<i class="ti ti-loader me-1 spin"></i>Sincronizando...'
+        : '<i class="ti ti-refresh me-1"></i>Sync Siigo';
+    });
+  }
+
+  // Check if already running
+  var status = await api('/crm/sync/siigo/status','GET',null,true).catch(function(){ return null; });
+  if(status && status.running) {
+    notyf.open({type:'info', message:'Sync ya en curso, esperando...'});
+    setBtnsLoading(true);
+    _pollSyncSiigo(resultEl, btns);
+    return;
+  }
+
+  setBtnsLoading(true);
+  if(resultEl) resultEl.innerHTML = '<div class="text-secondary small"><i class="ti ti-loader spin me-1"></i>Iniciando sync con Siigo...</div>';
+
+  var res = await api('/crm/sync/siigo','POST',null,true).catch(function(e){
+    var msg = (e && (e.detail || e.message)) ? (e.detail || e.message) : 'Error al iniciar sync';
     if(resultEl) resultEl.innerHTML = '<div class="alert alert-danger small">'+msg+'</div>';
+    setBtnsLoading(false);
     return null;
   });
 
-  btns.forEach(function(b){ b.disabled=false; b.innerHTML='<i class="ti ti-refresh me-1"></i>Sync Siigo'; });
-
-  if(res && res.ok) {
-    var msg = 'Clientes: +'+res.clientes.nuevos+' nuevos. Facturas: +'+res.facturas.nuevas+' nuevas.';
-    notyf.success(msg);
-    if(resultEl) resultEl.innerHTML = '<div class="alert alert-success small">'+msg+'</div>';
-    if(currentVentasTab==='activos') loadActivos();
-    loadCrmConfig();
+  if(res && res.started) {
+    notyf.open({type:'info', message:'Sync iniciado — puede tomar 2-3 min...'});
+    _pollSyncSiigo(resultEl, btns);
+  } else {
+    setBtnsLoading(false);
   }
+}
+
+function _pollSyncSiigo(resultEl, btns) {
+  var interval = setInterval(async function() {
+    var s = await api('/crm/sync/siigo/status','GET',null,true).catch(function(){ return null; });
+    if(!s) return;
+
+    if(resultEl && s.step) {
+      resultEl.innerHTML = '<div class="text-secondary small"><i class="ti ti-loader spin me-1"></i>'+s.step+'</div>';
+    }
+
+    if(!s.running) {
+      clearInterval(interval);
+      btns.forEach(function(b){
+        b.disabled = false;
+        b.innerHTML = '<i class="ti ti-refresh me-1"></i>Sync Siigo';
+      });
+      if(s.ok) {
+        notyf.success(s.msg);
+        if(resultEl) resultEl.innerHTML = '<div class="alert alert-success small">'+s.msg+'</div>';
+        if(currentVentasTab==='activos') loadActivos();
+        loadCrmConfig();
+      } else {
+        notyf.error(s.msg || 'Error en sync Siigo');
+        if(resultEl) resultEl.innerHTML = '<div class="alert alert-danger small">'+(s.msg||'Error')+'</div>';
+      }
+    }
+  }, 4000);
 }
 
 // ── Sync Bancos (Google Sheets) ──

@@ -19,6 +19,11 @@ from siigo import get_token, _headers as siigo_headers, SIIGO_BASE, _paginate
 
 router = APIRouter(prefix="/crm")
 
+# In-memory status for long-running sync jobs (single Railway instance)
+_sync_jobs: dict = {
+    "siigo": {"running": False, "ok": None, "msg": "", "step": "", "result": None}
+}
+
 # ═══════════════════════════════════════════════════════════════
 # CONFIG helpers
 # ═══════════════════════════════════════════════════════════════
@@ -244,19 +249,28 @@ def reset_crm():
 # ENDPOINTS — SYNC
 # ═══════════════════════════════════════════════════════════════
 
-@router.post("/sync/siigo")
-def sync_siigo():
-    """Jala clientes e facturas de Siigo y sincroniza con crm_clientes y crm_facturas."""
+def _run_sync_siigo():
+    """Tarea en background: sincroniza clientes y facturas de Siigo."""
+    job = _sync_jobs["siigo"]
+    job["running"] = True
+    job["ok"] = None
+    job["msg"] = ""
+    job["result"] = None
+
     try:
+        job["step"] = "Obteniendo clientes de Siigo..."
         customers = _fetch_siigo_customers()
     except Exception as e:
-        raise HTTPException(500, f"Error obteniendo clientes de Siigo: {str(e)}")
+        job["running"] = False
+        job["ok"] = False
+        job["msg"] = f"Error obteniendo clientes: {str(e)}"
+        return
 
     conn = get_conn()
     cur = conn.cursor()
     cli_new = cli_upd = 0
 
-    # Upsert customers
+    job["step"] = f"Guardando {len(customers)} clientes..."
     for c in customers:
         sid = str(c.get("id", ""))
         if not sid:
@@ -295,14 +309,18 @@ def sync_siigo():
 
     conn.commit()
 
-    # Now sync invoices
     try:
+        job["step"] = "Obteniendo facturas de Siigo (últimos 3 años, puede tomar 2-3 min)..."
         invoices = _fetch_siigo_invoices_all()
     except Exception as e:
         conn.close()
-        raise HTTPException(500, f"Error obteniendo facturas de Siigo: {str(e)}")
+        job["running"] = False
+        job["ok"] = False
+        job["msg"] = f"Error obteniendo facturas: {str(e)}"
+        return
 
     inv_new = inv_upd = 0
+    job["step"] = f"Guardando {len(invoices)} facturas..."
     for inv in invoices:
         if inv.get("annulled"):
             continue
@@ -327,7 +345,6 @@ def sync_siigo():
         cli_nombre = " ".join(cust_names) if isinstance(cust_names, list) else str(cust_names)
         cli_nombre = cli_nombre.strip() or "(Sin nombre)"
 
-        # Find client by siigo_id or cedula
         cliente_id = None
         siigo_cust_id = str(cust.get("id", "") or "")
         if siigo_cust_id:
@@ -341,10 +358,9 @@ def sync_siigo():
             if row:
                 cliente_id = row[0]
 
-        cur.execute("SELECT id, estado_pago FROM crm_facturas WHERE siigo_invoice_id = %s", (siigo_id,))
+        cur.execute("SELECT id FROM crm_facturas WHERE siigo_invoice_id = %s", (siigo_id,))
         existing = cur.fetchone()
         if existing:
-            # Only update balance/total, don't overwrite manually set estado_pago
             cur.execute("""
                 UPDATE crm_facturas SET total=%s, balance=%s, cliente_id=%s,
                   cliente_nombre=%s, cliente_cedula=%s, sync_at=NOW()
@@ -363,7 +379,6 @@ def sync_siigo():
 
     conn.commit()
 
-    # Log
     cur.execute("""
         INSERT INTO crm_sync_log (tipo, registros, nuevos, actualizados, detalle)
         VALUES ('siigo_full', %s, %s, %s, %s)
@@ -374,11 +389,32 @@ def sync_siigo():
     conn.commit()
     cur.close(); conn.close()
 
-    return {
+    result = {
         "ok": True,
         "clientes": {"nuevos": cli_new, "actualizados": cli_upd, "total": len(customers)},
         "facturas": {"nuevas": inv_new, "actualizadas": inv_upd, "total": len(invoices)}
     }
+    job["running"] = False
+    job["ok"] = True
+    job["msg"] = f"Clientes: +{cli_new} nuevos. Facturas: +{inv_new} nuevas."
+    job["step"] = "Completado"
+    job["result"] = result
+
+
+@router.post("/sync/siigo")
+def sync_siigo(background_tasks: BackgroundTasks):
+    """Inicia sync de Siigo en background y retorna inmediatamente."""
+    job = _sync_jobs["siigo"]
+    if job["running"]:
+        return {"started": False, "running": True, "msg": "Sync ya en curso"}
+    background_tasks.add_task(_run_sync_siigo)
+    return {"started": True, "running": True, "msg": "Sync iniciado"}
+
+
+@router.get("/sync/siigo/status")
+def sync_siigo_status():
+    """Retorna el estado actual del sync de Siigo."""
+    return _sync_jobs["siigo"]
 
 
 @router.post("/sync/excel")
