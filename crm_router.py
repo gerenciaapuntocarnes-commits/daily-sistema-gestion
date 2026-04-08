@@ -95,22 +95,40 @@ def _get_sheets_service():
 
 
 def _clean_valor_sheet(v) -> Optional[float]:
+    """
+    Parsea valores del Sheet colombiano: punto=miles, coma=decimal.
+    Ej: "406.080,00" -> 406080.0  |  "1.234.567,50" -> 1234567.5
+    También maneja números ya como float/int (Google Sheets los entrega así).
+    """
     if v is None:
         return None
     if isinstance(v, (int, float)):
         return float(v)
-    s = str(v).strip().replace("$", "").replace(",", "").replace(".", "").strip()
+    s = str(v).strip().replace("$", "").replace("\xa0", "").strip()
     if not s:
         return None
+    # Formato colombiano: punto miles, coma decimal → "406.080,00"
+    if "," in s and "." in s:
+        # Quitar puntos de miles, cambiar coma decimal por punto
+        s = s.replace(".", "").replace(",", ".")
+    elif "," in s:
+        # Solo coma: puede ser decimal colombiano "406080,00" o miles "406,080"
+        # Si hay exactamente 3 dígitos después de la coma → miles; si no → decimal
+        parts = s.split(",")
+        if len(parts) == 2 and len(parts[1]) == 3 and parts[1].isdigit():
+            s = s.replace(",", "")  # miles sin decimal
+        else:
+            s = s.replace(",", ".")  # decimal
+    elif "." in s:
+        # Solo punto: puede ser miles "406.080" o decimal "406.08"
+        parts = s.split(".")
+        if len(parts) == 2 and len(parts[1]) == 3 and parts[1].isdigit():
+            s = s.replace(".", "")  # miles sin decimal
+        # Si no, dejarlo como está (decimal anglosajón)
     try:
         return float(s)
     except ValueError:
-        try:
-            # Try interpreting dots as thousands separators
-            s2 = re.sub(r"[^0-9]", "", str(v).strip())
-            return float(s2) if s2 else None
-        except ValueError:
-            return None
+        return None
 
 
 def _parse_date_sheet(v) -> Optional[date]:
