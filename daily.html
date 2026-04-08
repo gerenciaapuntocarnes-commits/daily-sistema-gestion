@@ -995,7 +995,7 @@ tr:hover .btn-delete { opacity: 1; }
             <thead>
               <tr>
                 <th style="width:36px"><input type="checkbox" class="form-check-input" id="conciliados-check-all" onchange="toggleAllConciliados(this.checked)"></th>
-                <th>Fecha</th><th>Cliente</th><th>Factura</th><th class="text-end">Monto</th><th>Banco/Efectivo</th><th>Fecha pago</th><th>RC</th>
+                <th>Fecha</th><th>Cliente</th><th>Factura</th><th class="text-end">Monto</th><th>Banco/Efectivo</th><th>Fecha pago</th><th>RC</th><th></th>
               </tr>
             </thead>
             <tbody id="conciliados-body"></tbody>
@@ -2335,6 +2335,51 @@ tr:hover .btn-delete { opacity: 1; }
     <div class="card-footer text-end">
       <button class="btn btn-link me-2" onclick="closeModal('modal-sanitario')">Cancelar</button>
       <button class="btn btn-primary" onclick="crearRegistroSanitario()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal editar conciliación -->
+<div id="modal-editar-conciliado" class="modal-bg">
+  <div class="card" style="width:100%;max-width:420px">
+    <div class="card-header">
+      <h3 class="card-title"><i class="ti ti-pencil me-2"></i>Editar conciliación</h3>
+      <button type="button" class="btn-close" onclick="closeModal('modal-editar-conciliado')"></button>
+    </div>
+    <div class="card-body">
+      <input type="hidden" id="edit-concil-id">
+      <div class="mb-3">
+        <label class="form-label">Medio de pago</label>
+        <select class="form-select" id="edit-concil-medio" onchange="editConcilAutoFillCuenta()">
+          <option value="">-- Sin especificar --</option>
+          <option value="Efectivo">Efectivo</option>
+          <option value="Banco de Bogota">Banco de Bogotá (BDB)</option>
+          <option value="Bancolombia">Bancolombia</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Cuenta débito <span class="text-secondary small">(código contable)</span></label>
+        <select class="form-select" id="edit-concil-cuenta">
+          <option value="11050501">11050501 — Caja</option>
+          <option value="11100501">11100501 — Banco de Bogotá</option>
+          <option value="11200502">11200502 — Bancolombia</option>
+        </select>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Canal de venta <span class="text-secondary small">(opcional)</span></label>
+        <select class="form-select" id="edit-concil-canal">
+          <option value="">-- Sin especificar --</option>
+          <option value="Domicilio">Domicilio</option>
+          <option value="Punto de venta">Punto de venta</option>
+          <option value="WhatsApp">WhatsApp</option>
+          <option value="Plataforma">Plataforma</option>
+          <option value="Vendedor">Vendedor</option>
+        </select>
+      </div>
+    </div>
+    <div class="card-footer text-end">
+      <button class="btn btn-link me-2" onclick="closeModal('modal-editar-conciliado')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarEditConciliado()"><i class="ti ti-check me-1"></i>Guardar</button>
     </div>
   </div>
 </div>
@@ -5517,19 +5562,26 @@ async function loadConciliados() {
     var sel = conciliadosSeleccionados.has(f.id);
     var rcCell = f.rc_numero
       ? '<span class="badge bg-success-lt">'+f.rc_numero+(f.rc_modo_prueba?' <span class="badge bg-warning-lt" style="font-size:9px">PRUEBA</span>':'')+'</span>'
-      : '<button class="btn btn-xs btn-outline-primary" onclick="generarRcFactura('+f.id+')"><i class="ti ti-receipt me-1"></i>Generar RC</button>';
+      : '<button class="btn btn-xs btn-outline-primary" onclick="generarRcFactura('+f.id+')"><i class="ti ti-receipt me-1"></i>RC</button>';
     var medioBadge = f.medio_pago
       ? '<span class="badge bg-azure-lt">'+f.medio_pago+'</span>'
       : '<span class="text-secondary small">--</span>';
+    var canRevert = !f.rc_numero || f.rc_modo_prueba;
     return '<tr class="'+(sel?'table-warning':'')+'">' +
       '<td><input type="checkbox" class="form-check-input" '+(sel?'checked':'')+' onchange="toggleConciliadoSelect('+f.id+',this.checked)"></td>' +
       '<td class="small">'+f.fecha+'</td>' +
-      '<td class="small" style="max-width:150px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="'+(f.cliente_nombre||'')+'">'+( f.cliente_nombre||'--')+'</td>' +
+      '<td class="small" style="max-width:130px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="'+(f.cliente_nombre||'')+'">'+( f.cliente_nombre||'--')+'</td>' +
       '<td><code class="small">'+f.factura+'</code></td>' +
       '<td class="text-end fw-bold">$'+fmt(f.total)+'</td>' +
       '<td>'+medioBadge+'</td>' +
       '<td class="small">'+(f.fecha_pago||'--')+'</td>' +
       '<td>'+rcCell+'</td>' +
+      '<td>' +
+        '<div class="btn-group btn-group-sm">' +
+          '<button class="btn btn-outline-secondary btn-xs" onclick="editarConciliado('+f.id+',\''+( f.medio_pago||'')+'\',\''+(f.origen_canal||'')+'\',\''+( f.cuenta_debito||'')+'\')" title="Editar"><i class="ti ti-pencil"></i></button>' +
+          (canRevert ? '<button class="btn btn-outline-danger btn-xs" onclick="revertirConciliacion('+f.id+')" title="Revertir"><i class="ti ti-arrow-back-up"></i></button>' : '<button class="btn btn-outline-secondary btn-xs" disabled title="Tiene RC real en Siigo"><i class="ti ti-lock"></i></button>') +
+        '</div>' +
+      '</td>' +
     '</tr>';
   }).join('');
 }
@@ -5560,6 +5612,61 @@ function toggleAllConciliados(checked) {
     });
   }
   _updateBtnRcSeleccion();
+}
+
+async function revertirConciliacion(id) {
+  confirmAction('¿Revertir esta conciliación? La factura volverá a Pendientes y el movimiento bancario quedará libre.', async function(){
+    var res = await api('/crm/facturas/'+id+'/revertir','POST').catch(function(){ return null; });
+    if(res && res.ok) {
+      notyf.success('Conciliación revertida');
+      loadConciliados();
+      loadConciliacion();
+    }
+  });
+}
+
+function editarConciliado(id, medio, canal, cuenta) {
+  $('edit-concil-id').value = id;
+  var medioSel = $('edit-concil-medio');
+  var cuentaSel = $('edit-concil-cuenta');
+  var canalSel = $('edit-concil-canal');
+  // Setear medio
+  for(var i=0; i<medioSel.options.length; i++) {
+    if(medioSel.options[i].value === medio) { medioSel.selectedIndex = i; break; }
+  }
+  // Setear cuenta
+  for(var i=0; i<cuentaSel.options.length; i++) {
+    if(cuentaSel.options[i].value === cuenta) { cuentaSel.selectedIndex = i; break; }
+  }
+  // Setear canal
+  for(var i=0; i<canalSel.options.length; i++) {
+    if(canalSel.options[i].value === canal) { canalSel.selectedIndex = i; break; }
+  }
+  openModal('modal-editar-conciliado');
+}
+
+function editConcilAutoFillCuenta() {
+  var medio = $('edit-concil-medio').value;
+  var map = {'Efectivo':'11050501','Banco de Bogota':'11100501','Bancolombia':'11200502'};
+  var cuenta = map[medio] || '11050501';
+  var sel = $('edit-concil-cuenta');
+  for(var i=0; i<sel.options.length; i++) {
+    if(sel.options[i].value === cuenta) { sel.selectedIndex = i; break; }
+  }
+}
+
+async function guardarEditConciliado() {
+  var id = $('edit-concil-id').value;
+  var res = await api('/crm/facturas/'+id+'/editar','PUT',{
+    medio_pago: $('edit-concil-medio').value || null,
+    cuenta_debito: $('edit-concil-cuenta').value || null,
+    origen_canal: $('edit-concil-canal').value || null
+  }).catch(function(){ return null; });
+  if(res && res.ok) {
+    notyf.success('Guardado');
+    closeModal('modal-editar-conciliado');
+    loadConciliados();
+  }
 }
 
 function _updateBtnRcSeleccion() {

@@ -1403,6 +1403,82 @@ def pagar_efectivo(factura_id: int):
     return {"ok": True, "factura_id": factura_id}
 
 
+@router.post("/facturas/{factura_id}/revertir")
+def revertir_factura(factura_id: int):
+    """Revierte una conciliación: vuelve la factura a pendiente y desliga el movimiento bancario."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, estado_pago, movimiento_id, rc_siigo_id, rc_modo_prueba
+        FROM crm_facturas WHERE id = %s
+    """, (factura_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        raise HTTPException(404, "Factura no encontrada")
+
+    _, estado, mov_id, rc_id, rc_prueba = row
+
+    if rc_id and not rc_prueba:
+        cur.close(); conn.close()
+        raise HTTPException(400, "No se puede revertir: ya tiene un RC real generado en Siigo. Anúlalo primero en Siigo.")
+
+    # Desligar movimiento bancario
+    if mov_id:
+        cur.execute("""
+            UPDATE movimientos_bancarios
+            SET conciliado = FALSE, factura_id = NULL
+            WHERE id = %s
+        """, (mov_id,))
+
+    # Revertir factura a pendiente
+    cur.execute("""
+        UPDATE crm_facturas
+        SET estado_pago = 'pendiente',
+            medio_pago = NULL,
+            cuenta_debito = NULL,
+            movimiento_id = NULL,
+            rc_siigo_id = NULL,
+            rc_numero = NULL,
+            rc_modo_prueba = TRUE
+        WHERE id = %s
+    """, (factura_id,))
+
+    conn.commit()
+    cur.close(); conn.close()
+    return {"ok": True}
+
+
+class EditarFacturaIn(BaseModel):
+    medio_pago: Optional[str] = None
+    cuenta_debito: Optional[str] = None
+    origen_canal: Optional[str] = None
+
+@router.put("/facturas/{factura_id}/editar")
+def editar_factura_conciliada(factura_id: int, data: EditarFacturaIn):
+    """Edita campos de una factura conciliada sin revertir el pago."""
+    conn = get_conn()
+    cur = conn.cursor()
+    sets, vals = [], []
+    if data.medio_pago is not None:
+        sets.append("medio_pago=%s"); vals.append(data.medio_pago)
+        # Auto-actualizar cuenta_debito si no viene explícita
+        if data.cuenta_debito is None:
+            sets.append("cuenta_debito=%s"); vals.append(_cuenta_for_medio(data.medio_pago))
+    if data.cuenta_debito is not None:
+        sets.append("cuenta_debito=%s"); vals.append(data.cuenta_debito)
+    if data.origen_canal is not None:
+        sets.append("origen_canal=%s"); vals.append(data.origen_canal)
+    if not sets:
+        cur.close(); conn.close()
+        return {"ok": True}
+    vals.append(factura_id)
+    cur.execute(f"UPDATE crm_facturas SET {', '.join(sets)} WHERE id=%s", vals)
+    conn.commit()
+    cur.close(); conn.close()
+    return {"ok": True}
+
+
 class RcMasivoIn(BaseModel):
     factura_ids: list
 
