@@ -146,14 +146,32 @@ def _parse_date_sheet(v) -> Optional[date]:
     return None
 
 
+_sheet_name_cache = {}  # tab_name_normalizado -> nombre exacto del Sheet
+
+def _get_exact_tab_name(service, tab_name: str) -> str:
+    """Resuelve el nombre exacto de una pestaña normalizando espacios y mayúsculas."""
+    global _sheet_name_cache
+    if not _sheet_name_cache:
+        try:
+            meta = service.spreadsheets().get(spreadsheetId=SHEET_ID).execute()
+            for s in meta.get("sheets", []):
+                title = s["properties"]["title"]
+                key = title.strip().upper().replace("\xa0", " ")
+                _sheet_name_cache[key] = title
+        except Exception as e:
+            print(f"Error obteniendo metadatos del Sheet: {e}")
+    key = tab_name.strip().upper().replace("\xa0", " ")
+    return _sheet_name_cache.get(key, tab_name)
+
+
 def _fetch_sheet_tab(service, tab_name: str) -> list:
-    """Fetch all rows from a sheet tab. Returns list of row lists."""
+    """Fetch all rows from a sheet tab usando el nombre exacto del Sheet."""
     try:
-        # Siempre entrecomillar el nombre con comillas simples — obligatorio si tiene espacios
-        safe_name = tab_name.replace("'", "\\'")
+        exact = _get_exact_tab_name(service, tab_name)
+        safe = exact.replace("'", "\\'")
         result = service.spreadsheets().values().get(
             spreadsheetId=SHEET_ID,
-            range=f"'{safe_name}'!A:J"
+            range=f"'{safe}'!A:J"
         ).execute()
         return result.get("values", [])
     except Exception as e:
@@ -1478,18 +1496,36 @@ def auto_conciliar():
 
 @router.get("/debug/sheet-preview/{tab_name:path}")
 def debug_sheet_preview(tab_name: str):
-    """Muestra las primeras 5 filas de una pestaña del Sheet para ver el layout de columnas."""
+    """Muestra las primeras 5 filas de una pestaña + hex del nombre para detectar caracteres ocultos."""
     try:
         service = _get_sheets_service()
-        safe_name = tab_name.replace("'", "\\'")
+        # Obtener nombre exacto desde metadatos
+        meta = service.spreadsheets().get(spreadsheetId=SHEET_ID).execute()
+        sheets = {s["properties"]["title"]: s["properties"]["sheetId"]
+                  for s in meta.get("sheets", [])}
+
+        # Buscar coincidencia normalizando espacios
+        exact_name = None
+        for name in sheets:
+            if name.strip().upper().replace("\xa0", " ") == tab_name.strip().upper().replace("\xa0", " "):
+                exact_name = name
+                break
+
+        if not exact_name:
+            return {"error": "Pestaña no encontrada", "disponibles": list(sheets.keys())}
+
+        # Mostrar hex del nombre para detectar caracteres especiales
+        name_hex = exact_name.encode("utf-8").hex()
+
+        safe_name = exact_name.replace("'", "\\'")
         result = service.spreadsheets().values().get(
             spreadsheetId=SHEET_ID,
             range=f"'{safe_name}'!A1:M10"
         ).execute()
         rows = result.get("values", [])
-        return {"tab": tab_name, "filas": rows}
+        return {"tab_exacto": exact_name, "hex": name_hex, "filas": rows}
     except Exception as e:
-        return {"error": str(e), "tab": tab_name}
+        return {"error": str(e)}
 
 
 @router.get("/debug/sheet-tabs")
