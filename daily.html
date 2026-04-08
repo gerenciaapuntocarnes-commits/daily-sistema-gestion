@@ -5656,6 +5656,7 @@ async function loadConciliados() {
       '<td>' +
         '<div class="btn-group btn-group-sm">' +
           '<button class="btn btn-outline-secondary btn-xs" onclick="editarConciliado('+f.id+',\''+( f.medio_pago||'')+'\',\''+(f.origen_canal||'')+'\',\''+( f.cuenta_debito||'')+'\')" title="Editar"><i class="ti ti-pencil"></i></button>' +
+          (f.movimiento_id ? '<button class="btn btn-outline-teal btn-xs" onclick="actualizarSheet('+f.movimiento_id+')" title="Marcar CONCILIADO en Sheets"><i class="ti ti-table-export"></i></button>' : '') +
           (canRevert ? '<button class="btn btn-outline-danger btn-xs" onclick="revertirConciliacion('+f.id+')" title="Revertir"><i class="ti ti-arrow-back-up"></i></button>' : '<button class="btn btn-outline-secondary btn-xs" disabled title="Tiene RC real en Siigo"><i class="ti ti-lock"></i></button>') +
         '</div>' +
       '</td>' +
@@ -5689,6 +5690,15 @@ function toggleAllConciliados(checked) {
     });
   }
   _updateBtnRcSeleccion();
+}
+
+async function actualizarSheet(movId) {
+  var res = await api('/crm/movimientos/'+movId+'/actualizar-sheet','POST').catch(function(){ return null; });
+  if(res && res.ok) {
+    notyf.success('Sheet actualizado: fila '+res.fila+' → CONCILIADO'+(res.cliente?' / '+res.cliente:''));
+  } else {
+    notyf.error('Error actualizando Sheet');
+  }
 }
 
 async function revertirConciliacion(id) {

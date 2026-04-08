@@ -90,7 +90,7 @@ def _get_sheets_service():
         else:
             raise RuntimeError("Google credentials not found. Set GOOGLE_CREDENTIALS_JSON env var.")
 
-    scopes = ["https://www.googleapis.com/auth/spreadsheets.readonly"]
+    scopes = ["https://www.googleapis.com/auth/spreadsheets"]  # lectura + escritura
     creds = service_account.Credentials.from_service_account_info(info, scopes=scopes)
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
@@ -283,6 +283,74 @@ def reset_crm():
     conn.commit()
     cur.close(); conn.close()
     return {"ok": True, "mensaje": "Datos CRM eliminados. Listo para sincronizar desde Siigo."}
+
+
+# Columnas por banco: {banco: (col_estado_idx, col_cliente_idx)} — 0-based
+_SHEET_COLS = {
+    "BDB":         {"estado": 4, "cliente": 6},   # E, G
+    "BANCOLOMBIA": {"estado": 3, "cliente": 5},   # D, F
+}
+
+def _col_letter(idx: int) -> str:
+    """Convierte índice 0-based a letra de columna: 0→A, 4→E, etc."""
+    return chr(65 + idx)
+
+
+@router.post("/movimientos/{mov_id}/actualizar-sheet")
+def actualizar_movimiento_sheet(mov_id: int):
+    """Escribe CONCILIADO + nombre del cliente en el Sheet para el movimiento dado."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT m.banco, m.sheet_tab, m.sheet_row, m.factura_id,
+               c.nombre AS cliente_nombre
+        FROM movimientos_bancarios m
+        LEFT JOIN crm_facturas f ON f.id = m.factura_id
+        LEFT JOIN crm_clientes cl ON cl.id = f.cliente_id
+        LEFT JOIN crm_clientes c ON c.id = f.cliente_id
+        WHERE m.id = %s
+    """, (mov_id,))
+    row = cur.fetchone()
+    cur.close(); conn.close()
+
+    if not row:
+        raise HTTPException(404, "Movimiento no encontrado")
+
+    banco, sheet_tab, sheet_row, factura_id, cliente_nombre = row
+
+    if not sheet_tab or not sheet_row:
+        raise HTTPException(400, "Movimiento sin referencia al Sheet")
+
+    cols = _SHEET_COLS.get(banco, {"estado": 3, "cliente": 5})
+    col_estado  = _col_letter(cols["estado"])
+    col_cliente = _col_letter(cols["cliente"])
+
+    try:
+        service = _get_sheets_service()
+        exact_tab = _get_exact_tab_name(service, sheet_tab)
+        safe_tab  = exact_tab.replace("'", "\\'")
+
+        # Actualizar celda ESTADO
+        service.spreadsheets().values().update(
+            spreadsheetId=SHEET_ID,
+            range=f"'{safe_tab}'!{col_estado}{sheet_row}",
+            valueInputOption="RAW",
+            body={"values": [["CONCILIADO"]]}
+        ).execute()
+
+        # Actualizar celda CLIENTE
+        if cliente_nombre:
+            service.spreadsheets().values().update(
+                spreadsheetId=SHEET_ID,
+                range=f"'{safe_tab}'!{col_cliente}{sheet_row}",
+                valueInputOption="RAW",
+                body={"values": [[cliente_nombre]]}
+            ).execute()
+
+        return {"ok": True, "tab": exact_tab, "fila": sheet_row,
+                "estado": "CONCILIADO", "cliente": cliente_nombre}
+    except Exception as e:
+        raise HTTPException(500, f"Error actualizando Sheet: {str(e)}")
 
 
 @router.post("/fix/conciliados-estado")
