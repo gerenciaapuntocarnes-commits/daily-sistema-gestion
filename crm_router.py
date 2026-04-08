@@ -1474,6 +1474,21 @@ def auto_conciliar():
 # ENDPOINTS — SYNC LOG
 # ═══════════════════════════════════════════════════════════════
 
+@router.get("/debug/sheet-preview/{tab_name:path}")
+def debug_sheet_preview(tab_name: str):
+    """Muestra las primeras 5 filas de una pestaña del Sheet para ver el layout de columnas."""
+    try:
+        service = _get_sheets_service()
+        result = service.spreadsheets().values().get(
+            spreadsheetId=SHEET_ID,
+            range=f"{tab_name}!A1:M10"
+        ).execute()
+        rows = result.get("values", [])
+        return {"tab": tab_name, "filas": rows}
+    except Exception as e:
+        return {"error": str(e), "tab": tab_name}
+
+
 @router.get("/debug/sheet-tabs")
 def debug_sheet_tabs():
     """Lista las pestañas reales del Sheet y cuántas filas tiene cada una."""
