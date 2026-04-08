@@ -262,6 +262,26 @@ def reset_crm():
     return {"ok": True, "mensaje": "Datos CRM eliminados. Listo para sincronizar desde Siigo."}
 
 
+@router.post("/fix/conciliados-estado")
+def fix_conciliados_estado():
+    """Marca como conciliados los movimientos cuyo estado indica que ya tienen medio de pago en Siigo."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE movimientos_bancarios
+        SET conciliado = TRUE
+        WHERE conciliado = FALSE
+          AND (
+            estado ILIKE '%MEDIO DE PAGO%' OR
+            estado ILIKE '%QUEDO CON MEDIO%'
+          )
+    """)
+    marcados = cur.rowcount
+    conn.commit()
+    cur.close(); conn.close()
+    return {"ok": True, "marcados": marcados}
+
+
 @router.post("/reset/bancos")
 def reset_bancos():
     """Elimina solo los movimientos bancarios, conservando clientes y facturas."""
@@ -651,8 +671,12 @@ def sync_bancos():
                 skip += 1
                 continue
 
-            # Auto-detect conciliado
-            conciliado = estado and "CONCILI" in estado.upper()
+            # Auto-detect conciliado: ya conciliado o factura marcada con medio de pago
+            conciliado = bool(estado and (
+                "CONCILI" in estado.upper() or
+                "MEDIO DE PAGO" in estado.upper() or
+                "QUEDO CON MEDIO" in estado.upper()
+            ))
 
             cur.execute("""
                 INSERT INTO movimientos_bancarios
@@ -663,14 +687,26 @@ def sync_bancos():
                   conciliado, row_idx, tab_name))
             ins += 1
 
+    # Marcar como conciliados los registros existentes con estado "MEDIO DE PAGO"
+    cur.execute("""
+        UPDATE movimientos_bancarios
+        SET conciliado = TRUE
+        WHERE conciliado = FALSE
+          AND (
+            estado ILIKE '%MEDIO DE PAGO%' OR
+            estado ILIKE '%QUEDO CON MEDIO%'
+          )
+    """)
+    marcados = cur.rowcount
+
     conn.commit()
     cur.execute("""
         INSERT INTO crm_sync_log (tipo, registros, nuevos, actualizados, detalle)
-        VALUES ('bancos', %s, %s, 0, %s)
-    """, (ins, ins, f"Movimientos bancarios: {ins} nuevos, {skip} ignorados"))
+        VALUES ('bancos', %s, %s, %s, %s)
+    """, (ins + marcados, ins, marcados, f"Movimientos bancarios: {ins} nuevos, {skip} ignorados, {marcados} marcados conciliados por estado"))
     conn.commit()
     cur.close(); conn.close()
-    return {"ok": True, "nuevos": ins, "ignorados": skip}
+    return {"ok": True, "nuevos": ins, "ignorados": skip, "marcados_conciliados": marcados}
 
 
 # ═══════════════════════════════════════════════════════════════
