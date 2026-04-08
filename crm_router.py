@@ -97,8 +97,8 @@ def _get_sheets_service():
 def _clean_valor_sheet(v) -> Optional[float]:
     """
     Parsea valores del Sheet colombiano: punto=miles, coma=decimal.
-    Ej: "406.080,00" -> 406080.0  |  "1.234.567,50" -> 1234567.5
-    También maneja números ya como float/int (Google Sheets los entrega así).
+    Ej: "406.080,00" -> 406080.0  |  "1.234.567,50" -> 1234567.5  |  "1.500.000" -> 1500000.0
+    Google Sheets API entrega números como float directamente — esos pasan sin modificar.
     """
     if v is None:
         return None
@@ -107,24 +107,23 @@ def _clean_valor_sheet(v) -> Optional[float]:
     s = str(v).strip().replace("$", "").replace("\xa0", "").strip()
     if not s:
         return None
-    # Formato colombiano: punto miles, coma decimal → "406.080,00"
     if "," in s and "." in s:
-        # Quitar puntos de miles, cambiar coma decimal por punto
+        # Formato colombiano clásico: "1.234.567,50" → quitar puntos, coma→punto
         s = s.replace(".", "").replace(",", ".")
     elif "," in s:
-        # Solo coma: puede ser decimal colombiano "406080,00" o miles "406,080"
-        # Si hay exactamente 3 dígitos después de la coma → miles; si no → decimal
         parts = s.split(",")
         if len(parts) == 2 and len(parts[1]) == 3 and parts[1].isdigit():
-            s = s.replace(",", "")  # miles sin decimal
+            s = s.replace(",", "")  # coma como miles: "1,500,000"
         else:
-            s = s.replace(",", ".")  # decimal
+            s = s.replace(",", ".")  # coma como decimal: "406080,00"
     elif "." in s:
-        # Solo punto: puede ser miles "406.080" o decimal "406.08"
         parts = s.split(".")
-        if len(parts) == 2 and len(parts[1]) == 3 and parts[1].isdigit():
-            s = s.replace(".", "")  # miles sin decimal
-        # Si no, dejarlo como está (decimal anglosajón)
+        if len(parts) > 2:
+            # Múltiples puntos = separadores de miles: "1.500.000"
+            s = s.replace(".", "")
+        elif len(parts) == 2 and len(parts[1]) == 3 and parts[1].isdigit():
+            s = s.replace(".", "")  # un punto como miles: "406.080"
+        # Si no (ej: "406.08"), dejar como decimal anglosajón
     try:
         return float(s)
     except ValueError:
