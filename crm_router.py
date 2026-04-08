@@ -1178,73 +1178,72 @@ def sync_rc_siigo():
                 "fecha": fecha, "siigo_invoice_id": siigo_inv_id
             })
 
-    # Paginar vouchers de Siigo (RCs tienen document.id típicamente 3619)
-    encontrados = 0
+    # Paginar todos los RCs de Siigo y agrupar por cliente
+    # La API no retorna total en la lista — usamos cliente + fecha para el match
+    rc_por_cliente = {}  # cliente_siigo_id -> lista de {id, numero, fecha}
     page = 1
     while True:
         data = fetch_vouchers_paginated(page=page, page_size=100)
         results = data.get("results", [])
         if not results:
             break
-
         for v in results:
             doc = v.get("document", {}) or {}
-            # Filtrar solo Recibos de Caja: document.id == 3619
             if doc.get("id") != 3619:
                 continue
-
-            v_id      = str(v.get("id", ""))
-            v_num     = v.get("number") or v.get("consecutive")
-            v_name    = str(v.get("name", "") or "")
+            v_id        = str(v.get("id", ""))
+            v_num       = v.get("number")
+            v_name      = str(v.get("name", "") or "")
             v_fecha_str = (v.get("date") or "")[:10]
-            v_cust    = v.get("customer", {}) or {}
-            v_cust_id = str(v_cust.get("id", "") or "")
-
-            # total viene null en la lista — calcular sumando items
-            items = v.get("items") or []
-            v_total = sum(float(it.get("value", 0) or 0) for it in items)
-
+            v_cust      = v.get("customer", {}) or {}
+            v_cust_id   = str(v_cust.get("id", "") or "")
             if not v_id or not v_cust_id:
                 continue
-
-            # Buscar factura que coincida por cliente + monto + fecha
-            candidatas = fac_idx.get(v_cust_id, [])
-            for fac in candidatas:
-                if fac.get("_matched"):
-                    continue
-                dias = abs((v_fecha - fac["fecha"]).days) if v_fecha and fac["fecha"] else 999
-                if v_total > 0 and fac["total"] > 0:
-                    diff_pct = abs(v_total - fac["total"]) / fac["total"]
-                    match_monto = diff_pct <= 0.02
-                else:
-                    # Sin total en items — solo matchear por cliente + fecha cercana
-                    match_monto = True
-                if match_monto and dias <= 90:
-                    # Match encontrado — actualizar BD
-                    rc_prefix = str(doc.get("prefix", "") or "").strip()
-                    # Usar v_name si viene (ej: "RC-3726"), si no construir con prefix+number
-                    if v_name and v_name != str(v_num):
-                        rc_numero_str = v_name
-                    else:
-                        rc_numero_str = f"{rc_prefix}-{v_num}" if rc_prefix else str(v_num)
-                    cur.execute("""
-                        UPDATE crm_facturas
-                        SET rc_siigo_id = %s, rc_numero = %s, rc_modo_prueba = FALSE
-                        WHERE id = %s AND rc_siigo_id IS NULL
-                    """, (v_id, rc_numero_str, fac["id"]))
-                    if cur.rowcount:
-                        fac["_matched"] = True
-                        encontrados += 1
-                    break
-
+            try:
+                v_fecha = datetime.strptime(v_fecha_str, "%Y-%m-%d").date() if v_fecha_str else None
+            except ValueError:
+                v_fecha = None
+            rc_num_str = v_name if (v_name and v_name != str(v_num)) else str(v_num)
+            rc_por_cliente.setdefault(v_cust_id, []).append({
+                "id": v_id, "numero": rc_num_str, "fecha": v_fecha
+            })
         total_results = data.get("pagination", {}).get("total_results", 0)
         if page * 100 >= total_results:
             break
         page += 1
 
+    # Cruzar facturas sin RC con RCs de Siigo por cliente
+    # Solo vincula si hay exactamente 1 RC del cliente en ±60 días de la factura
+    encontrados = ambiguos = 0
+    for cli_siigo_id, facturas in fac_idx.items():
+        rcs_cliente = rc_por_cliente.get(cli_siigo_id, [])
+        if not rcs_cliente:
+            continue
+        for fac in facturas:
+            if fac.get("_matched"):
+                continue
+            cercanos = [
+                rc for rc in rcs_cliente
+                if rc["fecha"] and fac["fecha"]
+                and abs((rc["fecha"] - fac["fecha"]).days) <= 60
+            ]
+            if len(cercanos) == 1:
+                rc = cercanos[0]
+                cur.execute("""
+                    UPDATE crm_facturas
+                    SET rc_siigo_id = %s, rc_numero = %s, rc_modo_prueba = FALSE
+                    WHERE id = %s AND rc_siigo_id IS NULL
+                """, (rc["id"], rc["numero"], fac["id"]))
+                if cur.rowcount:
+                    fac["_matched"] = True
+                    encontrados += 1
+            elif len(cercanos) > 1:
+                ambiguos += 1
+
     conn.commit()
     cur.close(); conn.close()
-    return {"ok": True, "encontrados": encontrados, "revisadas": len(facturas_sin_rc)}
+    return {"ok": True, "encontrados": encontrados, "ambiguos": ambiguos,
+            "revisadas": len(facturas_sin_rc), "rcs_en_siigo": sum(len(v) for v in rc_por_cliente.values())}
 
 
 # ═══════════════════════════════════════════════════════════════
