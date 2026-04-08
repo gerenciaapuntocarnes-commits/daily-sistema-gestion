@@ -1339,6 +1339,14 @@ def sync_rc_status():
             "step": job["step"], "result": job["result"]}
 
 
+@router.post("/sync/rc-siigo/reset")
+def sync_rc_reset():
+    """Fuerza el reset del job de sync RC (por si quedó trabado)."""
+    job = _sync_jobs["rc"]
+    job["running"] = False; job["ok"] = None; job["msg"] = "Resetado manualmente"; job["step"] = ""
+    return {"ok": True}
+
+
 # ═══════════════════════════════════════════════════════════════
 # ENDPOINTS — CONCILIACIÓN BANCARIA
 # ═══════════════════════════════════════════════════════════════
