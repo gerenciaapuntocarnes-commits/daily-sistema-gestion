@@ -21,7 +21,8 @@ router = APIRouter(prefix="/crm")
 
 # In-memory status for long-running sync jobs (single Railway instance)
 _sync_jobs: dict = {
-    "siigo": {"running": False, "ok": None, "msg": "", "step": "", "result": None}
+    "siigo": {"running": False, "ok": None, "msg": "", "step": "", "result": None},
+    "rc":    {"running": False, "ok": None, "msg": "", "step": "", "result": None},
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -1141,13 +1142,18 @@ def generar_rc_masivo():
 # SYNC RC DESDE SIIGO
 # ═══════════════════════════════════════════════════════════════
 
-@router.post("/sync/rc-siigo")
-def sync_rc_siigo():
-    """
-    Busca en Siigo todos los Recibos de Caja existentes y los cruza con
-    nuestras facturas conciliadas sin rc_numero, actualizando el número.
-    Matching: siigo_customer_id + monto (±2%) + fecha (±90 días).
-    """
+def _run_sync_rc():
+    """Background task: busca RCs en Siigo y los vincula a facturas."""
+    job = _sync_jobs["rc"]
+    job["running"] = True; job["ok"] = None; job["msg"] = ""; job["result"] = None
+    try:
+        _run_sync_rc_inner(job)
+    except Exception as e:
+        job["running"] = False; job["ok"] = False
+        job["msg"] = f"Error inesperado: {str(e)}"
+
+
+def _run_sync_rc_inner(job):
     from siigo import fetch_vouchers_paginated
 
     conn = get_conn()
@@ -1242,8 +1248,27 @@ def sync_rc_siigo():
 
     conn.commit()
     cur.close(); conn.close()
-    return {"ok": True, "encontrados": encontrados, "ambiguos": ambiguos,
-            "revisadas": len(facturas_sin_rc), "rcs_en_siigo": sum(len(v) for v in rc_por_cliente.values())}
+    result = {"ok": True, "encontrados": encontrados, "ambiguos": ambiguos,
+              "revisadas": len(facturas_sin_rc), "rcs_en_siigo": sum(len(v) for v in rc_por_cliente.values())}
+    job["running"] = False; job["ok"] = True
+    job["msg"] = f"{encontrados} RC vinculados, {ambiguos} ambiguos"
+    job["step"] = "Completado"; job["result"] = result
+
+
+@router.post("/sync/rc-siigo")
+def sync_rc_siigo(background_tasks: BackgroundTasks):
+    job = _sync_jobs["rc"]
+    if job["running"]:
+        return {"started": False, "running": True, "msg": "Verificación ya en curso"}
+    background_tasks.add_task(_run_sync_rc)
+    return {"started": True, "running": True, "msg": "Verificación iniciada"}
+
+
+@router.get("/sync/rc-siigo/status")
+def sync_rc_status():
+    job = _sync_jobs["rc"]
+    return {"running": job["running"], "ok": job["ok"], "msg": job["msg"],
+            "step": job["step"], "result": job["result"]}
 
 
 # ═══════════════════════════════════════════════════════════════

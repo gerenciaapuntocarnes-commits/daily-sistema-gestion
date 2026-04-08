@@ -5324,20 +5324,34 @@ async function crmSyncBancos() {
 // ── Sync RC desde Siigo ──
 async function syncRcSiigo() {
   var resultEl = $('sync-rc-result');
-  if(resultEl) resultEl.innerHTML = '<div class="text-secondary small"><i class="ti ti-loader spin me-1"></i>Buscando Recibos de Caja en Siigo... (puede tomar 1-2 min)</div>';
+  if(resultEl) resultEl.innerHTML = '<div class="text-secondary small"><i class="ti ti-loader spin me-1"></i>Iniciando búsqueda de RC en Siigo...</div>';
   var res = await api('/crm/sync/rc-siigo','POST').catch(function(e){
     var msg = (e && (e.detail || e.message)) ? (e.detail || e.message) : 'Error de conexión';
     if(resultEl) resultEl.innerHTML = '<div class="alert alert-danger small">'+msg+'</div>';
     return null;
   });
-  if(res && res.ok) {
-    var msg = res.encontrados > 0
-      ? res.encontrados+' RC encontrados y vinculados de '+res.revisadas+' facturas revisadas.'
-      : 'No se encontraron RC nuevos ('+res.revisadas+' facturas revisadas).';
-    if(res.encontrados > 0) notyf.success(msg); else notyf.open({type:'info', message: msg});
-    if(resultEl) resultEl.innerHTML = '<div class="alert alert-'+(res.encontrados>0?'success':'info')+' small">'+msg+'</div>';
-    if(currentVentasTab==='conciliados') loadConciliados();
+  if(res && (res.started || res.running)) {
+    _pollRcSiigo(resultEl);
   }
+}
+
+function _pollRcSiigo(resultEl) {
+  var interval = setInterval(async function(){
+    var status = await api('/crm/sync/rc-siigo/status','GET',null,true).catch(function(){ return null; });
+    if(!status) return;
+    if(status.running) {
+      if(resultEl) resultEl.innerHTML = '<div class="text-secondary small"><i class="ti ti-loader spin me-1"></i>Buscando RCs en Siigo... (puede tomar 2-3 min)</div>';
+    } else {
+      clearInterval(interval);
+      var r = status.result || {};
+      var msg = r.encontrados > 0
+        ? r.encontrados+' RC vinculados de '+r.rcs_en_siigo+' en Siigo. ('+r.ambiguos+' ambiguos sin vincular)'
+        : 'No se encontraron RC nuevos. '+r.rcs_en_siigo+' RCs en Siigo revisados, '+r.revisadas+' facturas sin RC.';
+      if(r.encontrados > 0) notyf.success(msg); else notyf.open({type:'info', message: msg});
+      if(resultEl) resultEl.innerHTML = '<div class="alert alert-'+(r.encontrados>0?'success':'info')+' small">'+msg+'</div>';
+      if(currentVentasTab==='conciliados') loadConciliados();
+    }
+  }, 3000);
 }
 
 // ── Sync Excel ──
