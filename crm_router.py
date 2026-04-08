@@ -1072,6 +1072,21 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
     if not siigo_cust_id and not cedula:
         return {"ok": False, "error": "Cliente sin ID de Siigo ni cédula — no se puede crear RC"}
 
+    # ── Consultar datos exactos del cliente en Siigo ──
+    branch_office = 0
+    if siigo_cust_id:
+        try:
+            cust_resp = requests.get(
+                f"{SIIGO_BASE}/customers/{siigo_cust_id}",
+                headers=siigo_headers(), timeout=15
+            )
+            if cust_resp.status_code == 200:
+                cust_data = cust_resp.json()
+                cedula = str(cust_data.get("identification", cedula) or cedula)
+                branch_office = cust_data.get("branch_office", 0) or 0
+        except Exception:
+            pass  # usar datos locales si falla la consulta
+
     balance_val = float(factura.get("balance") or 0)
     total_val   = float(factura.get("total")   or 0)
     if balance_val <= 0 and total_val <= 0:
@@ -1088,9 +1103,9 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
         "document": {"id": 3619},
         "type": "Detailed",
         "date": date.today().isoformat(),
-        "customer": {"id": siigo_cust_id} if siigo_cust_id else {
+        "customer": {
             "identification": cedula,
-            "branch_office": 0
+            "branch_office": branch_office
         },
         "observations": f"Pago factura {factura_ref}",
         "items": [
