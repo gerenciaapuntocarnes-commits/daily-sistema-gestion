@@ -1691,6 +1691,30 @@ def debug_vouchers_siigo():
         return {"error": str(e)}
 
 
+@router.get("/debug/invoice-siigo/{siigo_id}")
+def debug_invoice_siigo(siigo_id: str):
+    """Trae una factura individual de Siigo por su ID para ver campos de pagos."""
+    try:
+        resp = requests.get(
+            f"{SIIGO_BASE}/invoices/{siigo_id}",
+            headers=siigo_headers(),
+            timeout=15
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return {
+            "keys": list(data.keys()),
+            "balance": data.get("balance"),
+            "total": data.get("total"),
+            "payments": data.get("payments"),
+            "stamps": data.get("stamps"),
+            "type": data.get("type"),
+            "observations": data.get("observations"),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/debug/factura-siigo")
 def debug_factura_siigo():
     """Muestra los primeros campos crudos de una factura reciente de Siigo para diagnóstico."""
