@@ -498,6 +498,9 @@ def _create_tables():
     """)
     cur.execute("CREATE INDEX IF NOT EXISTS idx_crm_cedula  ON crm_clientes(cedula)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_crm_siigo   ON crm_clientes(siigo_id)")
+    # Migración: tipo de documento para RC en Siigo
+    cur.execute("ALTER TABLE crm_clientes ADD COLUMN IF NOT EXISTS id_type_code TEXT DEFAULT '13'")
+    cur.execute("ALTER TABLE crm_clientes ADD COLUMN IF NOT EXISTS person_type  TEXT DEFAULT 'Person'")
 
     # ── CRM: facturas desde Siigo ────────────────────────────────
     cur.execute("""

@@ -296,7 +296,11 @@ def _parse_customers(customers: list) -> list:
         direccion = address_obj.get("address", "") or None
         ciudad_obj = address_obj.get("city", {})
         ciudad = ciudad_obj.get("city_name", "") if ciudad_obj else None
-        rows.append((sid, ident, nombre, telefono, email, direccion, ciudad))
+        # Tipo de documento y persona para RC
+        id_type_obj = c.get("id_type", {}) or {}
+        id_type_code = str(id_type_obj.get("code", "13")) or "13"
+        person_type = c.get("person_type", "Person") or "Person"
+        rows.append((sid, ident, nombre, telefono, email, direccion, ciudad, id_type_code, person_type))
     return rows
 
 
@@ -363,7 +367,7 @@ def _run_sync_siigo_inner(job):
     if cli_rows:
         from psycopg2.extras import execute_values
         execute_values(cur, """
-            INSERT INTO crm_clientes (siigo_id, cedula, nombre, telefono, email, direccion, ciudad)
+            INSERT INTO crm_clientes (siigo_id, cedula, nombre, telefono, email, direccion, ciudad, id_type_code, person_type)
             VALUES %s
             ON CONFLICT (siigo_id) DO UPDATE SET
               cedula = EXCLUDED.cedula,
@@ -372,6 +376,8 @@ def _run_sync_siigo_inner(job):
               email = EXCLUDED.email,
               direccion = EXCLUDED.direccion,
               ciudad = EXCLUDED.ciudad,
+              id_type_code = EXCLUDED.id_type_code,
+              person_type = EXCLUDED.person_type,
               actualizado_en = NOW()
         """, cli_rows)
         conn.commit()
@@ -891,7 +897,7 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
-        SELECT c.siigo_id, c.cedula, c.nombre
+        SELECT c.siigo_id, c.cedula, c.nombre, c.id_type_code, c.person_type
         FROM crm_clientes c
         JOIN crm_facturas f ON f.cliente_id = c.id
         WHERE f.id = %s
@@ -905,6 +911,8 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
     siigo_cust_id = cli[0]
     cedula = cli[1] or ""
     nombre = cli[2] or ""
+    id_type_code = cli[3] or "13"
+    person_type = cli[4] or "Person"
     cuenta = factura.get("cuenta_debito") or _cuenta_for_medio(factura.get("medio_pago", ""))
     monto = float(factura["balance"]) if float(factura.get("balance", 0)) > 0 else float(factura["total"])
     factura_ref = f"{factura.get('prefix','')}-{factura.get('numero','')}"
@@ -913,8 +921,8 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
         "document": {"id": 3619},
         "date": date.today().isoformat(),
         "customer": {
-            "person_type": "Person",
-            "id_type": {"code": "13"},
+            "person_type": person_type,
+            "id_type": {"code": id_type_code},
             "identification": cedula,
             "name": [nombre]
         },
