@@ -1189,37 +1189,44 @@ def sync_rc_siigo():
 
         for v in results:
             doc = v.get("document", {}) or {}
-            doc_name = str(doc.get("name", "")).upper()
-            # Solo procesar Recibos de Caja
-            if "RECIBO" not in doc_name and doc.get("id") != 3619:
+            # Filtrar solo Recibos de Caja: document.id == 3619
+            if doc.get("id") != 3619:
                 continue
 
-            v_id    = str(v.get("id", ""))
-            v_num   = v.get("number") or v.get("consecutive")
+            v_id      = str(v.get("id", ""))
+            v_num     = v.get("number") or v.get("consecutive")
+            v_name    = str(v.get("name", "") or "")
             v_fecha_str = (v.get("date") or "")[:10]
-            v_total = float(v.get("total", 0) or 0)
-            v_cust  = v.get("customer", {}) or {}
+            v_cust    = v.get("customer", {}) or {}
             v_cust_id = str(v_cust.get("id", "") or "")
 
-            if not v_id or not v_cust_id or not v_total:
-                continue
+            # total viene null en la lista — calcular sumando items
+            items = v.get("items") or []
+            v_total = sum(float(it.get("value", 0) or 0) for it in items)
 
-            try:
-                v_fecha = datetime.strptime(v_fecha_str, "%Y-%m-%d").date() if v_fecha_str else None
-            except ValueError:
-                v_fecha = None
+            if not v_id or not v_cust_id:
+                continue
 
             # Buscar factura que coincida por cliente + monto + fecha
             candidatas = fac_idx.get(v_cust_id, [])
             for fac in candidatas:
                 if fac.get("_matched"):
                     continue
-                diff_pct = abs(v_total - fac["total"]) / fac["total"] if fac["total"] else 1
                 dias = abs((v_fecha - fac["fecha"]).days) if v_fecha and fac["fecha"] else 999
-                if diff_pct <= 0.02 and dias <= 90:
+                if v_total > 0 and fac["total"] > 0:
+                    diff_pct = abs(v_total - fac["total"]) / fac["total"]
+                    match_monto = diff_pct <= 0.02
+                else:
+                    # Sin total en items — solo matchear por cliente + fecha cercana
+                    match_monto = True
+                if match_monto and dias <= 90:
                     # Match encontrado — actualizar BD
                     rc_prefix = str(doc.get("prefix", "") or "").strip()
-                    rc_numero_str = f"{rc_prefix}-{v_num}" if rc_prefix else str(v_num)
+                    # Usar v_name si viene (ej: "RC-3726"), si no construir con prefix+number
+                    if v_name and v_name != str(v_num):
+                        rc_numero_str = v_name
+                    else:
+                        rc_numero_str = f"{rc_prefix}-{v_num}" if rc_prefix else str(v_num)
                     cur.execute("""
                         UPDATE crm_facturas
                         SET rc_siigo_id = %s, rc_numero = %s, rc_modo_prueba = FALSE
