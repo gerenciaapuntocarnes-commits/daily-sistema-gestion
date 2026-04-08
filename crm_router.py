@@ -631,10 +631,13 @@ def sync_bancos():
     conn.commit()
 
     ins = upd = skip = 0
+    tabs_resumen = []
 
     for tab_name, banco in SHEET_TABS:
         rows = _fetch_sheet_tab(service, tab_name)
+        tab_ins = tab_upd = tab_skip = 0
         if not rows or len(rows) < 2:
+            tabs_resumen.append({"tab": tab_name, "banco": banco, "filas": 0, "error": "Sin datos o pestaña no encontrada"})
             continue
 
         is_bdb = banco == "BDB"
@@ -664,11 +667,11 @@ def sync_bancos():
             desc  = str(desc_raw).strip() if desc_raw else None
 
             if not fecha or valor is None:
-                skip += 1
+                skip += 1; tab_skip += 1
                 continue
 
             if valor <= 0:
-                skip += 1
+                skip += 1; tab_skip += 1
                 continue
 
             # Auto-detect conciliado por estado del sheet
@@ -700,9 +703,13 @@ def sync_bancos():
                   conciliado_sheet, row_idx, tab_name))
 
             if cur.statusmessage == "INSERT 0 1":
-                ins += 1
+                ins += 1; tab_ins += 1
             else:
-                upd += 1
+                upd += 1; tab_upd += 1
+
+        tabs_resumen.append({"tab": tab_name, "banco": banco,
+                              "filas_leidas": len(rows) - 1,
+                              "nuevos": tab_ins, "actualizados": tab_upd, "ignorados": tab_skip})
 
     # Marcar como conciliados los registros existentes con estado "MEDIO DE PAGO"
     cur.execute("""
@@ -724,7 +731,8 @@ def sync_bancos():
           f"Movimientos bancarios: {ins} nuevos, {upd} actualizados, {skip} ignorados, {marcados} marcados conciliados por estado"))
     conn.commit()
     cur.close(); conn.close()
-    return {"ok": True, "nuevos": ins, "actualizados": upd, "ignorados": skip, "marcados_conciliados": marcados}
+    return {"ok": True, "nuevos": ins, "actualizados": upd, "ignorados": skip,
+            "marcados_conciliados": marcados, "por_pestaña": tabs_resumen}
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -1465,6 +1473,29 @@ def auto_conciliar():
 # ═══════════════════════════════════════════════════════════════
 # ENDPOINTS — SYNC LOG
 # ═══════════════════════════════════════════════════════════════
+
+@router.get("/debug/sheet-tabs")
+def debug_sheet_tabs():
+    """Lista las pestañas reales del Sheet y cuántas filas tiene cada una."""
+    try:
+        service = _get_sheets_service()
+        meta = service.spreadsheets().get(spreadsheetId=SHEET_ID).execute()
+        sheets = meta.get("sheets", [])
+        tabs_info = []
+        for s in sheets:
+            props = s.get("properties", {})
+            tab_name = props.get("title", "")
+            grid = props.get("gridProperties", {})
+            tabs_info.append({
+                "nombre": tab_name,
+                "filas": grid.get("rowCount", 0),
+                "columnas": grid.get("columnCount", 0),
+                "configurada": any(t[0] == tab_name for t in SHEET_TABS)
+            })
+        return {"tabs": tabs_info, "configuradas": [t[0] for t in SHEET_TABS]}
+    except Exception as e:
+        return {"error": str(e)}
+
 
 @router.get("/debug/factura-siigo")
 def debug_factura_siigo():
