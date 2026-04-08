@@ -1691,6 +1691,31 @@ def debug_vouchers_siigo():
         return {"error": str(e)}
 
 
+@router.get("/debug/factura-local/{factura_id}")
+def debug_factura_local(factura_id: int):
+    """Busca el siigo_invoice_id de una factura por su ID local y consulta Siigo."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, siigo_invoice_id, numero, prefix, cliente_nombre, total, rc_siigo_id FROM crm_facturas WHERE id=%s", (factura_id,))
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        return {"error": "Factura no encontrada"}
+    fid, siigo_id, numero, prefix, nombre, total, rc_id = row
+    result = {"id": fid, "siigo_invoice_id": siigo_id, "factura": f"{prefix}-{numero}", "cliente": nombre, "total": float(total or 0), "rc_siigo_id": rc_id}
+    if siigo_id:
+        try:
+            resp = requests.get(f"{SIIGO_BASE}/invoices/{siigo_id}", headers=siigo_headers(), timeout=15)
+            resp.raise_for_status()
+            data = resp.json()
+            result["siigo_balance"] = data.get("balance")
+            result["siigo_payments"] = data.get("payments")
+            result["siigo_keys"] = list(data.keys())
+        except Exception as e:
+            result["siigo_error"] = str(e)
+    return result
+
+
 @router.get("/debug/invoice-siigo/{siigo_id}")
 def debug_invoice_siigo(siigo_id: str):
     """Trae una factura individual de Siigo por su ID para ver campos de pagos."""
