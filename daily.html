@@ -5563,9 +5563,10 @@ async function loadConciliados() {
     var rcCell = f.rc_numero
       ? '<span class="badge bg-success-lt">'+f.rc_numero+(f.rc_modo_prueba?' <span class="badge bg-warning-lt" style="font-size:9px">PRUEBA</span>':'')+'</span>'
       : '<button class="btn btn-xs btn-outline-primary" onclick="generarRcFactura('+f.id+')"><i class="ti ti-receipt me-1"></i>RC</button>';
-    var medioBadge = f.medio_pago
-      ? '<span class="badge bg-azure-lt">'+f.medio_pago+'</span>'
-      : '<span class="text-secondary small">--</span>';
+    var bancoDisplay = f.banco_display || f.medio_pago || '--';
+    var medioBadge = (f.banco_display && f.banco_display !== 'Sin especificar')
+      ? '<span class="badge bg-azure-lt">'+f.banco_display+'</span>'
+      : (f.medio_pago ? '<span class="badge bg-azure-lt">'+f.medio_pago+'</span>' : '<span class="text-secondary small">--</span>');
     var canRevert = !f.rc_numero || f.rc_modo_prueba;
     return '<tr class="'+(sel?'table-warning':'')+'">' +
       '<td><input type="checkbox" class="form-check-input" '+(sel?'checked':'')+' onchange="toggleConciliadoSelect('+f.id+',this.checked)"></td>' +
