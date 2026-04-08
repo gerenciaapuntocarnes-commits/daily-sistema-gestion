@@ -5188,7 +5188,8 @@ async function generarRcFactura(fid) {
   if(res.ok) {
     var msg = res.simulado ? 'RC simulado: '+res.rc_numero+' (Modo prueba)' : 'RC creado en Siigo: '+res.rc_numero;
     notyf.success(msg);
-    loadActivos();
+    if(currentVentasTab === 'conciliados') loadConciliados();
+    else loadActivos();
   } else {
     notyf.error('Error: '+(res.mensaje || res.error || 'Desconocido'));
   }
