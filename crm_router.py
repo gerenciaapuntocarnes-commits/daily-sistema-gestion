@@ -275,7 +275,7 @@ def _parse_customers(customers: list) -> list:
             continue
         ident = str(c.get("identification", "")).strip() or None
         names = c.get("name", [])
-        nombre = (" ".join(names) if isinstance(names, list) else str(names)).strip() or "(Sin nombre)"
+        nombre = (" ".join(n for n in names if n) if isinstance(names, list) else str(names or "")).strip() or "(Sin nombre)"
         phones = c.get("phones", [])
         telefono = phones[0].get("number", "") if phones else None
         contacts = c.get("contacts", [])
@@ -309,7 +309,7 @@ def _parse_invoices(invoices: list) -> list:
         cust = inv.get("customer", {}) or {}
         cedula = str(cust.get("identification", "") or "").strip() or None
         cust_names = cust.get("name", [])
-        cli_nombre = (" ".join(cust_names) if isinstance(cust_names, list) else str(cust_names)).strip() or "(Sin nombre)"
+        cli_nombre = (" ".join(n for n in cust_names if n) if isinstance(cust_names, list) else str(cust_names or "")).strip() or "(Sin nombre)"
         siigo_cust_id = str(cust.get("id", "") or "") or None
         rows.append((siigo_id, number, prefix, cli_nombre, cedula, fecha, total, balance, estado, siigo_cust_id))
     return rows
@@ -322,6 +322,16 @@ def _run_sync_siigo():
     job["ok"] = None
     job["msg"] = ""
     job["result"] = None
+    try:
+        _run_sync_siigo_inner(job)
+    except Exception as e:
+        job["running"] = False
+        job["ok"] = False
+        job["msg"] = f"Error inesperado: {str(e)}"
+        job["step"] = "Error"
+
+
+def _run_sync_siigo_inner(job):
 
     try:
         job["step"] = "Obteniendo clientes de Siigo..."
@@ -434,6 +444,13 @@ def sync_siigo(background_tasks: BackgroundTasks):
 def sync_siigo_status():
     """Retorna el estado actual del sync de Siigo."""
     return _sync_jobs["siigo"]
+
+
+@router.post("/sync/siigo/reset")
+def sync_siigo_reset():
+    """Resetea el estado del job si quedó bloqueado."""
+    _sync_jobs["siigo"] = {"running": False, "ok": None, "msg": "", "step": "", "result": None}
+    return {"ok": True}
 
 
 @router.post("/sync/excel")
