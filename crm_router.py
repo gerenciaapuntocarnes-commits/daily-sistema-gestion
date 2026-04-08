@@ -1784,6 +1784,28 @@ def debug_factura_siigo():
         return {"error": str(e)}
 
 
+@router.get("/debug/customer-siigo/{siigo_id}")
+def debug_customer_siigo(siigo_id: str):
+    """Consulta un cliente en Siigo por su UUID para ver datos reales."""
+    try:
+        resp = requests.get(f"{SIIGO_BASE}/customers/{siigo_id}", headers=siigo_headers(), timeout=15)
+        if resp.status_code >= 400:
+            return {"error": f"HTTP {resp.status_code}", "body": resp.text[:500]}
+        data = resp.json()
+        return {
+            "id": data.get("id"),
+            "identification": data.get("identification"),
+            "check_digit": data.get("check_digit"),
+            "name": data.get("name"),
+            "id_type": data.get("id_type"),
+            "person_type": data.get("person_type"),
+            "branch_office": data.get("branch_office"),
+            "active": data.get("active"),
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/sync/log")
 def get_sync_log():
     conn = get_conn()
