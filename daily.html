@@ -995,7 +995,7 @@ tr:hover .btn-delete { opacity: 1; }
             <thead>
               <tr>
                 <th style="width:36px"><input type="checkbox" class="form-check-input" id="conciliados-check-all" onchange="toggleAllConciliados(this.checked)"></th>
-                <th>Fecha</th><th>Cliente</th><th>Factura</th><th class="text-end">Monto</th><th>Registrado en</th><th>Fecha pago</th><th>RC</th><th></th>
+                <th>Fecha</th><th>Cliente</th><th>Factura</th><th class="text-end">Monto</th><th>Registrado en</th><th>Fecha pago</th><th>N° RC</th><th>Acciones</th>
               </tr>
             </thead>
             <tbody id="conciliados-body"></tbody>
@@ -5563,10 +5563,10 @@ async function loadConciliados() {
   var url = '/crm/conciliados?' + (q ? 'q='+encodeURIComponent(q)+'&' : '') + (filtroRc ? 'filtro_rc='+filtroRc : '');
   var el = $('conciliados-body');
   if(!el) return;
-  el.innerHTML = '<tr><td colspan="8" class="text-center text-secondary py-4"><i class="ti ti-loader spin me-1"></i>Cargando...</td></tr>';
+  el.innerHTML = '<tr><td colspan="9" class="text-center text-secondary py-4"><i class="ti ti-loader spin me-1"></i>Cargando...</td></tr>';
   var data = await api(url,'GET',null,true).catch(function(){ return []; });
   if(!data.length) {
-    el.innerHTML = '<tr><td colspan="8" class="text-center text-secondary small py-4">Sin facturas conciliadas</td></tr>';
+    el.innerHTML = '<tr><td colspan="9" class="text-center text-secondary small py-4">Sin facturas conciliadas</td></tr>';
     _updateConciliadosBadge(0);
     return;
   }
@@ -5576,9 +5576,13 @@ async function loadConciliados() {
   _updateBtnRcSeleccion();
   el.innerHTML = data.map(function(f){
     var sel = conciliadosSeleccionados.has(f.id);
-    var rcCell = f.rc_numero
-      ? '<span class="badge bg-success-lt">'+f.rc_numero+(f.rc_modo_prueba?' <span class="badge bg-warning-lt" style="font-size:9px">PRUEBA</span>':'')+'</span>'
-      : '<button class="btn btn-xs btn-outline-primary" onclick="generarRcFactura('+f.id+')"><i class="ti ti-receipt me-1"></i>RC</button>';
+    // Columna N° RC: número si existe, botón generar si no
+    var rcNumCell = f.rc_numero
+      ? '<div class="d-flex align-items-center gap-1">' +
+          '<code class="small text-success fw-bold">'+f.rc_numero+'</code>' +
+          (f.rc_modo_prueba ? '<span class="badge bg-warning-lt" style="font-size:9px">PRUEBA</span>' : '') +
+        '</div>'
+      : '<button class="btn btn-xs btn-outline-primary" onclick="generarRcFactura('+f.id+')"><i class="ti ti-receipt me-1"></i>Generar RC</button>';
     var bd = f.banco_display || 'Siigo';
     var bdColor = bd === 'Siigo' ? 'bg-purple-lt' : (bd === 'Efectivo' ? 'bg-green-lt' : 'bg-azure-lt');
     var medioBadge = '<span class="badge '+bdColor+'">'+bd+'</span>';
@@ -5591,7 +5595,7 @@ async function loadConciliados() {
       '<td class="text-end fw-bold">$'+fmt(f.total)+'</td>' +
       '<td>'+medioBadge+'</td>' +
       '<td class="small">'+(f.fecha_pago||'--')+'</td>' +
-      '<td>'+rcCell+'</td>' +
+      '<td>'+rcNumCell+'</td>' +
       '<td>' +
         '<div class="btn-group btn-group-sm">' +
           '<button class="btn btn-outline-secondary btn-xs" onclick="editarConciliado('+f.id+',\''+( f.medio_pago||'')+'\',\''+(f.origen_canal||'')+'\',\''+( f.cuenta_debito||'')+'\')" title="Editar"><i class="ti ti-pencil"></i></button>' +
