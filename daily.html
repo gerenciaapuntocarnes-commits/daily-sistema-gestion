@@ -4730,11 +4730,14 @@ async function crmSyncSiigo() {
     return null;
   });
 
-  if(res && res.started) {
+  if(res && (res.started || res.running)) {
     notyf.open({type:'info', message:'Sync iniciado — puede tomar 2-3 min...'});
     _pollSyncSiigo(resultEl, btns);
   } else {
+    // Job bloqueado — resetear y reintentar automáticamente
+    await api('/crm/sync/siigo/reset','POST',null,true).catch(function(){});
     setBtnsLoading(false);
+    if(resultEl) resultEl.innerHTML = '<div class="alert alert-warning small">Job reseteado, intenta de nuevo.</div>';
   }
 }
 
