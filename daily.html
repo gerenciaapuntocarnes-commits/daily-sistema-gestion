@@ -360,9 +360,15 @@ tr:hover .btn-delete { opacity: 1; }
         <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Ventas / CRM</span></li>
         <li class="nav-item">
           <a class="nav-link" href="#" onclick="goto('ventas');return false;">
-            <span class="nav-link-icon"><i class="ti ti-cash-register"></i></span>
-            <span class="nav-link-title">Ventas</span>
+            <span class="nav-link-icon"><i class="ti ti-git-compare"></i></span>
+            <span class="nav-link-title">Conciliación</span>
             <span class="badge badge-sm bg-red" id="ventas-pendientes-badge" style="display:none"></span>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a class="nav-link" href="#" onclick="goto('crm');return false;">
+            <span class="nav-link-icon"><i class="ti ti-users"></i></span>
+            <span class="nav-link-title">CRM</span>
           </a>
         </li>
 
@@ -891,13 +897,13 @@ tr:hover .btn-delete { opacity: 1; }
   </div>
 </div>
 
-<!-- ════ VENTAS / CRM ════ -->
+<!-- ════ CONCILIACIÓN BANCARIA ════ -->
 <div id="s-ventas" class="section">
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
       <div class="col-auto">
         <div class="page-pretitle">Ventas / CRM</div>
-        <h2 class="page-title">Cartera &amp; Clientes</h2>
+        <h2 class="page-title">Conciliación Bancaria</h2>
       </div>
       <div class="col-auto ms-auto d-flex gap-2 align-items-center">
         <span id="crm-modo-badge" class="badge bg-warning text-dark" style="font-size:12px;cursor:pointer" onclick="crmTab('config')" title="Modo prueba activo: no se envía nada a Siigo"><i class="ti ti-flask me-1"></i>MODO PRUEBA</span>
@@ -907,104 +913,93 @@ tr:hover .btn-delete { opacity: 1; }
   </div>
   <!-- Tabs internos -->
   <ul class="nav nav-tabs mb-3" id="ventas-tabs">
-    <li class="nav-item"><a class="nav-link active" href="#" onclick="crmTab('activos');return false;"><i class="ti ti-receipt me-1"></i>Activos</a></li>
-    <li class="nav-item"><a class="nav-link" href="#" onclick="crmTab('historicos');return false;"><i class="ti ti-history me-1"></i>Históricos</a></li>
-    <li class="nav-item"><a class="nav-link" href="#" onclick="crmTab('conciliacion');return false;"><i class="ti ti-git-compare me-1"></i>Conciliación</a></li>
+    <li class="nav-item"><a class="nav-link active" href="#" onclick="crmTab('pendientes');return false;"><i class="ti ti-clock me-1"></i>Pendientes <span id="concil-pendientes-badge" class="badge badge-sm bg-yellow text-yellow-fg ms-1" style="display:none"></span></a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="crmTab('conciliados');return false;"><i class="ti ti-circle-check me-1"></i>Conciliados <span id="concil-sin-rc-badge" class="badge badge-sm bg-blue-lt ms-1" style="display:none"></span></a></li>
     <li class="nav-item"><a class="nav-link" href="#" onclick="crmTab('config');return false;"><i class="ti ti-settings me-1"></i>Config</a></li>
   </ul>
 
-  <!-- ── Tab: Activos ── -->
-  <div id="vt-activos">
-    <div class="card mb-3">
-      <div class="card-body py-2">
-        <div class="row g-2 align-items-center">
-          <div class="col"><div class="input-icon"><span class="input-icon-addon"><i class="ti ti-search"></i></span>
-            <input class="form-control form-control-sm" id="crm-act-buscar" placeholder="Buscar cliente, cédula..." oninput="loadActivos()">
-          </div></div>
-          <div class="col-auto">
-            <button class="btn btn-sm btn-outline-danger" onclick="crmResetData()" title="Borrar todos los datos CRM y reimportar"><i class="ti ti-trash me-1"></i>Reset datos</button>
-          </div>
-          <div class="col-auto">
-            <button class="btn btn-sm btn-success" onclick="generarRcMasivo()"><i class="ti ti-checkup-list me-1"></i>Generar RC masivo</button>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div id="crm-activos-list">
-      <div class="text-center text-secondary py-5"><i class="ti ti-loader" style="font-size:32px"></i><div class="mt-2">Cargando facturas activas...</div></div>
-    </div>
-  </div>
-
-  <!-- ── Tab: Históricos ── -->
-  <div id="vt-historicos" style="display:none">
-    <div class="card mb-3">
-      <div class="card-body py-2">
-        <div class="row g-2 align-items-center">
-          <div class="col"><div class="input-icon"><span class="input-icon-addon"><i class="ti ti-search"></i></span>
-            <input class="form-control form-control-sm" id="crm-hist-buscar" placeholder="Buscar cliente, cédula..." oninput="loadHistoricos()">
-          </div></div>
-        </div>
-      </div>
-    </div>
-    <div id="crm-historicos-list">
-      <div class="text-center text-secondary py-5"><i class="ti ti-clock" style="font-size:32px"></i><div class="mt-2">Cargando histórico...</div></div>
-    </div>
-  </div>
-
-  <!-- ── Tab: Conciliación ── -->
-  <div id="vt-conciliacion" style="display:none">
+  <!-- ── Tab: Pendientes ── -->
+  <div id="vt-pendientes">
     <!-- Barra superior -->
-    <div class="row g-2 mb-3 align-items-center">
-      <div class="col-auto">
-        <select class="form-select form-select-sm" id="concil-banco" onchange="loadConciliacion()" style="width:160px">
-          <option value="">Todos los bancos</option>
-          <option value="BDB">Banco de Bogotá</option>
-          <option value="BANCOLOMBIA">Bancolombia</option>
-        </select>
-      </div>
-      <div class="col-auto">
-        <input class="form-control form-control-sm" id="concil-buscar" placeholder="Buscar cliente o factura..." oninput="filterConcilFacturas(this.value)" style="width:220px">
-      </div>
-      <div class="col-auto">
-        <button class="btn btn-sm btn-success" onclick="autoConciliar()"><i class="ti ti-wand me-1"></i>Auto-conciliar</button>
-      </div>
-      <div class="col text-secondary small" id="concil-hint">
-        Haz click en una factura para ver movimientos sugeridos.
-      </div>
-    </div>
-
-    <div class="row g-3">
-      <!-- Facturas pendientes -->
-      <div class="col-lg-5">
-        <div class="card h-100">
-          <div class="card-header">
-            <h3 class="card-title"><i class="ti ti-file-invoice me-2"></i>Facturas pendientes</h3>
-            <div class="card-actions text-secondary small" id="concil-facts-count"></div>
+    <div class="card mb-3">
+      <div class="card-body py-2">
+        <div class="row g-2 align-items-center">
+          <div class="col-auto">
+            <select class="form-select form-select-sm" id="concil-banco" onchange="loadConciliacion()" style="width:160px">
+              <option value="">Todos los bancos</option>
+              <option value="BDB">BDB</option>
+              <option value="BANCOLOMBIA">Bancolombia</option>
+            </select>
           </div>
-          <div class="card-body p-0">
-            <div class="table-responsive" style="max-height:560px;overflow-y:auto">
-              <table class="table table-vcenter table-sm card-table table-hover">
-                <thead><tr><th>Fecha</th><th>Cliente</th><th>Factura</th><th class="text-end">Saldo</th></tr></thead>
-                <tbody id="concil-facturas-body"></tbody>
-              </table>
+          <div class="col">
+            <div class="input-icon">
+              <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+              <input class="form-control form-control-sm" id="concil-buscar" placeholder="Buscar cliente o factura..." oninput="filterConcilFacturas(this.value)">
             </div>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-success" onclick="autoConciliar()"><i class="ti ti-wand me-1"></i>Auto-conciliar</button>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-outline-primary" onclick="marcarEfectivoSeleccionada()" title="Marcar factura seleccionada como pagada en efectivo"><i class="ti ti-cash me-1"></i>Efectivo</button>
           </div>
         </div>
       </div>
+    </div>
 
-      <!-- Panel sugerencias -->
-      <div class="col-lg-7">
-        <div class="card h-100" id="concil-sugerencias-card">
-          <div class="card-header">
-            <h3 class="card-title"><i class="ti ti-bulb me-2"></i>Movimientos sugeridos</h3>
-            <div class="card-actions" id="concil-fact-info" style="font-size:12px;color:var(--tblr-muted)"></div>
-          </div>
-          <div class="card-body" id="concil-sugerencias-body" style="min-height:200px">
-            <div class="text-center text-secondary py-5 small">
-              <i class="ti ti-hand-click" style="font-size:32px;opacity:.3;display:block;margin-bottom:8px"></i>
-              Selecciona una factura para ver sugerencias
+    <!-- Tabla facturas pendientes -->
+    <div class="card">
+      <div class="card-header">
+        <h3 class="card-title"><i class="ti ti-file-invoice me-2"></i>Facturas pendientes</h3>
+        <div class="card-actions text-secondary small" id="concil-facts-count"></div>
+      </div>
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-vcenter table-sm card-table table-hover">
+            <thead><tr><th>Fecha</th><th>Cliente</th><th>Factura</th><th class="text-end">Saldo</th><th>Acción</th></tr></thead>
+            <tbody id="concil-facturas-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab: Conciliados ── -->
+  <div id="vt-conciliados" style="display:none">
+    <div class="card mb-3">
+      <div class="card-body py-2">
+        <div class="row g-2 align-items-center">
+          <div class="col">
+            <div class="input-icon">
+              <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+              <input class="form-control form-control-sm" id="conciliados-buscar" placeholder="Buscar cliente o factura..." oninput="loadConciliados()">
             </div>
           </div>
+          <div class="col-auto">
+            <select class="form-select form-select-sm" id="conciliados-filtro-rc" onchange="loadConciliados()">
+              <option value="">Todos</option>
+              <option value="con_rc">Con RC</option>
+              <option value="sin_rc">Sin RC</option>
+            </select>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-success" id="btn-generar-rc-seleccion" onclick="generarRcSeleccionados()" disabled><i class="ti ti-checkup-list me-1"></i>Generar RC seleccionados</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-body p-0">
+        <div class="table-responsive">
+          <table class="table table-vcenter table-sm card-table">
+            <thead>
+              <tr>
+                <th style="width:36px"><input type="checkbox" class="form-check-input" id="conciliados-check-all" onchange="toggleAllConciliados(this.checked)"></th>
+                <th>Fecha</th><th>Cliente</th><th>Factura</th><th class="text-end">Monto</th><th>Banco/Efectivo</th><th>Fecha pago</th><th>RC</th>
+              </tr>
+            </thead>
+            <tbody id="conciliados-body"></tbody>
+          </table>
         </div>
       </div>
     </div>
@@ -1118,6 +1113,203 @@ tr:hover .btn-delete { opacity: 1; }
         </div>
       </div>
 
+    </div>
+  </div>
+</div>
+
+<!-- ════ CRM ════ -->
+<div id="s-crm" class="section">
+  <div class="page-header d-print-none mb-3">
+    <div class="row align-items-center">
+      <div class="col-auto">
+        <div class="page-pretitle">Ventas / CRM</div>
+        <h2 class="page-title"><i class="ti ti-users me-2"></i>CRM</h2>
+      </div>
+    </div>
+  </div>
+  <!-- Tabs CRM -->
+  <ul class="nav nav-tabs mb-3" id="crm-tabs">
+    <li class="nav-item"><a class="nav-link active" href="#" onclick="crmModuleTab('dashboard');return false;"><i class="ti ti-dashboard me-1"></i>Dashboard</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="crmModuleTab('clientes');return false;"><i class="ti ti-users me-1"></i>Clientes</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="crmModuleTab('prospectos');return false;"><i class="ti ti-user-plus me-1"></i>Prospectos</a></li>
+    <li class="nav-item"><a class="nav-link" href="#" onclick="crmModuleTab('campanas');return false;"><i class="ti ti-speakerphone me-1"></i>Campañas</a></li>
+  </ul>
+
+  <!-- ── Tab: Dashboard CRM ── -->
+  <div id="crmt-dashboard">
+    <!-- KPIs -->
+    <div class="row row-deck row-cards mb-3" id="crm-kpis">
+      <div class="col-sm-6 col-lg-3">
+        <div class="card">
+          <div class="card-body">
+            <div class="d-flex align-items-center mb-2">
+              <span class="badge bg-success me-2" style="width:10px;height:10px;border-radius:50%;padding:0"></span>
+              <span class="text-secondary small">Clientes activos</span>
+            </div>
+            <div class="kpi-val text-success" id="crm-kpi-activos">--</div>
+            <div class="text-secondary small mt-1">Compraron en los últimos 30 días</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-lg-3">
+        <div class="card">
+          <div class="card-body">
+            <div class="d-flex align-items-center mb-2">
+              <span class="badge bg-warning me-2" style="width:10px;height:10px;border-radius:50%;padding:0"></span>
+              <span class="text-secondary small">En riesgo</span>
+            </div>
+            <div class="kpi-val text-warning" id="crm-kpi-riesgo">--</div>
+            <div class="text-secondary small mt-1">30–90 días sin compra</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-lg-3">
+        <div class="card">
+          <div class="card-body">
+            <div class="d-flex align-items-center mb-2">
+              <span class="badge bg-danger me-2" style="width:10px;height:10px;border-radius:50%;padding:0"></span>
+              <span class="text-secondary small">Inactivos</span>
+            </div>
+            <div class="kpi-val text-danger" id="crm-kpi-inactivos">--</div>
+            <div class="text-secondary small mt-1">Más de 90 días sin compra</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-sm-6 col-lg-3">
+        <div class="card">
+          <div class="card-body">
+            <div class="d-flex align-items-center mb-2">
+              <span class="badge bg-azure me-2" style="width:10px;height:10px;border-radius:50%;padding:0"></span>
+              <span class="text-secondary small">Ticket promedio</span>
+            </div>
+            <div class="kpi-val text-azure" id="crm-kpi-ticket">--</div>
+            <div class="text-secondary small mt-1">Valor promedio por factura</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Top 10 + Chart -->
+    <div class="row row-cards mb-3">
+      <div class="col-lg-7">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title"><i class="ti ti-trophy me-2"></i>Top 10 Clientes</h3></div>
+          <div class="table-responsive">
+            <table class="table table-vcenter table-sm card-table">
+              <thead><tr><th>#</th><th>Cliente</th><th class="text-end">Total compras</th><th class="text-end"># Facturas</th><th>Última compra</th><th>Segmento</th></tr></thead>
+              <tbody id="crm-top10-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="col-lg-5">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title"><i class="ti ti-chart-bar me-2"></i>Ventas por segmento</h3></div>
+          <div class="card-body" id="crm-chart-segmento" style="min-height:260px"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Clientes en riesgo -->
+    <div class="card">
+      <div class="card-header"><h3 class="card-title"><i class="ti ti-alert-triangle me-2 text-warning"></i>Clientes en riesgo</h3></div>
+      <div class="table-responsive">
+        <table class="table table-vcenter table-sm card-table">
+          <thead><tr><th>Cliente</th><th>Teléfono</th><th>Última compra</th><th class="text-end">Días sin compra</th><th class="text-end">Total histórico</th><th></th></tr></thead>
+          <tbody id="crm-riesgo-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab: Clientes ── -->
+  <div id="crmt-clientes" style="display:none">
+    <div class="card mb-3">
+      <div class="card-body py-2">
+        <div class="row g-2 align-items-center">
+          <div class="col">
+            <div class="input-icon">
+              <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+              <input class="form-control form-control-sm" id="crm-cli-buscar" placeholder="Buscar nombre, cédula, teléfono..." oninput="loadClientesCrm()">
+            </div>
+          </div>
+          <div class="col-auto">
+            <select class="form-select form-select-sm" id="crm-cli-segmento" onchange="loadClientesCrm()">
+              <option value="">Todos los segmentos</option>
+              <option value="restaurante">Restaurante</option>
+              <option value="supermercado">Supermercado</option>
+              <option value="institucional">Institucional</option>
+              <option value="particular">Particular</option>
+              <option value="distribuidor">Distribuidor</option>
+            </select>
+          </div>
+          <div class="col-auto">
+            <select class="form-select form-select-sm" id="crm-cli-estado" onchange="loadClientesCrm()">
+              <option value="">Todos los estados</option>
+              <option value="activo">Activo</option>
+              <option value="en_riesgo">En riesgo</option>
+              <option value="inactivo">Inactivo</option>
+              <option value="recuperado">Recuperado</option>
+            </select>
+          </div>
+          <div class="col-auto">
+            <button class="btn btn-sm btn-outline-secondary" onclick="exportarClientesCrm()"><i class="ti ti-download me-1"></i>Exportar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="table-responsive">
+        <table class="table table-vcenter table-sm card-table">
+          <thead><tr><th>Nombre</th><th>Cédula</th><th>Teléfono</th><th>Segmento</th><th>Canal</th><th>Estado</th><th>Última compra</th><th class="text-end">Total</th><th></th></tr></thead>
+          <tbody id="crm-clientes-body"></tbody>
+        </table>
+      </div>
+      <div class="card-footer d-flex align-items-center justify-content-between py-2">
+        <div class="text-secondary small" id="crm-cli-pag-info">--</div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-sm btn-outline-secondary" id="crm-cli-prev" onclick="crmCliPage(-1)" disabled><i class="ti ti-chevron-left"></i></button>
+          <button class="btn btn-sm btn-outline-secondary" id="crm-cli-next" onclick="crmCliPage(1)"><i class="ti ti-chevron-right"></i></button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab: Prospectos ── -->
+  <div id="crmt-prospectos" style="display:none">
+    <!-- Pipeline badges -->
+    <div class="d-flex gap-2 flex-wrap mb-3" id="crm-pipeline-badges"></div>
+    <div class="card mb-3">
+      <div class="card-header">
+        <h3 class="card-title"><i class="ti ti-user-plus me-2"></i>Prospectos</h3>
+        <div class="card-actions">
+          <button class="btn btn-sm btn-primary" onclick="openModal('modal-prospecto')"><i class="ti ti-plus me-1"></i>Nuevo prospecto</button>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-vcenter table-sm card-table">
+          <thead><tr><th>Nombre</th><th>Empresa</th><th>Teléfono</th><th>Segmento</th><th>Estado</th><th>Responsable</th><th>Próx. seguimiento</th><th class="text-end">Val. potencial</th><th></th></tr></thead>
+          <tbody id="crm-prospectos-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Tab: Campañas ── -->
+  <div id="crmt-campanas" style="display:none">
+    <div class="card mb-3">
+      <div class="card-header">
+        <h3 class="card-title"><i class="ti ti-speakerphone me-2"></i>Campañas</h3>
+        <div class="card-actions">
+          <button class="btn btn-sm btn-primary" onclick="openModal('modal-campana')"><i class="ti ti-plus me-1"></i>Nueva campaña</button>
+        </div>
+      </div>
+      <div class="table-responsive">
+        <table class="table table-vcenter table-sm card-table">
+          <thead><tr><th>Nombre</th><th>Tipo</th><th>Segmento</th><th>Vigencia</th><th class="text-end">Clientes obj.</th><th class="text-end">Respondieron</th><th>Estado</th><th></th></tr></thead>
+          <tbody id="crm-campanas-body"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
@@ -2197,6 +2389,291 @@ tr:hover .btn-delete { opacity: 1; }
   </div>
 </div>
 
+<!-- ══ MODAL: Ficha Cliente CRM ══ -->
+<div id="modal-crm-cliente" class="modal-bg">
+  <div class="card" style="width:100%;max-width:780px;max-height:90vh;overflow-y:auto">
+    <div class="card-header">
+      <div class="d-flex align-items-center gap-3">
+        <div>
+          <h3 class="card-title mb-0" id="modal-cli-nombre">Cliente</h3>
+          <div class="mt-1" id="modal-cli-estado-badge"></div>
+        </div>
+      </div>
+      <div class="card-actions">
+        <button class="btn btn-ghost-secondary btn-icon" onclick="closeModal('modal-crm-cliente')"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+    <div class="card-body p-0">
+      <ul class="nav nav-tabs px-3 pt-2" id="cli-modal-tabs">
+        <li class="nav-item"><a class="nav-link active" href="#" onclick="cliModalTab('datos');return false;">Datos</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" onclick="cliModalTab('facturas');return false;">Facturas</a></li>
+        <li class="nav-item"><a class="nav-link" href="#" onclick="cliModalTab('seguimientos');return false;">Seguimientos</a></li>
+      </ul>
+      <!-- Tab Datos -->
+      <div id="climt-datos" class="p-3">
+        <input type="hidden" id="cli-modal-id">
+        <div class="row g-3">
+          <div class="col-md-6">
+            <label class="form-label">Segmento</label>
+            <select class="form-select" id="cli-segmento">
+              <option value="">Sin segmento</option>
+              <option value="restaurante">Restaurante</option>
+              <option value="supermercado">Supermercado</option>
+              <option value="institucional">Institucional</option>
+              <option value="particular">Particular</option>
+              <option value="distribuidor">Distribuidor</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Canal</label>
+            <select class="form-select" id="cli-canal">
+              <option value="">Sin info</option>
+              <option value="cliente_daily">Cliente Daily</option>
+              <option value="pagina">Página web</option>
+              <option value="instagram">Instagram</option>
+              <option value="referido">Referido</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Estado</label>
+            <select class="form-select" id="cli-estado">
+              <option value="activo">Activo</option>
+              <option value="en_riesgo">En riesgo</option>
+              <option value="inactivo">Inactivo</option>
+              <option value="recuperado">Recuperado</option>
+            </select>
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Responsable</label>
+            <input class="form-control" id="cli-responsable" placeholder="Nombre responsable">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Cupo crédito ($)</label>
+            <input class="form-control" id="cli-cupo-credito" type="number" placeholder="0">
+          </div>
+          <div class="col-md-6">
+            <label class="form-label">Días crédito</label>
+            <input class="form-control" id="cli-dias-credito" type="number" placeholder="0">
+          </div>
+          <div class="col-12">
+            <label class="form-label">Notas CRM</label>
+            <textarea class="form-control" id="cli-notas-crm" rows="3" placeholder="Observaciones, preferencias, historial..."></textarea>
+          </div>
+        </div>
+        <div class="mt-3">
+          <button class="btn btn-primary" onclick="guardarClienteCrm()"><i class="ti ti-device-floppy me-1"></i>Guardar</button>
+        </div>
+      </div>
+      <!-- Tab Facturas -->
+      <div id="climt-facturas" style="display:none" class="p-3">
+        <div class="table-responsive">
+          <table class="table table-vcenter table-sm">
+            <thead><tr><th>Factura</th><th>Fecha</th><th class="text-end">Total</th><th class="text-end">Saldo</th><th>Estado</th><th>RC</th></tr></thead>
+            <tbody id="cli-facturas-body"></tbody>
+          </table>
+        </div>
+      </div>
+      <!-- Tab Seguimientos -->
+      <div id="climt-seguimientos" style="display:none" class="p-3">
+        <div id="cli-seguimientos-list" class="mb-4"></div>
+        <div class="card border-primary">
+          <div class="card-header bg-primary-lt"><h4 class="card-title mb-0">Registrar contacto</h4></div>
+          <div class="card-body">
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Tipo</label>
+                <select class="form-select" id="seg-tipo">
+                  <option value="llamada">Llamada</option>
+                  <option value="visita">Visita</option>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="email">Email</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Resultado</label>
+                <input class="form-control" id="seg-resultado" placeholder="Ej: interesado, no contestó...">
+              </div>
+              <div class="col-12">
+                <label class="form-label">Descripción</label>
+                <textarea class="form-control" id="seg-descripcion" rows="2" placeholder="Detalle del contacto..."></textarea>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Próxima acción</label>
+                <input class="form-control" id="seg-prox-accion" placeholder="Ej: llamar en 1 semana">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Fecha próxima acción</label>
+                <input class="form-control" type="date" id="seg-fecha-prox">
+              </div>
+            </div>
+            <div class="mt-3">
+              <button class="btn btn-primary" onclick="agregarSeguimiento()"><i class="ti ti-plus me-1"></i>Guardar seguimiento</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: Prospecto ══ -->
+<div id="modal-prospecto" class="modal-bg">
+  <div class="card" style="width:100%;max-width:660px;max-height:90vh;overflow-y:auto">
+    <div class="card-header">
+      <h3 class="card-title" id="modal-prospecto-title">Nuevo prospecto</h3>
+      <div class="card-actions">
+        <button class="btn btn-ghost-secondary btn-icon" onclick="closeModal('modal-prospecto')"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+    <div class="card-body">
+      <input type="hidden" id="prosp-id">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Nombre *</label>
+          <input class="form-control" id="prosp-nombre" placeholder="Nombre completo">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Empresa</label>
+          <input class="form-control" id="prosp-empresa" placeholder="Nombre de la empresa">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Teléfono</label>
+          <input class="form-control" id="prosp-telefono" placeholder="3001234567">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Email</label>
+          <input class="form-control" id="prosp-email" type="email" placeholder="correo@ejemplo.com">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Ciudad</label>
+          <input class="form-control" id="prosp-ciudad" placeholder="Bogotá">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Dirección</label>
+          <input class="form-control" id="prosp-direccion" placeholder="Dirección">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Segmento</label>
+          <select class="form-select" id="prosp-segmento">
+            <option value="">Sin segmento</option>
+            <option value="restaurante">Restaurante</option>
+            <option value="supermercado">Supermercado</option>
+            <option value="institucional">Institucional</option>
+            <option value="particular">Particular</option>
+            <option value="distribuidor">Distribuidor</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Canal</label>
+          <select class="form-select" id="prosp-canal">
+            <option value="">Sin info</option>
+            <option value="cliente_daily">Cliente Daily</option>
+            <option value="pagina">Página web</option>
+            <option value="instagram">Instagram</option>
+            <option value="referido">Referido</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Estado / Etapa</label>
+          <select class="form-select" id="prosp-estado">
+            <option value="nuevo">Nuevo</option>
+            <option value="contactado">Contactado</option>
+            <option value="negociacion">En negociación</option>
+            <option value="primer_pedido">Primer pedido</option>
+            <option value="convertido">Convertido</option>
+            <option value="perdido">Perdido</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Responsable</label>
+          <input class="form-control" id="prosp-responsable" placeholder="Nombre responsable">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Fecha seguimiento</label>
+          <input class="form-control" type="date" id="prosp-fecha-seguimiento">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Valor potencial ($)</label>
+          <input class="form-control" id="prosp-valor-potencial" type="number" placeholder="0">
+        </div>
+        <div class="col-12">
+          <label class="form-label">Notas</label>
+          <textarea class="form-control" id="prosp-notas" rows="2" placeholder="Observaciones..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="card-footer d-flex gap-2 justify-content-end">
+      <button class="btn btn-ghost-secondary" onclick="closeModal('modal-prospecto')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarProspecto()"><i class="ti ti-device-floppy me-1"></i>Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MODAL: Campaña ══ -->
+<div id="modal-campana" class="modal-bg">
+  <div class="card" style="width:100%;max-width:560px;max-height:90vh;overflow-y:auto">
+    <div class="card-header">
+      <h3 class="card-title">Nueva campaña</h3>
+      <div class="card-actions">
+        <button class="btn btn-ghost-secondary btn-icon" onclick="closeModal('modal-campana')"><i class="ti ti-x"></i></button>
+      </div>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-12">
+          <label class="form-label">Nombre *</label>
+          <input class="form-control" id="camp-nombre" placeholder="Nombre de la campaña">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Tipo</label>
+          <select class="form-select" id="camp-tipo">
+            <option value="whatsapp">WhatsApp</option>
+            <option value="email">Email</option>
+            <option value="llamada">Llamada</option>
+            <option value="descuento">Descuento</option>
+            <option value="otro">Otro</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Segmento objetivo</label>
+          <select class="form-select" id="camp-segmento">
+            <option value="">Todos</option>
+            <option value="restaurante">Restaurante</option>
+            <option value="supermercado">Supermercado</option>
+            <option value="institucional">Institucional</option>
+            <option value="en_riesgo">Clientes en riesgo</option>
+            <option value="inactivo">Inactivos</option>
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Descripción</label>
+          <textarea class="form-control" id="camp-descripcion" rows="2" placeholder="Descripción de la campaña..."></textarea>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Valor / Descuento</label>
+          <input class="form-control" id="camp-valor" placeholder="Ej: 10%, $50.000">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Presupuesto ($)</label>
+          <input class="form-control" id="camp-presupuesto" type="number" placeholder="0">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Fecha inicio</label>
+          <input class="form-control" type="date" id="camp-fecha-inicio">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Fecha fin</label>
+          <input class="form-control" type="date" id="camp-fecha-fin">
+        </div>
+      </div>
+    </div>
+    <div class="card-footer d-flex gap-2 justify-content-end">
+      <button class="btn btn-ghost-secondary" onclick="closeModal('modal-campana')">Cancelar</button>
+      <button class="btn btn-primary" onclick="crearCampana()"><i class="ti ti-device-floppy me-1"></i>Guardar</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal foto ampliada -->
 <div id="modal-foto" class="modal-bg" onclick="closeModal('modal-foto')">
   <div style="max-width:90vw;max-height:90vh">
@@ -2211,6 +2688,9 @@ tr:hover .btn-delete { opacity: 1; }
 <script>
 const API = 'https://daily-sistema-gestion-production.up.railway.app';
 let mpList = [], recetasList = [], currentRecetaId = null, currentGastosTab = 'todos';
+let conciliadosSeleccionados = new Set();
+let crmPage = 1;
+let crmClienteActual = null;
 let modalPasos = [];
 let remisionItems = [];
 let remisionFotoBase64 = null;
@@ -2358,7 +2838,8 @@ function goto(sec) {
     'productos-siigo': loadProductosSiigo,
     reglas: loadReglas,
     'plan-produccion': loadPlanProduccion,
-    ventas: loadVentasSection
+    ventas: loadVentasSection,
+    crm: loadCrmModule
   };
   if(loaders[sec]) loaders[sec]();
 }
@@ -4495,22 +4976,21 @@ $('command-palette').addEventListener('click', function(e){ if(e.target === this
 // VENTAS / CRM — nuevo módulo Siigo + Conciliación
 // ═══════════════════════════════════════════════════════════════════
 
-var currentVentasTab = 'activos';
+var currentVentasTab = 'pendientes';
 var concilMovId = null;  // selected movimiento_id for conciliation
 var concilFactId = null; // selected factura_id for conciliation
 
 function crmTab(tab) {
   currentVentasTab = tab;
-  ['activos','historicos','conciliacion','config'].forEach(function(t){
+  ['pendientes','conciliados','config'].forEach(function(t){
     var el = $('vt-'+t); if(el) el.style.display = t===tab ? '' : 'none';
   });
-  document.querySelectorAll('#ventas-tabs .nav-link').forEach(function(a,i){
-    var tabs = ['activos','historicos','conciliacion','config'];
-    a.classList.toggle('active', tabs[i]===tab);
+  document.querySelectorAll('#ventas-tabs .nav-link').forEach(function(a){
+    var onclick = a.getAttribute('onclick') || '';
+    a.classList.toggle('active', onclick.includes("'"+tab+"'"));
   });
-  if(tab==='activos') loadActivos();
-  else if(tab==='historicos') loadHistoricos();
-  else if(tab==='conciliacion') loadConciliacion();
+  if(tab==='pendientes') loadConciliacion();
+  else if(tab==='conciliados') loadConciliados();
   else if(tab==='config') loadCrmConfig();
 }
 
@@ -4754,7 +5234,7 @@ function _pollSyncSiigo(resultEl, btns) {
       if(s.ok) {
         notyf.success(s.msg);
         if(resultEl) resultEl.innerHTML = '<div class="alert alert-success small">'+s.msg+'</div>';
-        if(currentVentasTab==='activos') loadActivos();
+        if(currentVentasTab==='pendientes') loadConciliacion();
         loadCrmConfig();
       } else {
         notyf.error(s.msg || 'Error en sync Siigo');
@@ -4777,7 +5257,7 @@ async function crmSyncBancos() {
     var msg = res.nuevos+' movimientos nuevos cargados.';
     notyf.success(msg);
     if(resultEl) resultEl.innerHTML = '<div class="alert alert-success small">'+msg+'</div>';
-    if(currentVentasTab==='conciliacion') loadConciliacion();
+    if(currentVentasTab==='pendientes') loadConciliacion();
     loadCrmConfig();
   }
 }
@@ -4866,23 +5346,33 @@ async function loadConciliacion() {
   concilFacturasCache = data.facturas_pendientes || [];
   concilFactSelId = null;
   _renderConcilFacturas(concilFacturasCache);
-  $('concil-sugerencias-body').innerHTML = '<div class="text-center text-secondary py-5 small"><i class="ti ti-hand-click" style="font-size:32px;opacity:.3;display:block;margin-bottom:8px"></i>Selecciona una factura para ver sugerencias</div>';
-  if($('concil-fact-info')) $('concil-fact-info').innerHTML = '';
 }
 
 function _renderConcilFacturas(facts) {
   var el = $('concil-facturas-body');
   var count = $('concil-facts-count');
   if(count) count.textContent = facts.length + ' pendientes';
+  // update badge
+  var badge = $('concil-pendientes-badge');
+  if(badge) { if(facts.length){ badge.textContent=facts.length; badge.style.display=''; } else { badge.style.display='none'; } }
   el.innerHTML = facts.length ? facts.map(function(f){
     var sel = concilFactSelId === f.id;
-    return '<tr class="'+(sel?'table-warning':'')+'" style="cursor:pointer" onclick="concilSelectFact('+f.id+',\''+f.cliente_nombre.replace(/'/g,"\\'")+'\',' + f.balance + ')">' +
+    var nombre = f.cliente_nombre || '';
+    var rows = '<tr class="'+(sel?'table-warning':'')+'" style="cursor:pointer" onclick="concilSelectFact('+f.id+',\''+nombre.replace(/'/g,"\\'").replace(/"/g,'&quot;')+'\',' + f.balance + ')">' +
       '<td class="small">'+f.fecha+'</td>' +
-      '<td class="small" style="max-width:130px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="'+f.cliente_nombre+'">'+f.cliente_nombre+'</td>' +
+      '<td class="small" style="max-width:130px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="'+nombre+'">'+nombre+'</td>' +
       '<td><code class="small">'+f.factura+'</code></td>' +
       '<td class="text-end fw-bold text-danger">$'+fmt(f.balance)+'</td>' +
+      '<td><button class="btn btn-xs btn-outline-primary" onclick="event.stopPropagation();marcarEfectivoFactura('+f.id+')" title="Marcar como pagada en efectivo"><i class="ti ti-cash"></i></button></td>' +
     '</tr>';
-  }).join('') : '<tr><td colspan="4" class="text-center text-secondary small py-4">Sin facturas pendientes</td></tr>';
+    if(sel) {
+      rows += '<tr id="concil-panel-'+f.id+'"><td colspan="5" class="p-0"><div class="bg-yellow-lt p-3">' +
+        '<div class="fw-bold mb-2"><i class="ti ti-bulb me-1"></i>Movimientos sugeridos — <span class="text-secondary small" id="concil-fact-info"></span></div>' +
+        '<div id="concil-sugerencias-body"><div class="text-secondary small text-center py-3"><i class="ti ti-loader spin me-1"></i>Buscando...</div></div>' +
+        '</div></td></tr>';
+    }
+    return rows;
+  }).join('') : '<tr><td colspan="5" class="text-center text-secondary small py-4">Sin facturas pendientes</td></tr>';
 }
 
 function filterConcilFacturas(q) {
@@ -4894,29 +5384,37 @@ function filterConcilFacturas(q) {
 }
 
 async function concilSelectFact(id, nombre, balance) {
+  // toggle: clicking same row collapses it
+  if(concilFactSelId === id) {
+    concilFactSelId = null;
+    _renderConcilFacturas(concilFacturasCache);
+    return;
+  }
   concilFactSelId = id;
-  _renderConcilFacturas(concilFacturasCache);  // re-render para highlight
+  _renderConcilFacturas(concilFacturasCache);  // re-render con panel inline
 
   var banco = ($('concil-banco')||{}).value || '';
   var infoEl = $('concil-fact-info');
   var bodyEl = $('concil-sugerencias-body');
 
-  if(infoEl) infoEl.innerHTML = '<span class="text-warning fw-bold">'+nombre+'</span> &nbsp;·&nbsp; Saldo: <strong>$'+fmt(balance)+'</strong>';
-  bodyEl.innerHTML = '<div class="text-secondary small text-center py-3"><i class="ti ti-loader spin me-1"></i>Buscando movimientos...</div>';
+  if(infoEl) infoEl.innerHTML = '<span class="fw-bold">'+nombre+'</span> &nbsp;·&nbsp; Saldo: <strong class="text-danger">$'+fmt(balance)+'</strong>';
+  if(bodyEl) bodyEl.innerHTML = '<div class="text-secondary small text-center py-3"><i class="ti ti-loader spin me-1"></i>Buscando movimientos...</div>';
 
   var res = await api('/crm/sugerencias/'+id,'GET',null,true).catch(function(){ return null; });
+  var bodyEl2 = $('concil-sugerencias-body'); // re-fetch in case DOM was re-rendered
+  if(!bodyEl2) return;
   if(!res || !res.sugerencias) {
-    bodyEl.innerHTML = '<div class="text-secondary small text-center py-3">No se encontraron movimientos similares</div>';
+    bodyEl2.innerHTML = '<div class="text-secondary small text-center py-3">No se encontraron movimientos similares</div>';
     return;
   }
 
   var sugs = res.sugerencias.filter(function(s){ return !banco || s.banco === banco; });
   if(!sugs.length) {
-    bodyEl.innerHTML = '<div class="text-secondary small text-center py-3">Sin movimientos similares'+(banco?' en '+banco:'')+'</div>';
+    bodyEl2.innerHTML = '<div class="text-secondary small text-center py-3">Sin movimientos similares'+(banco?' en '+banco:'')+'</div>';
     return;
   }
 
-  bodyEl.innerHTML = sugs.map(function(s){
+  bodyEl2.innerHTML = sugs.map(function(s){
     var pct = Math.round(s.score * 100);
     var barColor = pct >= 80 ? 'bg-success' : pct >= 50 ? 'bg-warning' : 'bg-secondary';
     var matchBadge = s.match_exacto ? '<span class="badge bg-success ms-1">Exacto</span>' : '';
@@ -4980,6 +5478,509 @@ async function autoConciliar() {
 function concilSelectMov(id) {}
 function concilClearSelection() { concilFactSelId = null; loadConciliacion(); }
 function conciliarSeleccion() {}
+
+// ── Efectivo ──
+async function marcarEfectivoFactura(fid) {
+  var res = await api('/crm/facturas/'+fid+'/efectivo','POST').catch(function(){ return null; });
+  if(res && res.ok) {
+    notyf.success('Marcada como pagada en efectivo');
+    loadConciliacion();
+    updateVentasPendienteBadge();
+  }
+}
+
+function marcarEfectivoSeleccionada() {
+  if(!concilFactSelId) { notyf.error('Selecciona una factura primero'); return; }
+  marcarEfectivoFactura(concilFactSelId);
+}
+
+// ── Tab: Conciliados ──
+
+async function loadConciliados() {
+  var q = ($('conciliados-buscar')||{}).value || '';
+  var filtroRc = ($('conciliados-filtro-rc')||{}).value || '';
+  var url = '/crm/conciliados?' + (q ? 'q='+encodeURIComponent(q)+'&' : '') + (filtroRc ? 'filtro_rc='+filtroRc : '');
+  var el = $('conciliados-body');
+  if(!el) return;
+  el.innerHTML = '<tr><td colspan="8" class="text-center text-secondary py-4"><i class="ti ti-loader spin me-1"></i>Cargando...</td></tr>';
+  var data = await api(url,'GET',null,true).catch(function(){ return []; });
+  if(!data.length) {
+    el.innerHTML = '<tr><td colspan="8" class="text-center text-secondary small py-4">Sin facturas conciliadas</td></tr>';
+    _updateConciliadosBadge(0);
+    return;
+  }
+  var sinRc = data.filter(function(f){ return !f.rc_numero; }).length;
+  _updateConciliadosBadge(sinRc);
+  conciliadosSeleccionados = new Set();
+  _updateBtnRcSeleccion();
+  el.innerHTML = data.map(function(f){
+    var sel = conciliadosSeleccionados.has(f.id);
+    var rcCell = f.rc_numero
+      ? '<span class="badge bg-success-lt">'+f.rc_numero+(f.rc_modo_prueba?' <span class="badge bg-warning-lt" style="font-size:9px">PRUEBA</span>':'')+'</span>'
+      : '<button class="btn btn-xs btn-outline-primary" onclick="generarRcFactura('+f.id+')"><i class="ti ti-receipt me-1"></i>Generar RC</button>';
+    var medioBadge = f.medio_pago
+      ? '<span class="badge bg-azure-lt">'+f.medio_pago+'</span>'
+      : '<span class="text-secondary small">--</span>';
+    return '<tr class="'+(sel?'table-warning':'')+'">' +
+      '<td><input type="checkbox" class="form-check-input" '+(sel?'checked':'')+' onchange="toggleConciliadoSelect('+f.id+',this.checked)"></td>' +
+      '<td class="small">'+f.fecha+'</td>' +
+      '<td class="small" style="max-width:150px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="'+(f.cliente_nombre||'')+'">'+( f.cliente_nombre||'--')+'</td>' +
+      '<td><code class="small">'+f.factura+'</code></td>' +
+      '<td class="text-end fw-bold">$'+fmt(f.total)+'</td>' +
+      '<td>'+medioBadge+'</td>' +
+      '<td class="small">'+(f.fecha_pago||'--')+'</td>' +
+      '<td>'+rcCell+'</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function _updateConciliadosBadge(sinRc) {
+  var badge = $('concil-sin-rc-badge');
+  if(!badge) return;
+  if(sinRc > 0) { badge.textContent = sinRc+' sin RC'; badge.style.display=''; }
+  else { badge.style.display='none'; }
+}
+
+function toggleConciliadoSelect(id, checked) {
+  if(checked) conciliadosSeleccionados.add(id);
+  else conciliadosSeleccionados.delete(id);
+  _updateBtnRcSeleccion();
+  // highlight row
+  loadConciliados();
+}
+
+function toggleAllConciliados(checked) {
+  var rows = document.querySelectorAll('#conciliados-body input[type=checkbox]');
+  rows.forEach(function(cb){ cb.checked = checked; });
+  conciliadosSeleccionados = new Set();
+  if(checked) {
+    rows.forEach(function(cb){
+      var m = cb.getAttribute('onchange').match(/\d+/);
+      if(m) conciliadosSeleccionados.add(parseInt(m[0]));
+    });
+  }
+  _updateBtnRcSeleccion();
+}
+
+function _updateBtnRcSeleccion() {
+  var btn = $('btn-generar-rc-seleccion');
+  if(!btn) return;
+  btn.disabled = conciliadosSeleccionados.size === 0;
+  btn.textContent = conciliadosSeleccionados.size > 0
+    ? 'Generar RC ('+conciliadosSeleccionados.size+' sel.)'
+    : 'Generar RC seleccionados';
+}
+
+async function generarRcSeleccionados() {
+  if(!conciliadosSeleccionados.size) return;
+  confirmAction('¿Generar Recibo de Caja para los '+conciliadosSeleccionados.size+' seleccionados?', async function(){
+    var res = await api('/crm/rc-masivo-seleccion','POST',{factura_ids: Array.from(conciliadosSeleccionados)}).catch(function(){ return null; });
+    if(res) {
+      var modo = res.modo_prueba ? ' (Modo prueba)' : '';
+      notyf.success((res.exitosas||0)+' RC generados'+modo);
+      if(res.errores && res.errores.length) notyf.error(res.errores.length+' errores');
+      conciliadosSeleccionados = new Set();
+      loadConciliados();
+    }
+  });
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// MÓDULO CRM — Dashboard, Clientes, Prospectos, Campañas
+// ═══════════════════════════════════════════════════════════════════
+
+var currentCrmTab = 'dashboard';
+var crmSegmentoChart = null;
+
+function crmModuleTab(tab) {
+  currentCrmTab = tab;
+  ['dashboard','clientes','prospectos','campanas'].forEach(function(t){
+    var el = $('crmt-'+t); if(el) el.style.display = t===tab ? '' : 'none';
+  });
+  document.querySelectorAll('#crm-tabs .nav-link').forEach(function(a){
+    var onclick = a.getAttribute('onclick') || '';
+    a.classList.toggle('active', onclick.includes("'"+tab+"'"));
+  });
+  if(tab==='dashboard') loadDashboardCrm();
+  else if(tab==='clientes') { crmPage=1; loadClientesCrm(); }
+  else if(tab==='prospectos') loadProspectos();
+  else if(tab==='campanas') loadCampanas();
+}
+
+function loadCrmModule() {
+  crmModuleTab(currentCrmTab);
+}
+
+// ── Dashboard CRM ──
+async function loadDashboardCrm() {
+  var data = await api('/crm/dashboard-crm','GET',null,true).catch(function(){ return null; });
+  if(!data) return;
+
+  // KPIs (backend retorna total_clientes_activos/riesgo/inactivos)
+  var kpiActivos = $('crm-kpi-activos');
+  var kpiRiesgo = $('crm-kpi-riesgo');
+  var kpiInactivos = $('crm-kpi-inactivos');
+  var kpiTicket = $('crm-kpi-ticket');
+  if(kpiActivos) kpiActivos.textContent = data.activos || data.total_clientes_activos || 0;
+  if(kpiRiesgo) kpiRiesgo.textContent = data.en_riesgo || data.total_clientes_riesgo || 0;
+  if(kpiInactivos) kpiInactivos.textContent = data.inactivos || data.total_clientes_inactivos || 0;
+  if(kpiTicket) kpiTicket.textContent = '$'+fmt(data.ticket_promedio || 0);
+
+  // Top 10
+  var top10 = $('crm-top10-body');
+  if(top10 && data.top_clientes) {
+    top10.innerHTML = data.top_clientes.slice(0,10).map(function(c,i){
+      var segBadge = c.segmento ? '<span class="badge bg-azure-lt">'+c.segmento+'</span>' : '--';
+      return '<tr>' +
+        '<td class="text-secondary small">'+(i+1)+'</td>' +
+        '<td><strong>'+c.nombre+'</strong></td>' +
+        '<td class="text-end">$'+fmt(c.total_compras)+'</td>' +
+        '<td class="text-end">'+c.num_facturas+'</td>' +
+        '<td class="small text-secondary">'+( c.ultima_compra||'--')+'</td>' +
+        '<td>'+segBadge+'</td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  // Chart segmento (backend retorna por_segmento con campo total_ventas)
+  var chartEl = $('crm-chart-segmento');
+  var _segData = data.ventas_segmento || data.por_segmento || [];
+  if(chartEl && _segData.length) {
+    if(crmSegmentoChart) { try { crmSegmentoChart.destroy(); } catch(e){} crmSegmentoChart=null; }
+    chartEl.innerHTML = '';
+    var cats = _segData.map(function(s){ return s.segmento || 'Sin segmento'; });
+    var vals = _segData.map(function(s){ return s.total || s.total_ventas || 0; });
+    crmSegmentoChart = new ApexCharts(chartEl, {
+      chart: { type:'bar', height:240, toolbar:{show:false}, fontFamily:'inherit' },
+      series: [{ name:'Ventas', data: vals }],
+      xaxis: { categories: cats },
+      colors: ['#206bc4'],
+      dataLabels: { enabled:false },
+      plotOptions: { bar: { borderRadius:4, horizontal:false } },
+      yaxis: { labels: { formatter: function(v){ return '$'+fmt(v); } } },
+      tooltip: { y: { formatter: function(v){ return '$'+fmt(v); } } }
+    });
+    crmSegmentoChart.render();
+  }
+
+  // Clientes en riesgo (backend retorna clientes_en_riesgo con total_compras)
+  var riesgoEl = $('crm-riesgo-body');
+  var _riesgoData = data.clientes_riesgo || data.clientes_en_riesgo || [];
+  if(riesgoEl) {
+    riesgoEl.innerHTML = _riesgoData.length ? _riesgoData.map(function(c){
+      var diasSinCompra = c.dias_sin_compra != null ? c.dias_sin_compra : '--';
+      var totalHist = c.total_historico || c.total_compras || 0;
+      var btnVer = c.id ? '<button class="btn btn-xs btn-outline-primary" onclick="verClienteCrm('+c.id+');cliModalTab(\'seguimientos\')"><i class="ti ti-phone me-1"></i>Registrar</button>' : '--';
+      return '<tr>' +
+        '<td><strong>'+c.nombre+'</strong></td>' +
+        '<td class="small">'+(c.telefono ? '<a href="https://wa.me/57'+c.telefono.replace(/\D/g,'')+'" target="_blank" class="text-green">'+c.telefono+'</a>' : '--')+'</td>' +
+        '<td class="small text-secondary">'+(c.ultima_compra||'--')+'</td>' +
+        '<td class="text-end"><span class="badge bg-warning-lt">'+diasSinCompra+' días</span></td>' +
+        '<td class="text-end">$'+fmt(totalHist)+'</td>' +
+        '<td>'+btnVer+'</td>' +
+      '</tr>';
+    }).join('') : '<tr><td colspan="6" class="text-center text-secondary small py-4">Sin clientes en riesgo</td></tr>';
+  }
+}
+
+// ── Clientes CRM ──
+async function loadClientesCrm() {
+  var q = ($('crm-cli-buscar')||{}).value || '';
+  var seg = ($('crm-cli-segmento')||{}).value || '';
+  var est = ($('crm-cli-estado')||{}).value || '';
+  var limit = 50;
+  var offset = (crmPage-1)*limit;
+  var url = '/crm/clientes-crm?page='+crmPage+'&page_size='+limit +
+    (q?'&q='+encodeURIComponent(q):'') +
+    (seg?'&segmento='+seg:'') +
+    (est?'&estado='+est:'');
+  var el = $('crm-clientes-body');
+  if(!el) return;
+  el.innerHTML = '<tr><td colspan="9" class="text-center text-secondary py-4"><i class="ti ti-loader spin me-1"></i>Cargando...</td></tr>';
+  var res = await api(url,'GET',null,true).catch(function(){ return {clientes:[], total_count:0}; });
+  var items = res.items || res.clientes || res || [];
+  var total = res.total || res.total_count || items.length;
+  var infoEl = $('crm-cli-pag-info');
+  if(infoEl) infoEl.textContent = (offset+1)+'-'+Math.min(offset+limit, total)+' de '+total;
+  var prevBtn = $('crm-cli-prev'); var nextBtn = $('crm-cli-next');
+  if(prevBtn) prevBtn.disabled = crmPage <= 1;
+  if(nextBtn) nextBtn.disabled = offset+limit >= total;
+  if(!items.length) { el.innerHTML = '<tr><td colspan="9" class="text-center text-secondary small py-4">Sin clientes</td></tr>'; return; }
+  el.innerHTML = items.map(function(c){
+    var estadoColors = {activo:'success', en_riesgo:'warning', inactivo:'danger', recuperado:'azure'};
+    var estadoBadge = '<span class="badge bg-'+(estadoColors[c.estado]||'secondary')+'-lt">'+(c.estado||'--')+'</span>';
+    var segBadge = c.segmento ? '<span class="badge bg-blue-lt">'+c.segmento+'</span>' : '--';
+    return '<tr>' +
+      '<td><strong>'+c.nombre+'</strong><div class="text-secondary small">'+(c.ciudad||'')+'</div></td>' +
+      '<td class="small text-secondary">'+(c.cedula||'--')+'</td>' +
+      '<td class="small">'+(c.telefono ? '<a href="https://wa.me/57'+c.telefono.replace(/\D/g,'')+'" target="_blank" class="text-green">'+c.telefono+'</a>' : '--')+'</td>' +
+      '<td>'+segBadge+'</td>' +
+      '<td class="small text-secondary">'+(c.origen_canal||'--')+'</td>' +
+      '<td>'+estadoBadge+'</td>' +
+      '<td class="small text-secondary">'+(c.ultima_compra||'--')+'</td>' +
+      '<td class="text-end">$'+fmt(c.total_ventas||0)+'</td>' +
+      '<td><button class="btn btn-xs btn-outline-primary" onclick="verClienteCrm('+c.id+')"><i class="ti ti-eye me-1"></i>Ver</button></td>' +
+    '</tr>';
+  }).join('');
+}
+
+function crmCliPage(dir) {
+  crmPage = Math.max(1, crmPage + dir);
+  loadClientesCrm();
+}
+
+function exportarClientesCrm() {
+  var q = ($('crm-cli-buscar')||{}).value || '';
+  var seg = ($('crm-cli-segmento')||{}).value || '';
+  var est = ($('crm-cli-estado')||{}).value || '';
+  var url = API+'/crm/clientes-crm/exportar?' + (q?'q='+encodeURIComponent(q)+'&':'') + (seg?'segmento='+seg+'&':'') + (est?'estado='+est:'');
+  window.open(url,'_blank');
+}
+
+async function verClienteCrm(id) {
+  crmClienteActual = id;
+  var data = await api('/crm/clientes-crm/'+id,'GET',null,true).catch(function(){ return null; });
+  if(!data) return;
+  var nombreEl = $('modal-cli-nombre'); if(nombreEl) nombreEl.textContent = data.nombre;
+  var estadoColors = {activo:'success', en_riesgo:'warning', inactivo:'danger', recuperado:'azure'};
+  var badgeEl = $('modal-cli-estado-badge');
+  if(badgeEl) badgeEl.innerHTML = '<span class="badge bg-'+(estadoColors[data.estado]||'secondary')+'-lt">'+(data.estado||'--')+'</span>';
+  var idEl = $('cli-modal-id'); if(idEl) idEl.value = id;
+  // fill form (backend retorna estado_cliente y canal_adquisicion)
+  if($('cli-segmento')) $('cli-segmento').value = data.segmento || '';
+  if($('cli-canal')) $('cli-canal').value = data.origen_canal || data.canal_adquisicion || '';
+  if($('cli-estado')) $('cli-estado').value = data.estado || data.estado_cliente || 'activo';
+  if($('cli-responsable')) $('cli-responsable').value = data.responsable || '';
+  if($('cli-cupo-credito')) $('cli-cupo-credito').value = data.cupo_credito || '';
+  if($('cli-dias-credito')) $('cli-dias-credito').value = data.dias_credito || '';
+  if($('cli-notas-crm')) $('cli-notas-crm').value = data.notas_crm || '';
+  // facturas
+  var factEl = $('cli-facturas-body');
+  if(factEl && data.facturas) {
+    factEl.innerHTML = data.facturas.slice(0,20).map(function(f){
+      var saldoBadge = f.balance > 0 ? '<span class="text-danger small">$'+fmt(f.balance)+'</span>' : '<span class="text-success small">Pagada</span>';
+      return '<tr><td><code class="small">'+f.factura+'</code></td><td class="small">'+f.fecha+'</td>' +
+        '<td class="text-end small">$'+fmt(f.total)+'</td><td class="text-end">'+saldoBadge+'</td>' +
+        '<td class="small">'+(f.estado_pago||'--')+'</td>' +
+        '<td>'+(f.rc_numero?'<span class="badge bg-success-lt">'+f.rc_numero+'</span>':'--')+'</td></tr>';
+    }).join('');
+  }
+  // seguimientos
+  _renderSeguimientos(data.seguimientos || []);
+  openModal('modal-crm-cliente');
+  cliModalTab('datos');
+}
+
+function _renderSeguimientos(segs) {
+  var el = $('cli-seguimientos-list');
+  if(!el) return;
+  if(!segs.length) { el.innerHTML = '<div class="text-secondary small text-center py-3">Sin seguimientos registrados</div>'; return; }
+  el.innerHTML = segs.map(function(s){
+    var tipoIcons = {llamada:'ti-phone', visita:'ti-map-pin', whatsapp:'ti-brand-whatsapp', email:'ti-mail'};
+    return '<div class="d-flex gap-3 mb-3 pb-3 border-bottom">' +
+      '<div class="text-center" style="min-width:36px"><i class="ti '+(tipoIcons[s.tipo]||'ti-message-circle')+' fs-3 text-primary"></i></div>' +
+      '<div class="flex-fill">' +
+        '<div class="d-flex justify-content-between mb-1"><strong class="small">'+s.tipo+'</strong><span class="text-secondary small">'+(s.fecha||'--')+'</span></div>' +
+        '<div class="small">'+(s.descripcion||'')+'</div>' +
+        (s.resultado ? '<div class="small text-secondary mt-1">Resultado: '+s.resultado+'</div>' : '') +
+        (s.proxima_accion ? '<div class="small text-primary mt-1"><i class="ti ti-arrow-right me-1"></i>'+s.proxima_accion+(s.fecha_prox_accion?' ('+s.fecha_prox_accion+')':'')+'</div>' : '') +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function cliModalTab(tab) {
+  ['datos','facturas','seguimientos'].forEach(function(t){
+    var el = $('climt-'+t); if(el) el.style.display = t===tab ? '' : 'none';
+  });
+  document.querySelectorAll('#cli-modal-tabs .nav-link').forEach(function(a){
+    var onclick = a.getAttribute('onclick') || '';
+    a.classList.toggle('active', onclick.includes("'"+tab+"'"));
+  });
+}
+
+async function guardarClienteCrm() {
+  var id = ($('cli-modal-id')||{}).value;
+  if(!id) return;
+  var body = {
+    segmento: ($('cli-segmento')||{}).value || null,
+    canal_adquisicion: ($('cli-canal')||{}).value || null,
+    estado_cliente: ($('cli-estado')||{}).value || 'activo',
+    responsable: ($('cli-responsable')||{}).value || null,
+    cupo_credito: parseFloat(($('cli-cupo-credito')||{}).value) || null,
+    dias_credito: parseInt(($('cli-dias-credito')||{}).value) || null,
+    notas_crm: ($('cli-notas-crm')||{}).value || null
+  };
+  var res = await api('/crm/clientes-crm/'+id,'PUT',body).catch(function(){ return null; });
+  if(res && res.ok !== false) {
+    notyf.success('Cliente actualizado');
+    loadClientesCrm();
+  }
+}
+
+async function agregarSeguimiento() {
+  if(!crmClienteActual) return;
+  var body = {
+    cliente_id: crmClienteActual,
+    tipo: ($('seg-tipo')||{}).value || 'llamada',
+    descripcion: ($('seg-descripcion')||{}).value || '',
+    resultado: ($('seg-resultado')||{}).value || '',
+    proxima_accion: ($('seg-prox-accion')||{}).value || '',
+    fecha_prox_accion: ($('seg-fecha-prox')||{}).value || null
+  };
+  var res = await api('/crm/seguimientos','POST',body).catch(function(){ return null; });
+  if(res) {
+    notyf.success('Seguimiento registrado');
+    // clear form
+    ['seg-descripcion','seg-resultado','seg-prox-accion','seg-fecha-prox'].forEach(function(id){ var el=$(id); if(el) el.value=''; });
+    // reload seguimientos
+    var data = await api('/crm/clientes-crm/'+crmClienteActual,'GET',null,true).catch(function(){ return null; });
+    if(data) _renderSeguimientos(data.seguimientos || []);
+  }
+}
+
+// ── Prospectos ──
+async function loadProspectos() {
+  var el = $('crm-prospectos-body');
+  if(!el) return;
+  el.innerHTML = '<tr><td colspan="9" class="text-center text-secondary py-4"><i class="ti ti-loader spin me-1"></i>Cargando...</td></tr>';
+  var data = await api('/crm/prospectos','GET',null,true).catch(function(){ return []; });
+  // Pipeline badges
+  var pipelineEl = $('crm-pipeline-badges');
+  if(pipelineEl) {
+    var etapas = {nuevo:'secondary',contactado:'blue',negociacion:'yellow',primer_pedido:'lime',convertido:'success',perdido:'red'};
+    var counts = {};
+    data.forEach(function(p){ counts[p.estado] = (counts[p.estado]||0)+1; });
+    pipelineEl.innerHTML = Object.keys(etapas).map(function(e){
+      return '<span class="badge bg-'+etapas[e]+'-lt px-3 py-2" style="font-size:12px">'+e.replace('_',' ')+': <strong>'+(counts[e]||0)+'</strong></span>';
+    }).join('');
+  }
+  if(!data.length) { el.innerHTML = '<tr><td colspan="9" class="text-center text-secondary small py-4">Sin prospectos. Crea el primero.</td></tr>'; return; }
+  var etapaColors = {nuevo:'secondary',contactado:'blue',negociacion:'yellow',primer_pedido:'lime',convertido:'success',perdido:'red'};
+  el.innerHTML = data.map(function(p){
+    var estadoBadge = '<span class="badge bg-'+(etapaColors[p.estado]||'secondary')+'-lt">'+(p.estado||'--').replace('_',' ')+'</span>';
+    var acciones = '<button class="btn btn-xs btn-outline-secondary me-1" onclick="editarProspecto('+p.id+')"><i class="ti ti-edit"></i></button>';
+    if(p.estado === 'primer_pedido') {
+      acciones += '<button class="btn btn-xs btn-success" onclick="convertirProspecto('+p.id+')" title="Convertir a cliente"><i class="ti ti-user-check"></i></button>';
+    }
+    return '<tr>' +
+      '<td><strong>'+p.nombre+'</strong></td>' +
+      '<td class="small text-secondary">'+(p.empresa||'--')+'</td>' +
+      '<td class="small">'+(p.telefono||'--')+'</td>' +
+      '<td>'+(p.segmento?'<span class="badge bg-azure-lt">'+p.segmento+'</span>':'--')+'</td>' +
+      '<td>'+estadoBadge+'</td>' +
+      '<td class="small text-secondary">'+(p.responsable||'--')+'</td>' +
+      '<td class="small text-secondary">'+(p.fecha_seguimiento||'--')+'</td>' +
+      '<td class="text-end">'+(p.valor_potencial?'$'+fmt(p.valor_potencial):'--')+'</td>' +
+      '<td>'+acciones+'</td>' +
+    '</tr>';
+  }).join('');
+}
+
+function _fillProspectoModal(p) {
+  var fields = {
+    'prosp-nombre': p.nombre, 'prosp-empresa': p.empresa, 'prosp-telefono': p.telefono,
+    'prosp-email': p.email, 'prosp-ciudad': p.ciudad, 'prosp-direccion': p.direccion,
+    'prosp-segmento': p.segmento, 'prosp-canal': p.canal || p.origen_canal,
+    'prosp-estado': p.estado, 'prosp-responsable': p.responsable,
+    'prosp-fecha-seguimiento': p.fecha_seguimiento, 'prosp-valor-potencial': p.valor_potencial,
+    'prosp-notas': p.notas, 'prosp-id': p.id || ''
+  };
+  Object.keys(fields).forEach(function(k){ var el=$(k); if(el) el.value = fields[k]||''; });
+}
+
+async function editarProspecto(id) {
+  var data = await api('/crm/prospectos/'+id,'GET',null,true).catch(function(){ return null; });
+  if(!data) return;
+  _fillProspectoModal(data);
+  if($('modal-prospecto-title')) $('modal-prospecto-title').textContent = 'Editar prospecto';
+  openModal('modal-prospecto');
+}
+
+async function guardarProspecto() {
+  var id = ($('prosp-id')||{}).value;
+  var body = {
+    nombre: ($('prosp-nombre')||{}).value,
+    empresa: ($('prosp-empresa')||{}).value,
+    telefono: ($('prosp-telefono')||{}).value,
+    email: ($('prosp-email')||{}).value,
+    ciudad: ($('prosp-ciudad')||{}).value,
+    direccion: ($('prosp-direccion')||{}).value,
+    segmento: ($('prosp-segmento')||{}).value,
+    canal: ($('prosp-canal')||{}).value,
+    estado: ($('prosp-estado')||{}).value || 'nuevo',
+    responsable: ($('prosp-responsable')||{}).value,
+    fecha_seguimiento: ($('prosp-fecha-seguimiento')||{}).value || null,
+    valor_potencial: parseFloat(($('prosp-valor-potencial')||{}).value) || null,
+    notas: ($('prosp-notas')||{}).value
+  };
+  if(!body.nombre) { notyf.error('El nombre es obligatorio'); return; }
+  var res;
+  if(id) res = await api('/crm/prospectos/'+id,'PUT',body).catch(function(){ return null; });
+  else res = await api('/crm/prospectos','POST',body).catch(function(){ return null; });
+  if(res) {
+    notyf.success(id ? 'Prospecto actualizado' : 'Prospecto creado');
+    closeModal('modal-prospecto');
+    loadProspectos();
+  }
+}
+
+function crearProspecto() {
+  _fillProspectoModal({});
+  if($('modal-prospecto-title')) $('modal-prospecto-title').textContent = 'Nuevo prospecto';
+  openModal('modal-prospecto');
+}
+
+async function convertirProspecto(id) {
+  confirmAction('¿Convertir este prospecto a cliente?', async function(){
+    var res = await api('/crm/prospectos/'+id,'PUT',{estado:'convertido'}).catch(function(){ return null; });
+    if(res) { notyf.success('Prospecto convertido a cliente'); loadProspectos(); }
+  });
+}
+
+// ── Campañas ──
+async function loadCampanas() {
+  var el = $('crm-campanas-body');
+  if(!el) return;
+  el.innerHTML = '<tr><td colspan="8" class="text-center text-secondary py-4"><i class="ti ti-loader spin me-1"></i>Cargando...</td></tr>';
+  var data = await api('/crm/campanas','GET',null,true).catch(function(){ return []; });
+  if(!data.length) { el.innerHTML = '<tr><td colspan="8" class="text-center text-secondary small py-4">Sin campañas creadas</td></tr>'; return; }
+  var estadoColors = {activa:'success', pausada:'warning', finalizada:'secondary', borrador:'blue'};
+  el.innerHTML = data.map(function(c){
+    var estadoBadge = '<span class="badge bg-'+(estadoColors[c.estado]||'secondary')+'-lt">'+(c.estado||'--')+'</span>';
+    var vigencia = [(c.fecha_inicio||''), (c.fecha_fin||'')].filter(Boolean).join(' → ') || '--';
+    return '<tr>' +
+      '<td><strong>'+c.nombre+'</strong></td>' +
+      '<td class="small">'+(c.tipo||'--')+'</td>' +
+      '<td>'+(c.segmento?'<span class="badge bg-azure-lt">'+c.segmento+'</span>':'--')+'</td>' +
+      '<td class="small text-secondary">'+vigencia+'</td>' +
+      '<td class="text-end">'+(c.clientes_objetivo||'--')+'</td>' +
+      '<td class="text-end">'+(c.respondieron||'0')+'</td>' +
+      '<td>'+estadoBadge+'</td>' +
+      '<td><button class="btn btn-xs btn-outline-secondary"><i class="ti ti-eye"></i></button></td>' +
+    '</tr>';
+  }).join('');
+}
+
+async function crearCampana() {
+  var body = {
+    nombre: ($('camp-nombre')||{}).value,
+    tipo: ($('camp-tipo')||{}).value,
+    descripcion: ($('camp-descripcion')||{}).value,
+    segmento: ($('camp-segmento')||{}).value,
+    valor: ($('camp-valor')||{}).value,
+    presupuesto: parseFloat(($('camp-presupuesto')||{}).value) || null,
+    fecha_inicio: ($('camp-fecha-inicio')||{}).value || null,
+    fecha_fin: ($('camp-fecha-fin')||{}).value || null
+  };
+  if(!body.nombre) { notyf.error('El nombre es obligatorio'); return; }
+  var res = await api('/crm/campanas','POST',body).catch(function(){ return null; });
+  if(res) {
+    notyf.success('Campaña creada');
+    closeModal('modal-campana');
+    loadCampanas();
+  }
+}
 
 // ── INIT ──────────────────────────────────────────────────────────
 loadDashboard();

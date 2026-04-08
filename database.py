@@ -501,6 +501,20 @@ def _create_tables():
     # Migración: tipo de documento para RC en Siigo
     cur.execute("ALTER TABLE crm_clientes ADD COLUMN IF NOT EXISTS id_type_code TEXT DEFAULT '13'")
     cur.execute("ALTER TABLE crm_clientes ADD COLUMN IF NOT EXISTS person_type  TEXT DEFAULT 'Person'")
+    # Migraciones CRM extendido
+    for col, defn in [
+        ("segmento",          "TEXT DEFAULT 'Sin clasificar'"),
+        ("canal_adquisicion", "TEXT"),
+        ("estado_cliente",    "TEXT DEFAULT 'activo'"),
+        ("ultima_compra",     "DATE"),
+        ("total_compras",     "NUMERIC(16,2) DEFAULT 0"),
+        ("num_facturas",      "INTEGER DEFAULT 0"),
+        ("responsable",       "TEXT"),
+        ("cupo_credito",      "NUMERIC(14,2) DEFAULT 0"),
+        ("dias_credito",      "INTEGER DEFAULT 0"),
+        ("notas_crm",         "TEXT"),
+    ]:
+        cur.execute(f"ALTER TABLE crm_clientes ADD COLUMN IF NOT EXISTS {col} {defn}")
 
     # ── CRM: facturas desde Siigo ────────────────────────────────
     cur.execute("""
@@ -562,6 +576,66 @@ def _create_tables():
             actualizados INTEGER DEFAULT 0,
             fecha       TIMESTAMP DEFAULT NOW(),
             detalle     TEXT
+        )
+    """)
+
+    # ── CRM: seguimientos (log de contacto) ─────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS crm_seguimientos (
+            id              SERIAL PRIMARY KEY,
+            cliente_id      INTEGER REFERENCES crm_clientes(id) ON DELETE CASCADE,
+            tipo            TEXT NOT NULL,
+            descripcion     TEXT NOT NULL,
+            resultado       TEXT,
+            fecha           TIMESTAMP DEFAULT NOW(),
+            responsable     TEXT,
+            proxima_accion  TEXT,
+            proxima_fecha   DATE
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_crm_seg_cliente ON crm_seguimientos(cliente_id)")
+
+    # ── CRM: prospectos ───────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS crm_prospectos (
+            id                    SERIAL PRIMARY KEY,
+            nombre                TEXT NOT NULL,
+            empresa               TEXT,
+            telefono              TEXT,
+            email                 TEXT,
+            direccion             TEXT,
+            ciudad                TEXT,
+            segmento              TEXT,
+            canal                 TEXT,
+            estado                TEXT DEFAULT 'contactado',
+            responsable           TEXT,
+            notas                 TEXT,
+            fecha_contacto        DATE DEFAULT CURRENT_DATE,
+            fecha_seguimiento     DATE,
+            valor_potencial       NUMERIC(14,2) DEFAULT 0,
+            convertido_cliente_id INTEGER REFERENCES crm_clientes(id) ON DELETE SET NULL,
+            creado_en             TIMESTAMP DEFAULT NOW(),
+            actualizado_en        TIMESTAMP DEFAULT NOW()
+        )
+    """)
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_crm_pros_estado ON crm_prospectos(estado)")
+
+    # ── CRM: campanas ─────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS crm_campanas (
+            id                   SERIAL PRIMARY KEY,
+            nombre               TEXT NOT NULL,
+            tipo                 TEXT NOT NULL,
+            descripcion          TEXT,
+            segmento_objetivo    TEXT,
+            valor                NUMERIC(10,2),
+            fecha_inicio         DATE,
+            fecha_fin            DATE,
+            activa               BOOLEAN DEFAULT TRUE,
+            presupuesto          NUMERIC(14,2) DEFAULT 0,
+            clientes_objetivo    INTEGER DEFAULT 0,
+            clientes_respondieron INTEGER DEFAULT 0,
+            creado_en            TIMESTAMP DEFAULT NOW()
         )
     """)
 

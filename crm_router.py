@@ -1317,3 +1317,728 @@ def get_sync_log():
          "registros": r[2], "nuevos": r[3], "actualizados": r[4], "detalle": r[5]}
         for r in rows
     ]
+
+
+# ═══════════════════════════════════════════════════════════════
+# TAREA 1 — CONCILIACIÓN EXTENDIDA
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/conciliados")
+def get_conciliados(q: Optional[str] = None, filtro_rc: Optional[str] = None):
+    """Facturas ya pagadas con info del cliente y movimiento bancario vinculado."""
+    conn = get_conn()
+    cur = conn.cursor()
+
+    q_filter = ""
+    params: list = []
+    if q:
+        q_filter = "AND (c.nombre ILIKE %s OR CAST(f.numero AS TEXT) ILIKE %s)"
+        params.extend([f"%{q}%", f"%{q}%"])
+    if filtro_rc == "con_rc":
+        q_filter += " AND f.rc_siigo_id IS NOT NULL"
+    elif filtro_rc == "sin_rc":
+        q_filter += " AND f.rc_siigo_id IS NULL"
+
+    cur.execute(f"""
+        SELECT f.id, f.siigo_invoice_id, f.numero, f.prefix, f.fecha,
+               f.total, f.balance, f.estado_pago, f.medio_pago, f.cuenta_debito,
+               f.movimiento_id, f.rc_siigo_id, f.rc_numero, f.rc_modo_prueba,
+               c.nombre AS cliente_nombre, c.cedula AS cliente_cedula,
+               m.banco, m.fecha AS mov_fecha, m.valor AS mov_valor, m.descripcion AS mov_desc
+        FROM crm_facturas f
+        LEFT JOIN crm_clientes c ON c.id = f.cliente_id
+        LEFT JOIN movimientos_bancarios m ON m.id = f.movimiento_id
+        WHERE f.estado_pago = 'pagado' {q_filter}
+        ORDER BY f.fecha DESC
+        LIMIT 500
+    """, params)
+
+    cols = [
+        "id", "siigo_invoice_id", "numero", "prefix", "fecha",
+        "total", "balance", "estado_pago", "medio_pago", "cuenta_debito",
+        "movimiento_id", "rc_siigo_id", "rc_numero", "rc_modo_prueba",
+        "cliente_nombre", "cliente_cedula",
+        "banco", "mov_fecha", "mov_valor", "mov_desc"
+    ]
+    result = []
+    for row in cur.fetchall():
+        d = dict(zip(cols, row))
+        if d["fecha"]:
+            d["fecha"] = d["fecha"].isoformat()
+        if d["mov_fecha"]:
+            d["mov_fecha"] = d["mov_fecha"].isoformat()
+        if d["total"] is not None:
+            d["total"] = float(d["total"])
+        if d["balance"] is not None:
+            d["balance"] = float(d["balance"])
+        if d["mov_valor"] is not None:
+            d["mov_valor"] = float(d["mov_valor"])
+        result.append(d)
+
+    cur.close(); conn.close()
+    return result
+
+
+@router.post("/facturas/{factura_id}/efectivo")
+def pagar_efectivo(factura_id: int):
+    """Marca una factura como pagada en efectivo (sin movimiento bancario)."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, estado_pago FROM crm_facturas WHERE id = %s", (factura_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        raise HTTPException(404, "Factura no encontrada")
+    if row[1] == "pagado":
+        cur.close(); conn.close()
+        raise HTTPException(400, "La factura ya está pagada")
+
+    cur.execute("""
+        UPDATE crm_facturas
+        SET estado_pago='pagado', medio_pago='Efectivo', cuenta_debito='11050501'
+        WHERE id=%s
+    """, (factura_id,))
+    conn.commit()
+    cur.close(); conn.close()
+    return {"ok": True, "factura_id": factura_id}
+
+
+class RcMasivoIn(BaseModel):
+    factura_ids: list
+
+@router.post("/rc-masivo-seleccion")
+def rc_masivo_seleccion(data: RcMasivoIn):
+    """Genera RC en Siigo para las facturas indicadas (pagadas y sin RC)."""
+    if not data.factura_ids:
+        return {"ok": True, "exitosas": 0, "errores": []}
+
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, siigo_invoice_id, numero, prefix, total, balance,
+               estado_pago, medio_pago, cuenta_debito, rc_siigo_id
+        FROM crm_facturas
+        WHERE id = ANY(%s) AND estado_pago = 'pagado' AND rc_siigo_id IS NULL
+    """, (list(data.factura_ids),))
+    facturas = cur.fetchall()
+    cur.close(); conn.close()
+
+    modo = _modo_prueba()
+    ok_count = 0
+    errors = []
+
+    for row in facturas:
+        factura = {
+            "id": row[0], "siigo_invoice_id": row[1], "numero": row[2], "prefix": row[3],
+            "total": row[4], "balance": row[5], "estado_pago": row[6],
+            "medio_pago": row[7], "cuenta_debito": row[8]
+        }
+        result = _crear_rc_en_siigo(factura, modo)
+        if result["ok"]:
+            conn2 = get_conn()
+            cur2 = conn2.cursor()
+            cur2.execute("""
+                UPDATE crm_facturas
+                SET rc_siigo_id=%s, rc_numero=%s, rc_modo_prueba=%s
+                WHERE id=%s
+            """, (result["rc_id"], result["rc_numero"], result["simulado"], row[0]))
+            conn2.commit()
+            cur2.close(); conn2.close()
+            ok_count += 1
+        else:
+            errors.append({"factura_id": row[0], "error": result.get("error", "Error desconocido")})
+
+    return {"ok": True, "exitosas": ok_count, "errores": errors}
+
+
+# ═══════════════════════════════════════════════════════════════
+# TAREA 3 — ENDPOINTS CRM (dashboard, clientes, seguimientos, prospectos)
+# ═══════════════════════════════════════════════════════════════
+
+@router.get("/dashboard-crm")
+def dashboard_crm():
+    """Métricas generales del CRM."""
+    conn = get_conn()
+    cur = conn.cursor()
+    hoy = date.today()
+    hace_30 = (hoy - timedelta(days=30)).isoformat()
+    hace_90 = (hoy - timedelta(days=90)).isoformat()
+
+    # Clasificación por última compra (usa columna ultima_compra de crm_clientes si existe,
+    # sino la calcula desde crm_facturas)
+    cur.execute("""
+        SELECT
+          COUNT(*) FILTER (WHERE uc >= %s) AS activos,
+          COUNT(*) FILTER (WHERE uc < %s AND uc >= %s) AS en_riesgo,
+          COUNT(*) FILTER (WHERE uc < %s OR uc IS NULL) AS inactivos
+        FROM (
+          SELECT c.id,
+                 COALESCE(c.ultima_compra, MAX(f.fecha)) AS uc
+          FROM crm_clientes c
+          LEFT JOIN crm_facturas f ON f.cliente_id = c.id
+          GROUP BY c.id, c.ultima_compra
+        ) sub
+    """, (hace_90, hace_90, hace_30, hace_90))
+    row = cur.fetchone()
+    total_activos, total_riesgo, total_inactivos = (row[0] or 0), (row[1] or 0), (row[2] or 0)
+
+    # Ticket promedio últimos 90 días
+    cur.execute("""
+        SELECT AVG(total) FROM crm_facturas
+        WHERE fecha >= %s AND total > 0
+    """, (hace_90,))
+    ticket_row = cur.fetchone()
+    ticket_promedio = float(ticket_row[0] or 0)
+
+    # Top 10 clientes por total_compras
+    cur.execute("""
+        SELECT c.nombre,
+               COALESCE(c.total_compras, SUM(f.total)) AS total,
+               COALESCE(c.num_facturas, COUNT(f.id)) AS num_facturas,
+               COALESCE(c.ultima_compra, MAX(f.fecha)) AS ultima_compra,
+               c.segmento
+        FROM crm_clientes c
+        LEFT JOIN crm_facturas f ON f.cliente_id = c.id
+        GROUP BY c.id
+        ORDER BY total DESC NULLS LAST
+        LIMIT 10
+    """)
+    top_clientes = [
+        {
+            "nombre": r[0],
+            "total": float(r[1] or 0),
+            "total_compras": float(r[1] or 0),
+            "num_facturas": r[2] or 0,
+            "ultima_compra": r[3].isoformat() if r[3] else None,
+            "segmento": r[4]
+        }
+        for r in cur.fetchall()
+    ]
+
+    # Por segmento
+    cur.execute("""
+        SELECT segmento, COUNT(*) AS count,
+               COALESCE(SUM(total_compras), 0) AS total_ventas
+        FROM crm_clientes
+        GROUP BY segmento
+        ORDER BY count DESC
+    """)
+    por_segmento = [
+        {"segmento": r[0], "count": r[1], "total_ventas": float(r[2] or 0)}
+        for r in cur.fetchall()
+    ]
+
+    # Por canal
+    cur.execute("""
+        SELECT canal_adquisicion, COUNT(*) AS count
+        FROM crm_clientes
+        GROUP BY canal_adquisicion
+        ORDER BY count DESC
+    """)
+    por_canal = [{"canal": r[0], "count": r[1]} for r in cur.fetchall()]
+
+    # Clientes en riesgo (sin compra 30-90 días)
+    cur.execute("""
+        SELECT c.id, c.nombre, c.telefono,
+               COALESCE(c.ultima_compra, MAX(f.fecha)) AS uc,
+               COALESCE(c.total_compras, SUM(f.total)) AS total
+        FROM crm_clientes c
+        LEFT JOIN crm_facturas f ON f.cliente_id = c.id
+        GROUP BY c.id
+        HAVING COALESCE(c.ultima_compra, MAX(f.fecha)) < %s
+           AND COALESCE(c.ultima_compra, MAX(f.fecha)) >= %s
+        ORDER BY uc ASC
+        LIMIT 20
+    """, (hace_30, hace_90))
+    clientes_en_riesgo = []
+    for r in cur.fetchall():
+        uc = r[3]
+        dias = (hoy - uc).days if uc else None
+        clientes_en_riesgo.append({
+            "id": r[0], "nombre": r[1], "telefono": r[2],
+            "ultima_compra": uc.isoformat() if uc else None,
+            "dias_sin_compra": dias,
+            "total_historico": float(r[4] or 0),
+            "total_compras": float(r[4] or 0),
+        })
+
+    cur.close(); conn.close()
+    return {
+        "total_clientes_activos": total_activos,
+        "total_clientes_riesgo": total_riesgo,
+        "total_clientes_inactivos": total_inactivos,
+        "ticket_promedio": round(ticket_promedio, 2),
+        "top_clientes": top_clientes,
+        "por_segmento": por_segmento,
+        "por_canal": por_canal,
+        "clientes_en_riesgo": clientes_en_riesgo,
+    }
+
+
+@router.get("/clientes-crm")
+def get_clientes_crm(
+    q: Optional[str] = None,
+    segmento: Optional[str] = None,
+    estado: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 50,
+    limit: Optional[int] = None,
+    offset: Optional[int] = None,
+):
+    """Lista de clientes CRM con filtros y paginación."""
+    conn = get_conn()
+    cur = conn.cursor()
+
+    conditions = ["1=1"]
+    params: list = []
+    if q:
+        conditions.append("(c.nombre ILIKE %s OR c.cedula ILIKE %s OR c.telefono ILIKE %s)")
+        params.extend([f"%{q}%", f"%{q}%", f"%{q}%"])
+    if segmento:
+        conditions.append("c.segmento = %s")
+        params.append(segmento)
+    if estado:
+        conditions.append("c.estado_cliente = %s")
+        params.append(estado)
+
+    where = " AND ".join(conditions)
+    # Soportar limit/offset directo (frontend) o page/page_size
+    if limit is not None:
+        _limit = limit
+        _offset = offset if offset is not None else 0
+    else:
+        _limit = page_size
+        _offset = (page - 1) * page_size
+
+    cur.execute(f"SELECT COUNT(*) FROM crm_clientes c WHERE {where}", params)
+    total_count = cur.fetchone()[0]
+
+    cur.execute(f"""
+        SELECT c.id, c.siigo_id, c.cedula, c.nombre, c.telefono, c.email,
+               c.ciudad, c.segmento, c.canal_adquisicion, c.estado_cliente,
+               c.ultima_compra, c.total_compras, c.num_facturas,
+               c.responsable, c.cupo_credito, c.dias_credito, c.notas_crm
+        FROM crm_clientes c
+        WHERE {where}
+        ORDER BY c.nombre ASC
+        LIMIT %s OFFSET %s
+    """, params + [_limit, _offset])
+
+    cols = [
+        "id", "siigo_id", "cedula", "nombre", "telefono", "email",
+        "ciudad", "segmento", "canal_adquisicion", "estado_cliente",
+        "ultima_compra", "total_compras", "num_facturas",
+        "responsable", "cupo_credito", "dias_credito", "notas_crm"
+    ]
+    clientes = []
+    for row in cur.fetchall():
+        d = dict(zip(cols, row))
+        if d["ultima_compra"]:
+            d["ultima_compra"] = d["ultima_compra"].isoformat()
+        if d["total_compras"] is not None:
+            d["total_compras"] = float(d["total_compras"])
+        if d["cupo_credito"] is not None:
+            d["cupo_credito"] = float(d["cupo_credito"])
+        # Aliases para compatibilidad frontend
+        d["estado"] = d.get("estado_cliente")
+        d["origen_canal"] = d.get("canal_adquisicion")
+        d["total_ventas"] = d.get("total_compras")
+        clientes.append(d)
+
+    cur.close(); conn.close()
+    return {
+        "items": clientes,
+        "total": total_count,
+        "clientes": clientes,
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.get("/clientes-crm/{cliente_id}")
+def get_cliente_crm(cliente_id: int):
+    """Ficha completa del cliente CRM."""
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, siigo_id, cedula, nombre, telefono, email, direccion, ciudad,
+               segmento, canal_adquisicion, estado_cliente, ultima_compra,
+               total_compras, num_facturas, responsable, cupo_credito, dias_credito,
+               notas_crm, origen_canal, notas, activo
+        FROM crm_clientes WHERE id = %s
+    """, (cliente_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        raise HTTPException(404, "Cliente no encontrado")
+
+    cols = [
+        "id", "siigo_id", "cedula", "nombre", "telefono", "email", "direccion", "ciudad",
+        "segmento", "canal_adquisicion", "estado_cliente", "ultima_compra",
+        "total_compras", "num_facturas", "responsable", "cupo_credito", "dias_credito",
+        "notas_crm", "origen_canal", "notas", "activo"
+    ]
+    cliente = dict(zip(cols, row))
+    if cliente["ultima_compra"]:
+        cliente["ultima_compra"] = cliente["ultima_compra"].isoformat()
+    if cliente["total_compras"] is not None:
+        cliente["total_compras"] = float(cliente["total_compras"])
+    if cliente["cupo_credito"] is not None:
+        cliente["cupo_credito"] = float(cliente["cupo_credito"])
+
+    # Últimas 20 facturas
+    cur.execute("""
+        SELECT id, siigo_invoice_id, numero, prefix, fecha, total, balance,
+               estado_pago, medio_pago, rc_numero
+        FROM crm_facturas WHERE cliente_id = %s
+        ORDER BY fecha DESC LIMIT 20
+    """, (cliente_id,))
+    facturas = []
+    for f in cur.fetchall():
+        facturas.append({
+            "id": f[0], "siigo_invoice_id": f[1], "numero": f[2], "prefix": f[3],
+            "factura": f"{f[3]}-{f[2]}" if f[3] else str(f[2]),
+            "fecha": f[4].isoformat() if f[4] else None,
+            "total": float(f[5] or 0), "balance": float(f[6] or 0),
+            "estado_pago": f[7], "medio_pago": f[8], "rc_numero": f[9],
+        })
+
+    # Últimos 10 seguimientos
+    cur.execute("""
+        SELECT id, tipo, descripcion, resultado, fecha, responsable,
+               proxima_accion, proxima_fecha
+        FROM crm_seguimientos WHERE cliente_id = %s
+        ORDER BY fecha DESC LIMIT 10
+    """, (cliente_id,))
+    seguimientos = []
+    for s in cur.fetchall():
+        seguimientos.append({
+            "id": s[0], "tipo": s[1], "descripcion": s[2], "resultado": s[3],
+            "fecha": s[4].isoformat() if s[4] else None,
+            "responsable": s[5], "proxima_accion": s[6],
+            "proxima_fecha": s[7].isoformat() if s[7] else None,
+        })
+
+    # Resumen calculado
+    cur.execute("""
+        SELECT SUM(total), COUNT(*), MAX(fecha)
+        FROM crm_facturas WHERE cliente_id = %s
+    """, (cliente_id,))
+    res = cur.fetchone()
+    total_compras_calc = float(res[0] or 0)
+    num_facturas_calc = res[1] or 0
+    ultima_compra_calc = res[2]
+    dias_sin_compra = (date.today() - ultima_compra_calc).days if ultima_compra_calc else None
+
+    # Aliases para compatibilidad con frontend
+    cliente["estado"] = cliente.get("estado_cliente")
+    cliente["origen_canal"] = cliente.get("canal_adquisicion")
+
+    cur.close(); conn.close()
+    return {
+        **cliente,
+        "facturas": facturas,
+        "seguimientos": seguimientos,
+        "resumen": {
+            "total_compras": total_compras_calc,
+            "num_facturas": num_facturas_calc,
+            "ultima_compra": ultima_compra_calc.isoformat() if ultima_compra_calc else None,
+            "dias_sin_compra": dias_sin_compra,
+        }
+    }
+
+
+class ClienteCrmUpdate(BaseModel):
+    segmento: Optional[str] = None
+    canal_adquisicion: Optional[str] = None
+    estado_cliente: Optional[str] = None
+    responsable: Optional[str] = None
+    cupo_credito: Optional[float] = None
+    dias_credito: Optional[int] = None
+    notas_crm: Optional[str] = None
+
+@router.put("/clientes-crm/{cliente_id}")
+def update_cliente_crm(cliente_id: int, data: ClienteCrmUpdate):
+    """Actualiza campos CRM de un cliente."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM crm_clientes WHERE id = %s", (cliente_id,))
+    if not cur.fetchone():
+        cur.close(); conn.close()
+        raise HTTPException(404, "Cliente no encontrado")
+
+    sets = []
+    vals = []
+    for field in ("segmento", "canal_adquisicion", "estado_cliente", "responsable",
+                  "cupo_credito", "dias_credito", "notas_crm"):
+        v = getattr(data, field)
+        if v is not None:
+            sets.append(f"{field}=%s"); vals.append(v)
+
+    if sets:
+        sets.append("actualizado_en=NOW()")
+        vals.append(cliente_id)
+        cur.execute(f"UPDATE crm_clientes SET {', '.join(sets)} WHERE id=%s", vals)
+        conn.commit()
+
+    cur.close(); conn.close()
+    return {"ok": True}
+
+
+class SeguimientoIn(BaseModel):
+    cliente_id: int
+    tipo: str
+    descripcion: str
+    resultado: Optional[str] = None
+    responsable: Optional[str] = None
+    proxima_accion: Optional[str] = None
+    proxima_fecha: Optional[str] = None
+
+@router.post("/seguimientos")
+def crear_seguimiento(data: SeguimientoIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM crm_clientes WHERE id = %s", (data.cliente_id,))
+    if not cur.fetchone():
+        cur.close(); conn.close()
+        raise HTTPException(404, "Cliente no encontrado")
+
+    proxima_fecha = None
+    if data.proxima_fecha:
+        try:
+            proxima_fecha = datetime.strptime(data.proxima_fecha, "%Y-%m-%d").date()
+        except ValueError:
+            pass
+
+    cur.execute("""
+        INSERT INTO crm_seguimientos
+          (cliente_id, tipo, descripcion, resultado, responsable, proxima_accion, proxima_fecha)
+        VALUES (%s,%s,%s,%s,%s,%s,%s) RETURNING id
+    """, (data.cliente_id, data.tipo, data.descripcion, data.resultado,
+          data.responsable, data.proxima_accion, proxima_fecha))
+    new_id = cur.fetchone()[0]
+    conn.commit()
+    cur.close(); conn.close()
+    return {"ok": True, "id": new_id}
+
+
+@router.get("/prospectos")
+def get_prospectos(estado: Optional[str] = None):
+    conn = get_conn()
+    cur = conn.cursor()
+    where = "WHERE estado = %s" if estado else ""
+    params = [estado] if estado else []
+    cur.execute(f"""
+        SELECT id, nombre, empresa, telefono, email, ciudad, segmento, canal,
+               estado, responsable, notas, fecha_contacto, fecha_seguimiento,
+               valor_potencial, convertido_cliente_id, creado_en
+        FROM crm_prospectos {where}
+        ORDER BY creado_en DESC
+    """, params)
+    cols = [
+        "id", "nombre", "empresa", "telefono", "email", "ciudad", "segmento", "canal",
+        "estado", "responsable", "notas", "fecha_contacto", "fecha_seguimiento",
+        "valor_potencial", "convertido_cliente_id", "creado_en"
+    ]
+    result = []
+    for row in cur.fetchall():
+        d = dict(zip(cols, row))
+        for f in ("fecha_contacto", "fecha_seguimiento"):
+            if d[f]:
+                d[f] = d[f].isoformat()
+        if d["creado_en"]:
+            d["creado_en"] = d["creado_en"].isoformat()
+        if d["valor_potencial"] is not None:
+            d["valor_potencial"] = float(d["valor_potencial"])
+        result.append(d)
+    cur.close(); conn.close()
+    return result
+
+
+class ProspectoIn(BaseModel):
+    nombre: str
+    empresa: Optional[str] = None
+    telefono: Optional[str] = None
+    email: Optional[str] = None
+    direccion: Optional[str] = None
+    ciudad: Optional[str] = None
+    segmento: Optional[str] = None
+    canal: Optional[str] = None
+    estado: Optional[str] = "contactado"
+    responsable: Optional[str] = None
+    notas: Optional[str] = None
+    fecha_contacto: Optional[str] = None
+    fecha_seguimiento: Optional[str] = None
+    valor_potencial: Optional[float] = 0
+
+@router.get("/prospectos/{prospecto_id}")
+def get_prospecto(prospecto_id: int):
+    """Retorna un prospecto por ID."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, nombre, empresa, telefono, email, ciudad, direccion, segmento, canal,
+               estado, responsable, notas, fecha_contacto, fecha_seguimiento,
+               valor_potencial, convertido_cliente_id, creado_en
+        FROM crm_prospectos WHERE id = %s
+    """, (prospecto_id,))
+    row = cur.fetchone()
+    cur.close(); conn.close()
+    if not row:
+        raise HTTPException(404, "Prospecto no encontrado")
+    cols = [
+        "id", "nombre", "empresa", "telefono", "email", "ciudad", "direccion", "segmento", "canal",
+        "estado", "responsable", "notas", "fecha_contacto", "fecha_seguimiento",
+        "valor_potencial", "convertido_cliente_id", "creado_en"
+    ]
+    d = dict(zip(cols, row))
+    for f in ("fecha_contacto", "fecha_seguimiento"):
+        if d[f]:
+            d[f] = d[f].isoformat()
+    if d["creado_en"]:
+        d["creado_en"] = d["creado_en"].isoformat()
+    if d["valor_potencial"] is not None:
+        d["valor_potencial"] = float(d["valor_potencial"])
+    return d
+
+
+@router.post("/prospectos")
+def crear_prospecto(data: ProspectoIn):
+    conn = get_conn()
+    cur = conn.cursor()
+
+    def _parse_d(s):
+        if not s:
+            return None
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    cur.execute("""
+        INSERT INTO crm_prospectos
+          (nombre, empresa, telefono, email, direccion, ciudad, segmento, canal,
+           estado, responsable, notas, fecha_contacto, fecha_seguimiento, valor_potencial)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+    """, (
+        data.nombre, data.empresa, data.telefono, data.email, data.direccion,
+        data.ciudad, data.segmento, data.canal, data.estado or "contactado",
+        data.responsable, data.notas,
+        _parse_d(data.fecha_contacto) or date.today(),
+        _parse_d(data.fecha_seguimiento), data.valor_potencial or 0
+    ))
+    new_id = cur.fetchone()[0]
+    conn.commit()
+    cur.close(); conn.close()
+    return {"ok": True, "id": new_id}
+
+
+class ProspectoUpdate(BaseModel):
+    nombre: Optional[str] = None
+    empresa: Optional[str] = None
+    telefono: Optional[str] = None
+    email: Optional[str] = None
+    direccion: Optional[str] = None
+    ciudad: Optional[str] = None
+    segmento: Optional[str] = None
+    canal: Optional[str] = None
+    estado: Optional[str] = None
+    responsable: Optional[str] = None
+    notas: Optional[str] = None
+    fecha_contacto: Optional[str] = None
+    fecha_seguimiento: Optional[str] = None
+    valor_potencial: Optional[float] = None
+
+@router.put("/prospectos/{prospecto_id}")
+def update_prospecto(prospecto_id: int, data: ProspectoUpdate):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT id, nombre, empresa, telefono, email, direccion, ciudad, segmento
+        FROM crm_prospectos WHERE id = %s
+    """, (prospecto_id,))
+    pro = cur.fetchone()
+    if not pro:
+        cur.close(); conn.close()
+        raise HTTPException(404, "Prospecto no encontrado")
+
+    def _parse_d(s):
+        if not s:
+            return None
+        try:
+            return datetime.strptime(s, "%Y-%m-%d").date()
+        except ValueError:
+            return None
+
+    sets = []
+    vals = []
+    for field in ("nombre", "empresa", "telefono", "email", "direccion", "ciudad",
+                  "segmento", "canal", "estado", "responsable", "notas", "valor_potencial"):
+        v = getattr(data, field)
+        if v is not None:
+            sets.append(f"{field}=%s"); vals.append(v)
+    for field in ("fecha_contacto", "fecha_seguimiento"):
+        v = getattr(data, field)
+        if v is not None:
+            parsed = _parse_d(v)
+            sets.append(f"{field}=%s"); vals.append(parsed)
+    if sets:
+        sets.append("actualizado_en=NOW()")
+        vals.append(prospecto_id)
+        cur.execute(f"UPDATE crm_prospectos SET {', '.join(sets)} WHERE id=%s", vals)
+
+    # Si se convierte, crear cliente en crm_clientes
+    if data.estado == "convertido":
+        cur.execute("SELECT nombre, empresa, telefono, email, direccion, ciudad, segmento FROM crm_prospectos WHERE id=%s", (prospecto_id,))
+        p = cur.fetchone()
+        if p:
+            nombre_cli = p[0]
+            cur.execute("""
+                INSERT INTO crm_clientes (nombre, telefono, email, direccion, ciudad, segmento)
+                VALUES (%s,%s,%s,%s,%s,%s) RETURNING id
+            """, (nombre_cli, p[2], p[3], p[4], p[5], p[6]))
+            cli_id = cur.fetchone()[0]
+            cur.execute("""
+                UPDATE crm_prospectos SET convertido_cliente_id=%s WHERE id=%s
+            """, (cli_id, prospecto_id))
+
+    conn.commit()
+    cur.close(); conn.close()
+    return {"ok": True}
+
+
+@router.get("/clientes-crm/{cliente_id}/actualizar-stats")
+def actualizar_stats_cliente(cliente_id: int):
+    """Recalcula ultima_compra, total_compras y num_facturas desde crm_facturas."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM crm_clientes WHERE id = %s", (cliente_id,))
+    if not cur.fetchone():
+        cur.close(); conn.close()
+        raise HTTPException(404, "Cliente no encontrado")
+
+    cur.execute("""
+        SELECT MAX(fecha), SUM(total), COUNT(*)
+        FROM crm_facturas WHERE cliente_id = %s
+    """, (cliente_id,))
+    row = cur.fetchone()
+    ultima_compra = row[0]
+    total_compras = float(row[1] or 0)
+    num_facturas = row[2] or 0
+
+    cur.execute("""
+        UPDATE crm_clientes
+        SET ultima_compra=%s, total_compras=%s, num_facturas=%s, actualizado_en=NOW()
+        WHERE id=%s
+    """, (ultima_compra, total_compras, num_facturas, cliente_id))
+    conn.commit()
+    cur.close(); conn.close()
+    return {
+        "ok": True,
+        "cliente_id": cliente_id,
+        "ultima_compra": ultima_compra.isoformat() if ultima_compra else None,
+        "total_compras": total_compras,
+        "num_facturas": num_facturas,
+    }
