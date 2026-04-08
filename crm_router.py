@@ -287,8 +287,8 @@ def reset_crm():
 
 # Columnas por banco: {banco: (col_estado_idx, col_cliente_idx)} — 0-based
 _SHEET_COLS = {
-    "BDB":         {"estado": 4, "cliente": 6},   # E, G
-    "BANCOLOMBIA": {"estado": 3, "cliente": 5},   # D, F
+    "BDB":         {"estado": 4, "rc": 5, "cliente": 6},   # E, F, G
+    "BANCOLOMBIA": {"estado": 3, "rc": 4, "cliente": 5},   # D, E, F
 }
 
 def _col_letter(idx: int) -> str:
@@ -297,16 +297,15 @@ def _col_letter(idx: int) -> str:
 
 
 @router.post("/movimientos/{mov_id}/actualizar-sheet")
-def actualizar_movimiento_sheet(mov_id: int):
-    """Escribe CONCILIADO + nombre del cliente en el Sheet para el movimiento dado."""
+def actualizar_movimiento_sheet(mov_id: int, rc_numero: Optional[str] = None):
+    """Escribe CONCILIADO + nombre del cliente + RC en el Sheet para el movimiento dado."""
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
         SELECT m.banco, m.sheet_tab, m.sheet_row, m.factura_id,
-               c.nombre AS cliente_nombre
+               c.nombre AS cliente_nombre, f.rc_numero
         FROM movimientos_bancarios m
         LEFT JOIN crm_facturas f ON f.id = m.factura_id
-        LEFT JOIN crm_clientes cl ON cl.id = f.cliente_id
         LEFT JOIN crm_clientes c ON c.id = f.cliente_id
         WHERE m.id = %s
     """, (mov_id,))
@@ -316,13 +315,15 @@ def actualizar_movimiento_sheet(mov_id: int):
     if not row:
         raise HTTPException(404, "Movimiento no encontrado")
 
-    banco, sheet_tab, sheet_row, factura_id, cliente_nombre = row
+    banco, sheet_tab, sheet_row, factura_id, cliente_nombre, db_rc_numero = row
+    rc_final = rc_numero or db_rc_numero
 
     if not sheet_tab or not sheet_row:
         raise HTTPException(400, "Movimiento sin referencia al Sheet")
 
-    cols = _SHEET_COLS.get(banco, {"estado": 3, "cliente": 5})
+    cols = _SHEET_COLS.get(banco, {"estado": 3, "rc": 4, "cliente": 5})
     col_estado  = _col_letter(cols["estado"])
+    col_rc      = _col_letter(cols["rc"])
     col_cliente = _col_letter(cols["cliente"])
 
     try:
@@ -338,6 +339,15 @@ def actualizar_movimiento_sheet(mov_id: int):
             body={"values": [["CONCILIADO"]]}
         ).execute()
 
+        # Actualizar celda RC
+        if rc_final:
+            service.spreadsheets().values().update(
+                spreadsheetId=SHEET_ID,
+                range=f"'{safe_tab}'!{col_rc}{sheet_row}",
+                valueInputOption="RAW",
+                body={"values": [[rc_final]]}
+            ).execute()
+
         # Actualizar celda CLIENTE
         if cliente_nombre:
             service.spreadsheets().values().update(
@@ -348,7 +358,7 @@ def actualizar_movimiento_sheet(mov_id: int):
             ).execute()
 
         return {"ok": True, "tab": exact_tab, "fila": sheet_row,
-                "estado": "CONCILIADO", "cliente": cliente_nombre}
+                "estado": "CONCILIADO", "rc": rc_final, "cliente": cliente_nombre}
     except Exception as e:
         raise HTTPException(500, f"Error actualizando Sheet: {str(e)}")
 
@@ -1190,6 +1200,15 @@ def generar_rc(factura_id: int):
             WHERE id=%s
         """, (result["rc_id"], result["rc_numero"], result["simulado"], factura_id))
         conn.commit()
+
+        # Escribir RC en Google Sheets si la factura tiene movimiento vinculado
+        cur.execute("SELECT movimiento_id FROM crm_facturas WHERE id=%s", (factura_id,))
+        mov_row = cur.fetchone()
+        if mov_row and mov_row[0]:
+            try:
+                actualizar_movimiento_sheet(mov_row[0], rc_numero=result["rc_numero"])
+            except Exception:
+                pass  # no bloquear la respuesta si falla el Sheet
 
     cur.close(); conn.close()
     return result
