@@ -1067,9 +1067,10 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
     if not cli:
         return {"ok": False, "error": "Cliente no encontrado para la factura"}
 
+    siigo_cust_id = cli[0] or ""
     cedula = cli[1] or ""
-    if not cedula:
-        return {"ok": False, "error": "Cliente sin cédula/NIT — no se puede crear RC en Siigo"}
+    if not siigo_cust_id and not cedula:
+        return {"ok": False, "error": "Cliente sin ID de Siigo ni cédula — no se puede crear RC"}
 
     balance_val = float(factura.get("balance") or 0)
     total_val   = float(factura.get("total")   or 0)
@@ -1087,7 +1088,7 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
         "document": {"id": 3619},
         "type": "Detailed",
         "date": date.today().isoformat(),
-        "customer": {
+        "customer": {"id": siigo_cust_id} if siigo_cust_id else {
             "identification": cedula,
             "branch_office": 0
         },
