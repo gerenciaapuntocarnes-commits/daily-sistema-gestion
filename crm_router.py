@@ -1105,6 +1105,109 @@ def generar_rc_masivo():
 
 
 # ═══════════════════════════════════════════════════════════════
+# SYNC RC DESDE SIIGO
+# ═══════════════════════════════════════════════════════════════
+
+@router.post("/sync/rc-siigo")
+def sync_rc_siigo():
+    """
+    Busca en Siigo todos los Recibos de Caja existentes y los cruza con
+    nuestras facturas conciliadas sin rc_numero, actualizando el número.
+    Matching: siigo_customer_id + monto (±2%) + fecha (±90 días).
+    """
+    from siigo import fetch_vouchers_paginated
+
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # Traer facturas conciliadas sin RC registrado en nuestra BD
+    cur.execute("""
+        SELECT f.id, f.total, f.fecha, c.siigo_id AS cliente_siigo_id, f.siigo_invoice_id
+        FROM crm_facturas f
+        LEFT JOIN crm_clientes c ON c.id = f.cliente_id
+        WHERE f.estado_pago = 'pagado' AND f.rc_siigo_id IS NULL
+        ORDER BY f.fecha DESC
+    """)
+    facturas_sin_rc = cur.fetchall()
+
+    if not facturas_sin_rc:
+        cur.close(); conn.close()
+        return {"ok": True, "encontrados": 0, "msg": "Todas las facturas ya tienen RC"}
+
+    # Construir índice: cliente_siigo_id -> lista de facturas
+    fac_idx = {}
+    for row in facturas_sin_rc:
+        fid, total, fecha, cli_siigo, siigo_inv_id = row
+        key = str(cli_siigo) if cli_siigo else None
+        if key:
+            fac_idx.setdefault(key, []).append({
+                "id": fid, "total": float(total or 0),
+                "fecha": fecha, "siigo_invoice_id": siigo_inv_id
+            })
+
+    # Paginar vouchers de Siigo (RCs tienen document.id típicamente 3619)
+    encontrados = 0
+    page = 1
+    while True:
+        data = fetch_vouchers_paginated(page=page, page_size=100)
+        results = data.get("results", [])
+        if not results:
+            break
+
+        for v in results:
+            doc = v.get("document", {}) or {}
+            doc_name = str(doc.get("name", "")).upper()
+            # Solo procesar Recibos de Caja
+            if "RECIBO" not in doc_name and doc.get("id") != 3619:
+                continue
+
+            v_id    = str(v.get("id", ""))
+            v_num   = v.get("number") or v.get("consecutive")
+            v_fecha_str = (v.get("date") or "")[:10]
+            v_total = float(v.get("total", 0) or 0)
+            v_cust  = v.get("customer", {}) or {}
+            v_cust_id = str(v_cust.get("id", "") or "")
+
+            if not v_id or not v_cust_id or not v_total:
+                continue
+
+            try:
+                v_fecha = datetime.strptime(v_fecha_str, "%Y-%m-%d").date() if v_fecha_str else None
+            except ValueError:
+                v_fecha = None
+
+            # Buscar factura que coincida por cliente + monto + fecha
+            candidatas = fac_idx.get(v_cust_id, [])
+            for fac in candidatas:
+                if fac.get("_matched"):
+                    continue
+                diff_pct = abs(v_total - fac["total"]) / fac["total"] if fac["total"] else 1
+                dias = abs((v_fecha - fac["fecha"]).days) if v_fecha and fac["fecha"] else 999
+                if diff_pct <= 0.02 and dias <= 90:
+                    # Match encontrado — actualizar BD
+                    rc_prefix = str(doc.get("prefix", "") or "").strip()
+                    rc_numero_str = f"{rc_prefix}-{v_num}" if rc_prefix else str(v_num)
+                    cur.execute("""
+                        UPDATE crm_facturas
+                        SET rc_siigo_id = %s, rc_numero = %s, rc_modo_prueba = FALSE
+                        WHERE id = %s AND rc_siigo_id IS NULL
+                    """, (v_id, rc_numero_str, fac["id"]))
+                    if cur.rowcount:
+                        fac["_matched"] = True
+                        encontrados += 1
+                    break
+
+        total_results = data.get("pagination", {}).get("total_results", 0)
+        if page * 100 >= total_results:
+            break
+        page += 1
+
+    conn.commit()
+    cur.close(); conn.close()
+    return {"ok": True, "encontrados": encontrados, "revisadas": len(facturas_sin_rc)}
+
+
+# ═══════════════════════════════════════════════════════════════
 # ENDPOINTS — CONCILIACIÓN BANCARIA
 # ═══════════════════════════════════════════════════════════════
 

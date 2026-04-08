@@ -1056,6 +1056,18 @@ tr:hover .btn-delete { opacity: 1; }
         </div>
       </div>
 
+      <!-- Sync RC desde Siigo -->
+      <div class="col-lg-6">
+        <div class="card">
+          <div class="card-header"><h3 class="card-title"><i class="ti ti-receipt me-2"></i>Verificar RC en Siigo</h3></div>
+          <div class="card-body">
+            <p class="text-secondary small mb-3">Busca en Siigo los Recibos de Caja ya existentes y los vincula a las facturas conciliadas que aún no tienen número de RC registrado.</p>
+            <button class="btn btn-primary" onclick="syncRcSiigo()"><i class="ti ti-search me-1"></i>Buscar RC en Siigo</button>
+            <div id="sync-rc-result" class="mt-2"></div>
+          </div>
+        </div>
+      </div>
+
       <!-- Importar Excel -->
       <div class="col-12">
         <div class="card border-primary">
@@ -5304,6 +5316,25 @@ async function crmSyncBancos() {
     if(resultEl) resultEl.innerHTML = '<div class="alert alert-success small">'+msg+'</div>';
     if(currentVentasTab==='pendientes') loadConciliacion();
     loadCrmConfig();
+  }
+}
+
+// ── Sync RC desde Siigo ──
+async function syncRcSiigo() {
+  var resultEl = $('sync-rc-result');
+  if(resultEl) resultEl.innerHTML = '<div class="text-secondary small"><i class="ti ti-loader spin me-1"></i>Buscando Recibos de Caja en Siigo... (puede tomar 1-2 min)</div>';
+  var res = await api('/crm/sync/rc-siigo','POST').catch(function(e){
+    var msg = (e && (e.detail || e.message)) ? (e.detail || e.message) : 'Error de conexión';
+    if(resultEl) resultEl.innerHTML = '<div class="alert alert-danger small">'+msg+'</div>';
+    return null;
+  });
+  if(res && res.ok) {
+    var msg = res.encontrados > 0
+      ? res.encontrados+' RC encontrados y vinculados de '+res.revisadas+' facturas revisadas.'
+      : 'No se encontraron RC nuevos ('+res.revisadas+' facturas revisadas).';
+    if(res.encontrados > 0) notyf.success(msg); else notyf.open({type:'info', message: msg});
+    if(resultEl) resultEl.innerHTML = '<div class="alert alert-'+(res.encontrados>0?'success':'info')+' small">'+msg+'</div>';
+    if(currentVentasTab==='conciliados') loadConciliados();
   }
 }
 
