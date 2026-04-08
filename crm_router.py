@@ -1105,7 +1105,7 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
                 "due": {
                     "prefix": prefix,
                     "consecutive": int(numero) if str(numero).isdigit() else 0,
-                    "quote": 0,
+                    "quote": 1,
                     "date": date.today().isoformat()
                 }
             }
@@ -1124,9 +1124,11 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
             return {"ok": False, "error": f"Siigo HTTP {resp.status_code}: {err_body}"}
         data = resp.json()
         rc_id = str(data.get("id", ""))
-        prefix_rc = data.get("prefix", "RC")
+        rc_name = str(data.get("name", "") or "")
+        prefix_rc = data.get("prefix", "")
         number_rc = data.get("number", "")
-        rc_numero = f"{prefix_rc}-{number_rc}" if number_rc else rc_id
+        # Prefer 'name' (e.g. "RC-1-1234"), fallback to prefix-number, then id
+        rc_numero = rc_name if rc_name else (f"{prefix_rc}-{number_rc}" if number_rc else rc_id)
         return {"ok": True, "simulado": False, "rc_id": rc_id, "rc_numero": rc_numero}
     except requests.exceptions.RequestException as e:
         return {"ok": False, "error": f"Error de red: {str(e)}"}
