@@ -5609,13 +5609,22 @@ async function loadConciliados() {
   _updateBtnRcSeleccion();
   el.innerHTML = data.map(function(f){
     var sel = conciliadosSeleccionados.has(f.id);
-    // Columna N° RC: número si existe, botón generar si no
-    var rcNumCell = f.rc_numero
-      ? '<div class="d-flex align-items-center gap-1">' +
+    // Columna N° RC
+    var rcNumCell;
+    if(f.rc_numero) {
+      // RC ya registrado en nuestra BD
+      rcNumCell = '<div class="d-flex align-items-center gap-1">' +
           '<code class="small text-success fw-bold">'+f.rc_numero+'</code>' +
           (f.rc_modo_prueba ? '<span class="badge bg-warning-lt" style="font-size:9px">PRUEBA</span>' : '') +
-        '</div>'
-      : '<button class="btn btn-xs btn-outline-primary" onclick="generarRcFactura('+f.id+')"><i class="ti ti-receipt me-1"></i>Generar RC</button>';
+        '</div>';
+    } else if(f.banco_display === 'Siigo' && !f.movimiento_id) {
+      // Pagado directo en Siigo sin pasar por nuestra conciliación — probablemente ya tiene RC
+      rcNumCell = '<span class="text-secondary small" title="Pagado en Siigo — usa \'Verificar RC en Siigo\' para traer el número">' +
+          '<i class="ti ti-alert-circle me-1"></i>Verificar</span>';
+    } else {
+      // Conciliado por nosotros, RC pendiente de generar
+      rcNumCell = '<button class="btn btn-xs btn-outline-primary" onclick="generarRcFactura('+f.id+')"><i class="ti ti-receipt me-1"></i>Generar RC</button>';
+    }
     var bd = f.banco_display || 'Siigo';
     var bdLabel = fmtBanco(bd);
     var bdColor = bd === 'Siigo' ? 'bg-purple-lt' : (bd === 'Efectivo' ? 'bg-green-lt' : 'bg-azure-lt');
