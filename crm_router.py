@@ -702,7 +702,7 @@ def _get_clientes_con_facturas(corte_desde: str = None, corte_hasta: str = None,
 
     # Apply name filter
     q_filter = ""
-    params = [tuple(ids)]
+    params = [list(ids)]
     if q:
         q_filter = "AND c.nombre ILIKE %s"
         params.append(f"%{q}%")
