@@ -1160,6 +1160,136 @@ def conciliar(data: ConciliarIn):
     return {"ok": True}
 
 
+@router.get("/sugerencias/{factura_id}")
+def get_sugerencias(factura_id: int):
+    """Retorna movimientos sugeridos para una factura, rankeados por proximidad de monto y fecha."""
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, siigo_invoice_id, balance, total, fecha, cliente_nombre
+        FROM crm_facturas WHERE id = %s
+    """, (factura_id,))
+    row = cur.fetchone()
+    if not row:
+        cur.close(); conn.close()
+        raise HTTPException(404, "Factura no encontrada")
+
+    monto_ref = float(row[2]) if row[2] else float(row[3])  # balance si existe, si no total
+    fecha_ref = row[4]
+
+    # Traer movimientos no conciliados
+    cur.execute("""
+        SELECT id, banco, fecha, descripcion, valor, estado, rc_sheet, cliente_sheet, sheet_tab
+        FROM movimientos_bancarios
+        WHERE conciliado = FALSE AND valor > 0
+        ORDER BY fecha DESC
+        LIMIT 1000
+    """)
+    movimientos = cur.fetchall()
+    cur.close(); conn.close()
+
+    scored = []
+    for m in movimientos:
+        mov_valor = float(m[4])
+        mov_fecha = m[2]
+
+        # Score de monto: 100% si coincide exacto, cae linealmente hasta 0% con diferencia >50%
+        if monto_ref > 0:
+            diff_pct = abs(mov_valor - monto_ref) / monto_ref
+        else:
+            diff_pct = 1.0
+        score_monto = max(0.0, 1.0 - diff_pct * 2)  # 50% diff → score 0
+
+        # Score de fecha: 100% mismo día, cae a 0% con >60 días de diferencia
+        if fecha_ref and mov_fecha:
+            dias = abs((mov_fecha - fecha_ref).days)
+            score_fecha = max(0.0, 1.0 - dias / 60)
+        else:
+            score_fecha = 0.0
+
+        score_total = round(score_monto * 0.75 + score_fecha * 0.25, 3)
+
+        if score_total < 0.1:
+            continue
+
+        scored.append({
+            "id": m[0], "banco": m[1],
+            "fecha": m[2].isoformat() if m[2] else None,
+            "descripcion": m[3], "valor": mov_valor,
+            "estado": m[4], "rc_sheet": m[6], "cliente_sheet": m[7], "sheet_tab": m[8],
+            "score": score_total,
+            "diff_monto": round(mov_valor - monto_ref, 0),
+            "match_exacto": diff_pct < 0.01
+        })
+
+    scored.sort(key=lambda x: -x["score"])
+    return {"factura_id": factura_id, "monto_ref": monto_ref, "sugerencias": scored[:8]}
+
+
+@router.post("/auto-conciliar")
+def auto_conciliar():
+    """Empareja automáticamente facturas con movimientos de monto exacto (±1%) y fecha ±30 días."""
+    conn = get_conn()
+    cur = conn.cursor()
+
+    cur.execute("""
+        SELECT id, balance, total, fecha FROM crm_facturas
+        WHERE estado_pago = 'pendiente' AND movimiento_id IS NULL
+    """)
+    facturas = cur.fetchall()
+
+    cur.execute("""
+        SELECT id, valor, fecha, banco FROM movimientos_bancarios
+        WHERE conciliado = FALSE AND valor > 0
+    """)
+    movimientos = cur.fetchall()
+
+    vinculados = 0
+    usados = set()
+
+    for fac in facturas:
+        fid, balance, total, fecha_fac = fac
+        monto = float(balance) if balance else float(total)
+
+        mejor = None
+        mejor_dias = 9999
+        for mov in movimientos:
+            mid, valor, fecha_mov, banco = mov
+            if mid in usados:
+                continue
+            valor = float(valor)
+            if monto == 0:
+                continue
+            diff_pct = abs(valor - monto) / monto
+            if diff_pct > 0.01:  # solo ±1%
+                continue
+            dias = abs((fecha_mov - fecha_fac).days) if fecha_fac and fecha_mov else 9999
+            if dias > 30:
+                continue
+            if dias < mejor_dias:
+                mejor = mov
+                mejor_dias = dias
+
+        if mejor:
+            mid, valor, fecha_mov, banco = mejor
+            cuenta = "11100501" if banco == "BDB" else ("11200502" if banco == "BANCOLOMBIA" else "11050501")
+            cur.execute("""
+                UPDATE movimientos_bancarios SET conciliado=TRUE, factura_id=%s WHERE id=%s
+            """, (fid, mid))
+            cur.execute("""
+                UPDATE crm_facturas SET estado_pago='pagado', movimiento_id=%s,
+                  medio_pago=COALESCE(medio_pago,%s), cuenta_debito=COALESCE(cuenta_debito,%s)
+                WHERE id=%s
+            """, (mid, banco, cuenta, fid))
+            usados.add(mid)
+            vinculados += 1
+
+    conn.commit()
+    cur.close(); conn.close()
+    return {"ok": True, "vinculados": vinculados}
+
+
 # ═══════════════════════════════════════════════════════════════
 # ENDPOINTS — SYNC LOG
 # ═══════════════════════════════════════════════════════════════

@@ -953,6 +953,7 @@ tr:hover .btn-delete { opacity: 1; }
 
   <!-- ── Tab: Conciliación ── -->
   <div id="vt-conciliacion" style="display:none">
+    <!-- Barra superior -->
     <div class="row g-2 mb-3 align-items-center">
       <div class="col-auto">
         <select class="form-select form-select-sm" id="concil-banco" onchange="loadConciliacion()" style="width:160px">
@@ -962,41 +963,26 @@ tr:hover .btn-delete { opacity: 1; }
         </select>
       </div>
       <div class="col-auto">
-        <label class="form-check">
-          <input type="checkbox" class="form-check-input" id="concil-solo-pend" checked onchange="loadConciliacion()">
-          <span class="form-check-label">Solo no conciliados</span>
-        </label>
+        <input class="form-control form-control-sm" id="concil-buscar" placeholder="Buscar cliente o factura..." oninput="filterConcilFacturas(this.value)" style="width:220px">
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-sm btn-success" onclick="autoConciliar()"><i class="ti ti-wand me-1"></i>Auto-conciliar</button>
       </div>
       <div class="col text-secondary small" id="concil-hint">
-        Selecciona un movimiento bancario y luego una factura pendiente para vincularlos.
+        Haz click en una factura para ver movimientos sugeridos.
       </div>
     </div>
+
     <div class="row g-3">
-      <!-- Movimientos bancarios -->
-      <div class="col-lg-6">
-        <div class="card h-100">
-          <div class="card-header"><h3 class="card-title"><i class="ti ti-building-bank me-2"></i>Movimientos bancarios</h3></div>
-          <div class="card-body p-0">
-            <div class="table-responsive" style="max-height:500px;overflow-y:auto">
-              <table class="table table-vcenter table-sm card-table table-hover">
-                <thead><tr><th>Fecha</th><th>Banco</th><th>Descripción</th><th class="text-end">Valor</th><th>Estado</th></tr></thead>
-                <tbody id="concil-movimientos-body"></tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </div>
       <!-- Facturas pendientes -->
-      <div class="col-lg-6">
+      <div class="col-lg-5">
         <div class="card h-100">
           <div class="card-header">
             <h3 class="card-title"><i class="ti ti-file-invoice me-2"></i>Facturas pendientes</h3>
-            <div class="card-actions" id="concil-accion" style="display:none">
-              <button class="btn btn-sm btn-success" onclick="conciliarSeleccion()"><i class="ti ti-link me-1"></i>Vincular seleccionados</button>
-            </div>
+            <div class="card-actions text-secondary small" id="concil-facts-count"></div>
           </div>
           <div class="card-body p-0">
-            <div class="table-responsive" style="max-height:500px;overflow-y:auto">
+            <div class="table-responsive" style="max-height:560px;overflow-y:auto">
               <table class="table table-vcenter table-sm card-table table-hover">
                 <thead><tr><th>Fecha</th><th>Cliente</th><th>Factura</th><th class="text-end">Saldo</th></tr></thead>
                 <tbody id="concil-facturas-body"></tbody>
@@ -1005,25 +991,19 @@ tr:hover .btn-delete { opacity: 1; }
           </div>
         </div>
       </div>
-    </div>
-    <!-- Selected for conciliation -->
-    <div id="concil-selected-panel" class="card mt-3" style="display:none">
-      <div class="card-body py-2">
-        <div class="row g-2 align-items-center">
-          <div class="col text-secondary small" id="concil-selected-info"></div>
-          <div class="col-auto">
-            <select class="form-select form-select-sm" id="concil-medio" style="width:160px">
-              <option value="">Medio de pago</option>
-              <option value="Efectivo">Efectivo</option>
-              <option value="Banco de Bogota">Banco de Bogotá</option>
-              <option value="Bancolombia">Bancolombia</option>
-            </select>
+
+      <!-- Panel sugerencias -->
+      <div class="col-lg-7">
+        <div class="card h-100" id="concil-sugerencias-card">
+          <div class="card-header">
+            <h3 class="card-title"><i class="ti ti-bulb me-2"></i>Movimientos sugeridos</h3>
+            <div class="card-actions" id="concil-fact-info" style="font-size:12px;color:var(--tblr-muted)"></div>
           </div>
-          <div class="col-auto">
-            <button class="btn btn-sm btn-success" onclick="conciliarSeleccion()"><i class="ti ti-check me-1"></i>Confirmar vinculación</button>
-          </div>
-          <div class="col-auto">
-            <button class="btn btn-sm btn-outline-secondary" onclick="concilClearSelection()">Cancelar</button>
+          <div class="card-body" id="concil-sugerencias-body" style="min-height:200px">
+            <div class="text-center text-secondary py-5 small">
+              <i class="ti ti-hand-click" style="font-size:32px;opacity:.3;display:block;margin-bottom:8px"></i>
+              Selecciona una factura para ver sugerencias
+            </div>
           </div>
         </div>
       </div>
@@ -4876,92 +4856,130 @@ async function toggleModoPrueba(checked) {
 }
 
 // ── Conciliación ──
+let concilFacturasCache = [];
+let concilFactSelId = null;
+
 async function loadConciliacion() {
   var banco = ($('concil-banco')||{}).value || '';
-  var soloPend = ($('concil-solo-pend')||{}).checked !== false;
-  var url = '/crm/conciliacion?solo_pendientes='+soloPend + (banco ? '&banco='+banco : '');
-  var data = await api(url,'GET',null,true).catch(function(){return {movimientos:[],facturas_pendientes:[]};});
+  var url = '/crm/conciliacion?solo_pendientes=true' + (banco ? '&banco='+banco : '');
+  var data = await api(url,'GET',null,true).catch(function(){ return {facturas_pendientes:[]}; });
+  concilFacturasCache = data.facturas_pendientes || [];
+  concilFactSelId = null;
+  _renderConcilFacturas(concilFacturasCache);
+  $('concil-sugerencias-body').innerHTML = '<div class="text-center text-secondary py-5 small"><i class="ti ti-hand-click" style="font-size:32px;opacity:.3;display:block;margin-bottom:8px"></i>Selecciona una factura para ver sugerencias</div>';
+  if($('concil-fact-info')) $('concil-fact-info').innerHTML = '';
+}
 
-  // Render movimientos
-  var movEl = $('concil-movimientos-body');
-  var movs = data.movimientos || [];
-  movEl.innerHTML = movs.length ? movs.map(function(m){
-    var sel = concilMovId === m.id;
-    var concilClass = m.conciliado ? 'text-success' : '';
-    var concilIcon = m.conciliado ? '<i class="ti ti-check text-success ms-1" title="Conciliado"></i>' : '';
-    return '<tr class="'+(sel?'table-primary':'')+' '+concilClass+'" style="cursor:pointer" onclick="concilSelectMov('+m.id+')">' +
-      '<td class="small">'+m.fecha+'</td>' +
-      '<td><span class="badge '+(m.banco==='BDB'?'bg-blue-lt':'bg-green-lt')+'">'+m.banco+'</span></td>' +
-      '<td class="small" style="max-width:180px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="'+(m.descripcion||'')+'">'+((m.descripcion||'--').slice(0,40))+'</td>' +
-      '<td class="text-end fw-bold">$'+fmt(m.valor)+'</td>' +
-      '<td>'+(m.conciliado?'<span class="badge bg-success-lt">Concil.</span>':'<span class="badge bg-warning-lt">Pend.</span>')+concilIcon+'</td>' +
-      '</tr>';
-  }).join('') : '<tr><td colspan="5" class="text-center text-secondary small py-4">Sin movimientos</td></tr>';
-
-  // Render facturas pendientes
-  var factEl = $('concil-facturas-body');
-  var facts = data.facturas_pendientes || [];
-  factEl.innerHTML = facts.length ? facts.map(function(f){
-    var sel = concilFactId === f.id;
-    return '<tr class="'+(sel?'table-success':'')+'" style="cursor:pointer" onclick="concilSelectFact('+f.id+')">' +
+function _renderConcilFacturas(facts) {
+  var el = $('concil-facturas-body');
+  var count = $('concil-facts-count');
+  if(count) count.textContent = facts.length + ' pendientes';
+  el.innerHTML = facts.length ? facts.map(function(f){
+    var sel = concilFactSelId === f.id;
+    return '<tr class="'+(sel?'table-warning':'')+'" style="cursor:pointer" onclick="concilSelectFact('+f.id+',\''+f.cliente_nombre.replace(/'/g,"\\'")+'\',' + f.balance + ')">' +
       '<td class="small">'+f.fecha+'</td>' +
-      '<td class="small" style="max-width:150px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis">'+f.cliente_nombre+'</td>' +
+      '<td class="small" style="max-width:130px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="'+f.cliente_nombre+'">'+f.cliente_nombre+'</td>' +
       '<td><code class="small">'+f.factura+'</code></td>' +
       '<td class="text-end fw-bold text-danger">$'+fmt(f.balance)+'</td>' +
-      '</tr>';
+    '</tr>';
   }).join('') : '<tr><td colspan="4" class="text-center text-secondary small py-4">Sin facturas pendientes</td></tr>';
 }
 
-function concilSelectMov(id) {
-  concilMovId = (concilMovId === id) ? null : id;
-  _updateConcilPanel();
-  loadConciliacion();
+function filterConcilFacturas(q) {
+  if(!q) { _renderConcilFacturas(concilFacturasCache); return; }
+  q = q.toLowerCase();
+  _renderConcilFacturas(concilFacturasCache.filter(function(f){
+    return (f.cliente_nombre+' '+f.factura).toLowerCase().includes(q);
+  }));
 }
 
-function concilSelectFact(id) {
-  concilFactId = (concilFactId === id) ? null : id;
-  _updateConcilPanel();
-  loadConciliacion();
-}
+async function concilSelectFact(id, nombre, balance) {
+  concilFactSelId = id;
+  _renderConcilFacturas(concilFacturasCache);  // re-render para highlight
 
-function _updateConcilPanel() {
-  var panel = $('concil-selected-panel');
-  var accion = $('concil-accion');
-  var info = $('concil-selected-info');
-  if(concilMovId && concilFactId) {
-    panel.style.display = '';
-    if(accion) accion.style.display = '';
-    if(info) info.textContent = 'Movimiento #'+concilMovId+' → Factura #'+concilFactId+'. Selecciona el medio de pago y confirma.';
-  } else {
-    panel.style.display = 'none';
-    if(accion) accion.style.display = 'none';
+  var banco = ($('concil-banco')||{}).value || '';
+  var infoEl = $('concil-fact-info');
+  var bodyEl = $('concil-sugerencias-body');
+
+  if(infoEl) infoEl.innerHTML = '<span class="text-warning fw-bold">'+nombre+'</span> &nbsp;·&nbsp; Saldo: <strong>$'+fmt(balance)+'</strong>';
+  bodyEl.innerHTML = '<div class="text-secondary small text-center py-3"><i class="ti ti-loader spin me-1"></i>Buscando movimientos...</div>';
+
+  var res = await api('/crm/sugerencias/'+id,'GET',null,true).catch(function(){ return null; });
+  if(!res || !res.sugerencias) {
+    bodyEl.innerHTML = '<div class="text-secondary small text-center py-3">No se encontraron movimientos similares</div>';
+    return;
   }
+
+  var sugs = res.sugerencias.filter(function(s){ return !banco || s.banco === banco; });
+  if(!sugs.length) {
+    bodyEl.innerHTML = '<div class="text-secondary small text-center py-3">Sin movimientos similares'+(banco?' en '+banco:'')+'</div>';
+    return;
+  }
+
+  bodyEl.innerHTML = sugs.map(function(s){
+    var pct = Math.round(s.score * 100);
+    var barColor = pct >= 80 ? 'bg-success' : pct >= 50 ? 'bg-warning' : 'bg-secondary';
+    var matchBadge = s.match_exacto ? '<span class="badge bg-success ms-1">Exacto</span>' : '';
+    var diffStr = s.diff_monto === 0 ? '' : '<span class="text-secondary small ms-1">('+(s.diff_monto>0?'+':'')+fmt(s.diff_monto)+')</span>';
+    return '<div class="card mb-2" style="border-left:3px solid var(--tblr-'+(pct>=80?'success':pct>=50?'warning':'secondary')+');">' +
+      '<div class="card-body py-2 px-3">' +
+        '<div class="row align-items-center g-2">' +
+          '<div class="col">' +
+            '<div class="d-flex align-items-center gap-2 mb-1">' +
+              '<span class="badge '+(s.banco==='BDB'?'bg-blue-lt':'bg-green-lt')+'">'+s.banco+'</span>' +
+              '<span class="small fw-bold">'+s.fecha+'</span>' +
+              matchBadge +
+            '</div>' +
+            '<div class="small text-secondary" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px" title="'+(s.descripcion||'')+'">'+((s.descripcion||'--').slice(0,50))+'</div>' +
+            (s.cliente_sheet ? '<div class="small text-muted">Cliente Sheet: '+s.cliente_sheet+'</div>' : '') +
+          '</div>' +
+          '<div class="col-auto text-end">' +
+            '<div class="fw-bold">$'+fmt(s.valor)+diffStr+'</div>' +
+            '<div class="d-flex align-items-center gap-1 mt-1">' +
+              '<div style="width:60px;height:4px;background:var(--tblr-border-color);border-radius:2px"><div class="'+barColor+'" style="width:'+pct+'%;height:100%;border-radius:2px"></div></div>' +
+              '<span class="small text-secondary">'+pct+'%</span>' +
+            '</div>' +
+          '</div>' +
+          '<div class="col-auto">' +
+            '<button class="btn btn-sm btn-success" onclick="conciliarDirecto('+id+','+s.id+',\''+s.banco+'\')"><i class="ti ti-check me-1"></i>Vincular</button>' +
+          '</div>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
 }
 
-function concilClearSelection() {
-  concilMovId = null;
-  concilFactId = null;
-  _updateConcilPanel();
-  loadConciliacion();
-}
-
-async function conciliarSeleccion() {
-  if(!concilMovId || !concilFactId) return notyf.error('Selecciona un movimiento y una factura');
-  var medio = ($('concil-medio')||{}).value || '';
+async function conciliarDirecto(facturaId, movId, banco) {
+  var cuenta = banco === 'BDB' ? '11100501' : (banco === 'BANCOLOMBIA' ? '11200502' : '11050501');
   var res = await api('/crm/conciliar','POST',{
-    movimiento_id: concilMovId,
-    factura_id: concilFactId,
-    medio_pago: medio || null
-  }).catch(function(e){  return null; });
+    movimiento_id: movId,
+    factura_id: facturaId,
+    medio_pago: banco,
+    cuenta_debito: cuenta
+  }).catch(function(){ return null; });
   if(res && res.ok) {
-    notyf.success('Vinculados correctamente');
-    concilMovId = null;
-    concilFactId = null;
-    _updateConcilPanel();
+    notyf.success('Vinculado correctamente');
+    concilFactSelId = null;
     loadConciliacion();
     updateVentasPendienteBadge();
   }
 }
+
+async function autoConciliar() {
+  confirmAction('Auto-conciliar empareja automáticamente facturas con movimientos de monto exacto (±1%) y fecha ±30 días. ¿Continuar?', async function(){
+    var res = await api('/crm/auto-conciliar','POST').catch(function(){ return null; });
+    if(res && res.ok) {
+      notyf.success(res.vinculados + ' facturas conciliadas automáticamente');
+      loadConciliacion();
+      updateVentasPendienteBadge();
+    }
+  });
+}
+
+// conservar stubs para compatibilidad con código existente
+function concilSelectMov(id) {}
+function concilClearSelection() { concilFactSelId = null; loadConciliacion(); }
+function conciliarSeleccion() {}
 
 // ── INIT ──────────────────────────────────────────────────────────
 loadDashboard();
