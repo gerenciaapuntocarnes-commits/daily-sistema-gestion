@@ -94,11 +94,11 @@ def _get_sheets_service():
     return build("sheets", "v4", credentials=creds, cache_discovery=False)
 
 
-def _clean_valor_sheet(v) -> Optional[float]:
+def _clean_valor_sheet(v, us_format: bool = False) -> Optional[float]:
     """
-    Parsea valores del Sheet colombiano: punto=miles, coma=decimal.
-    Ej: "406.080,00" -> 406080.0  |  "1.234.567,50" -> 1234567.5  |  "1.500.000" -> 1500000.0
-    Google Sheets API entrega números como float directamente — esos pasan sin modificar.
+    Parsea valores del Sheet.
+    us_format=False (BDB): punto=miles, coma=decimal  → "406.080,00" → 406080.0
+    us_format=True (Bancolombia): coma=miles, punto=decimal → "179,000.00" → 179000.0
     """
     if v is None:
         return None
@@ -107,23 +107,25 @@ def _clean_valor_sheet(v) -> Optional[float]:
     s = str(v).strip().replace("$", "").replace("\xa0", "").strip()
     if not s:
         return None
-    if "," in s and "." in s:
-        # Formato colombiano clásico: "1.234.567,50" → quitar puntos, coma→punto
-        s = s.replace(".", "").replace(",", ".")
-    elif "," in s:
-        parts = s.split(",")
-        if len(parts) == 2 and len(parts[1]) == 3 and parts[1].isdigit():
-            s = s.replace(",", "")  # coma como miles: "1,500,000"
-        else:
-            s = s.replace(",", ".")  # coma como decimal: "406080,00"
-    elif "." in s:
-        parts = s.split(".")
-        if len(parts) > 2:
-            # Múltiples puntos = separadores de miles: "1.500.000"
-            s = s.replace(".", "")
-        elif len(parts) == 2 and len(parts[1]) == 3 and parts[1].isdigit():
-            s = s.replace(".", "")  # un punto como miles: "406.080"
-        # Si no (ej: "406.08"), dejar como decimal anglosajón
+    if us_format:
+        # Formato americano: "179,000.00" → quitar comas, punto=decimal
+        s = s.replace(",", "")
+    else:
+        if "," in s and "." in s:
+            # Formato colombiano: "1.234.567,50" → quitar puntos, coma→punto
+            s = s.replace(".", "").replace(",", ".")
+        elif "," in s:
+            parts = s.split(",")
+            if len(parts) == 2 and len(parts[1]) == 3 and parts[1].isdigit():
+                s = s.replace(",", "")  # coma como miles
+            else:
+                s = s.replace(",", ".")  # coma como decimal
+        elif "." in s:
+            parts = s.split(".")
+            if len(parts) > 2:
+                s = s.replace(".", "")  # múltiples puntos = miles
+            elif len(parts) == 2 and len(parts[1]) == 3 and parts[1].isdigit():
+                s = s.replace(".", "")  # un punto como miles: "406.080"
     try:
         return float(s)
     except ValueError:
@@ -138,7 +140,7 @@ def _parse_date_sheet(v) -> Optional[date]:
     if isinstance(v, date):
         return v
     s = str(v).strip()
-    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y"):
+    for fmt in ("%Y%m%d", "%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y"):
         try:
             return datetime.strptime(s, fmt).date()
         except ValueError:
@@ -666,18 +668,21 @@ def sync_bancos():
             row = list(row) + [""] * 10
 
             if is_bdb:
+                # BDB: formato colombiano, columnas: Fecha|Transaccion|Debitos|Creditos|Estado|RC|Cliente
                 fecha_raw = row[0]
                 desc_raw  = row[1]
-                debito    = _clean_valor_sheet(row[2])
-                credito   = _clean_valor_sheet(row[3])
+                debito    = _clean_valor_sheet(row[2], us_format=False)
+                credito   = _clean_valor_sheet(row[3], us_format=False)
                 estado    = str(row[4]).strip() if row[4] else None
                 rc_sheet  = str(row[5]).strip() if row[5] else None
                 cli_sheet = str(row[6]).strip() if row[6] else None
                 valor = credito if credito and credito > 0 else (-(debito) if debito and debito > 0 else None)
             else:
+                # Bancolombia: formato americano (coma=miles, punto=decimal), fecha YYYYMMDD
+                # Columnas: Fecha|Concepto|Valor Banco|Estado|RC|Cliente
                 fecha_raw = row[0]
                 desc_raw  = row[1]
-                valor_raw = _clean_valor_sheet(row[2])
+                valor_raw = _clean_valor_sheet(row[2], us_format=True)
                 estado    = str(row[3]).strip() if row[3] else None
                 rc_sheet  = str(row[4]).strip() if row[4] else None
                 cli_sheet = str(row[5]).strip() if row[5] else None
