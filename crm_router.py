@@ -1577,10 +1577,12 @@ def debug_vouchers_siigo():
                 "id": v.get("id"),
                 "document": v.get("document"),
                 "number": v.get("number"),
-                "consecutive": v.get("consecutive"),
+                "name": v.get("name"),
                 "date": v.get("date"),
                 "total": v.get("total"),
                 "customer": v.get("customer"),
+                "items": v.get("items"),
+                "payment": v.get("payment"),
                 "keys": list(v.keys()),
             })
         return {"total_en_siigo": total, "muestra": sample}
