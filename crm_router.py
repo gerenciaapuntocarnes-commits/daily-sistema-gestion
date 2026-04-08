@@ -61,10 +61,10 @@ SHEET_ID = "1TPNSQWHHZbGJNrDwVbiSXmWRnQNQNRX97ciSWjfEXwU"
 
 # Tabs: banco -> (tab_name, banco_code)
 SHEET_TABS = [
-    ("BDB2024",         "BDB"),
-    ("BDB2025",         "BDB"),
-    ("BANCOLOMBIA 2025","BANCOLOMBIA"),
-    ("BANCOLOMBIA 2024","BANCOLOMBIA"),
+    ("BDB2024",           "BDB"),
+    ("BDB2025",           "BDB"),
+    ("BANCOLOMBIA 2025",  "BANCOLOMBIA"),  # nombre exacto del Sheet
+    ("BANCOLOMBIA 2024",  "BANCOLOMBIA"),
 ]
 
 def _get_sheets_service():
@@ -149,9 +149,11 @@ def _parse_date_sheet(v) -> Optional[date]:
 def _fetch_sheet_tab(service, tab_name: str) -> list:
     """Fetch all rows from a sheet tab. Returns list of row lists."""
     try:
+        # Siempre entrecomillar el nombre con comillas simples — obligatorio si tiene espacios
+        safe_name = tab_name.replace("'", "\\'")
         result = service.spreadsheets().values().get(
             spreadsheetId=SHEET_ID,
-            range=f"{tab_name}!A:J"  # Sin límite de filas
+            range=f"'{safe_name}'!A:J"
         ).execute()
         return result.get("values", [])
     except Exception as e:
@@ -1479,9 +1481,10 @@ def debug_sheet_preview(tab_name: str):
     """Muestra las primeras 5 filas de una pestaña del Sheet para ver el layout de columnas."""
     try:
         service = _get_sheets_service()
+        safe_name = tab_name.replace("'", "\\'")
         result = service.spreadsheets().values().get(
             spreadsheetId=SHEET_ID,
-            range=f"{tab_name}!A1:M10"
+            range=f"'{safe_name}'!A1:M10"
         ).execute()
         rows = result.get("values", [])
         return {"tab": tab_name, "filas": rows}
