@@ -1064,13 +1064,20 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
     if not cli:
         return {"ok": False, "error": "Cliente no encontrado para la factura"}
 
-    siigo_cust_id = cli[0]
-    cedula = cli[1] or ""
-    nombre = cli[2] or ""
-    id_type_code = cli[3] or "13"
-    person_type = cli[4] or "Person"
+    if not factura.get("siigo_invoice_id"):
+        return {"ok": False, "error": "Factura sin ID de Siigo — sincroniza primero con Siigo"}
+
+    balance_val = float(factura.get("balance") or 0)
+    total_val   = float(factura.get("total")   or 0)
+    if balance_val <= 0 and total_val <= 0:
+        return {"ok": False, "error": "Factura sin monto válido (balance y total son 0 o nulos)"}
+    monto = balance_val if balance_val > 0 else total_val
+
+    cedula        = cli[1] or ""
+    nombre        = cli[2] or ""
+    id_type_code  = cli[3] or "13"
+    person_type   = cli[4] or "Person"
     cuenta = factura.get("cuenta_debito") or _cuenta_for_medio(factura.get("medio_pago", ""))
-    monto = float(factura["balance"]) if float(factura.get("balance", 0)) > 0 else float(factura["total"])
     factura_ref = f"{factura.get('prefix','')}-{factura.get('numero','')}"
 
     payload = {
@@ -1138,6 +1145,10 @@ def generar_rc(factura_id: int):
         cur.close(); conn.close()
         return {"ok": False, "mensaje": "Ya tiene Recibo de Caja generado"}
 
+    if row[5] is not None and float(row[5]) <= 0:
+        cur.close(); conn.close()
+        return {"ok": False, "mensaje": "Factura ya registrada como pagada en Siigo (balance=0) — no se genera RC duplicado"}
+
     factura = {
         "id": row[0], "siigo_invoice_id": row[1], "numero": row[2], "prefix": row[3],
         "total": row[4], "balance": row[5], "estado_pago": row[6],
@@ -1188,7 +1199,7 @@ def generar_rc_masivo():
             cur2 = conn2.cursor()
             cur2.execute("""
                 UPDATE crm_facturas
-                SET rc_siigo_id=%s, rc_numero=%s, rc_modo_prueba=%s
+                SET rc_siigo_id=%s, rc_numero=%s, rc_modo_prueba=%s, estado_pago='pagado'
                 WHERE id=%s
             """, (result["rc_id"], result["rc_numero"], result["simulado"], row[0]))
             conn2.commit()
@@ -1983,7 +1994,7 @@ def rc_masivo_seleccion(data: RcMasivoIn):
             cur2 = conn2.cursor()
             cur2.execute("""
                 UPDATE crm_facturas
-                SET rc_siigo_id=%s, rc_numero=%s, rc_modo_prueba=%s
+                SET rc_siigo_id=%s, rc_numero=%s, rc_modo_prueba=%s, estado_pago='pagado'
                 WHERE id=%s
             """, (result["rc_id"], result["rc_numero"], result["simulado"], row[0]))
             conn2.commit()
