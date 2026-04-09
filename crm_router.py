@@ -1106,6 +1106,31 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
     cuenta = factura.get("cuenta_debito") or _cuenta_for_medio(factura.get("medio_pago", ""))
     prefix  = factura.get("prefix", "") or ""
     numero  = factura.get("numero", "") or ""
+
+    # ── Consultar factura en Siigo para obtener prefijo contable real ──
+    # El campo 'prefix' en BD es el prefijo electrónico (FE), pero Siigo usa
+    # el prefijo contable (ej: FV-2) para vincular el RC a la factura.
+    siigo_inv_id = factura.get("siigo_invoice_id")
+    due_prefix = prefix
+    due_consecutive = int(numero) if str(numero).isdigit() else 0
+    if siigo_inv_id:
+        try:
+            inv_resp = requests.get(
+                f"{SIIGO_BASE}/invoices/{siigo_inv_id}",
+                headers=siigo_headers(), timeout=15
+            )
+            if inv_resp.status_code == 200:
+                inv_data = inv_resp.json()
+                inv_name = inv_data.get("name", "") or ""
+                inv_number = inv_data.get("number", numero)
+                # name = "FV-2-4881" → prefix contable = "FV-2", consecutive = 4881
+                num_str = str(inv_number)
+                if inv_name.endswith(f"-{num_str}"):
+                    due_prefix = inv_name[:-(len(num_str) + 1)]
+                    due_consecutive = int(inv_number)
+        except Exception:
+            pass  # usar datos locales si falla
+
     factura_ref = f"{prefix}-{numero}" if prefix else str(numero)
 
     # ── Payload según documentación Siigo API (Detailed voucher) ──
@@ -1129,8 +1154,8 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
                 "description": f"Abono {factura_ref}",
                 "value": monto,
                 "due": {
-                    "prefix": prefix,
-                    "consecutive": int(numero) if str(numero).isdigit() else 0,
+                    "prefix": due_prefix,
+                    "consecutive": due_consecutive,
                     "quote": 1,
                     "date": date.today().isoformat()
                 }
