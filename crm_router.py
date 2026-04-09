@@ -816,12 +816,13 @@ def sync_bancos():
                               "filas_leidas": len(rows) - 1,
                               "nuevos": tab_ins, "actualizados": tab_upd, "ignorados": tab_skip})
 
-    # Marcar como conciliados los registros existentes con estado "MEDIO DE PAGO"
+    # Marcar como conciliados los registros con estado que indica conciliación en el Sheet
     cur.execute("""
         UPDATE movimientos_bancarios
         SET conciliado = TRUE
         WHERE conciliado = FALSE
           AND (
+            estado ILIKE '%CONCILI%' OR
             estado ILIKE '%MEDIO DE PAGO%' OR
             estado ILIKE '%QUEDO CON MEDIO%'
           )
