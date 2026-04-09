@@ -373,7 +373,7 @@ def fix_conciliados_estado():
         SET conciliado = TRUE
         WHERE conciliado = FALSE
           AND (
-            estado ILIKE '%CONCILI%' OR
+            estado ILIKE '%CONCIL%' OR
             estado ILIKE '%MEDIO DE PAGO%' OR
             estado ILIKE '%QUEDO CON MEDIO%'
           )
@@ -781,7 +781,7 @@ def sync_bancos():
 
             # Auto-detect conciliado por estado del sheet
             conciliado_sheet = bool(estado and (
-                "CONCILI" in estado.upper() or
+                "CONCIL" in estado.upper() or
                 "MEDIO DE PAGO" in estado.upper() or
                 "QUEDO CON MEDIO" in estado.upper()
             ))
@@ -822,7 +822,7 @@ def sync_bancos():
         SET conciliado = TRUE
         WHERE conciliado = FALSE
           AND (
-            estado ILIKE '%CONCILI%' OR
+            estado ILIKE '%CONCIL%' OR
             estado ILIKE '%MEDIO DE PAGO%' OR
             estado ILIKE '%QUEDO CON MEDIO%'
           )
