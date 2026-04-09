@@ -1785,11 +1785,14 @@ def debug_invoice_siigo(siigo_id: str):
         data = resp.json()
         return {
             "keys": list(data.keys()),
+            "document": data.get("document"),
+            "prefix": data.get("prefix"),
+            "number": data.get("number"),
+            "name": data.get("name"),
             "balance": data.get("balance"),
             "total": data.get("total"),
             "payments": data.get("payments"),
-            "stamps": data.get("stamps"),
-            "type": data.get("type"),
+            "items": data.get("items"),
             "observations": data.get("observations"),
         }
     except Exception as e:
