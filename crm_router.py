@@ -1091,6 +1091,13 @@ CUENTAS_RC = {
     "Link":              "11100501",  # Link de pago cae en BDB
 }
 
+# Descripción de cuenta para el débito del RC (tal como aparece en Siigo)
+_DESC_CUENTA = {
+    "11050501": "Caja",
+    "11100501": "Banco de Bogotá",
+    "11200502": "Bancolombia Cta. de Ahorros",
+}
+
 def _cuenta_for_medio(medio: str) -> str:
     if not medio:
         return "11050501"
@@ -1205,12 +1212,12 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
         "items": [
             {
                 "account": {"code": cuenta, "movement": "Debit"},
-                "description": f"Recibo pago {factura_ref}",
+                "description": _DESC_CUENTA.get(cuenta, "Caja"),
                 "value": monto
             },
             {
                 "account": {"code": "13050501", "movement": "Credit"},
-                "description": f"Abono {factura_ref}",
+                "description": "Abono",
                 "value": monto,
                 "due": {
                     "prefix": due_prefix,
