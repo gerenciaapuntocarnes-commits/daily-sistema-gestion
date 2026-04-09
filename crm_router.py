@@ -1127,7 +1127,7 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
     if not factura.get("siigo_invoice_id"):
         return {"ok": False, "error": "Factura sin ID de Siigo — sincroniza primero con Siigo"}
 
-    # Datos del cliente
+    # Datos del cliente + valor del movimiento bancario vinculado
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
@@ -1137,6 +1137,12 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
         WHERE f.id = %s
     """, (factura["id"],))
     cli = cur.fetchone()
+    mov_valor = None
+    if factura.get("movimiento_id"):
+        cur.execute("SELECT valor FROM movimientos_bancarios WHERE id = %s", (factura["movimiento_id"],))
+        mov_row = cur.fetchone()
+        if mov_row:
+            mov_valor = round(float(mov_row[0]), 2)
     cur.close(); conn.close()
 
     if not cli:
@@ -1167,6 +1173,11 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
     if balance_val <= 0 and total_val <= 0:
         return {"ok": False, "error": "Factura sin monto válido (balance y total son 0 o nulos)"}
     monto = round(balance_val if balance_val > 0 else total_val, 2)
+
+    # Monto que llegó al banco (pesos redondos). Si no hay movimiento vinculado, igual al balance.
+    monto_banco = mov_valor if mov_valor is not None else monto
+    # Diferencia de centavos entre lo que dice la factura y lo que entró al banco
+    ajuste = round(monto - monto_banco, 2)
 
     cuenta = factura.get("cuenta_debito") or _cuenta_for_medio(factura.get("medio_pago", ""))
     prefix  = factura.get("prefix", "") or ""
@@ -1213,7 +1224,7 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
             {
                 "account": {"code": cuenta, "movement": "Debit"},
                 "description": _DESC_CUENTA.get(cuenta, "Caja"),
-                "value": monto
+                "value": monto_banco
             },
             {
                 "account": {"code": "13050501", "movement": "Credit"},
@@ -1225,7 +1236,16 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
                     "quote": 1,
                     "date": date.today().isoformat()
                 }
-            }
+            },
+            *([{
+                "account": {"code": "53059501", "movement": "Debit"},
+                "description": "Ajuste al peso",
+                "value": ajuste
+            }] if ajuste > 0 else [{
+                "account": {"code": "42959501", "movement": "Credit"},
+                "description": "Ajuste al peso",
+                "value": abs(ajuste)
+            }] if ajuste < 0 else [])
         ]
     }
 
