@@ -1640,14 +1640,23 @@ def get_sugerencias(factura_id: int):
     monto_ref = float(row[2]) if row[2] else float(row[3])  # balance si existe, si no total
     fecha_ref = row[4]
 
-    # Traer movimientos no conciliados
-    cur.execute("""
-        SELECT id, banco, fecha, descripcion, valor, estado, rc_sheet, cliente_sheet, sheet_tab
-        FROM movimientos_bancarios
-        WHERE conciliado = FALSE AND valor > 0
-        ORDER BY fecha DESC
-        LIMIT 1000
-    """)
+    # Traer movimientos no conciliados: desde 15 días antes de la factura hasta hoy (sin límite hacia adelante)
+    fecha_minima = (fecha_ref - timedelta(days=15)) if fecha_ref else None
+    if fecha_minima:
+        cur.execute("""
+            SELECT id, banco, fecha, descripcion, valor, estado, rc_sheet, cliente_sheet, sheet_tab
+            FROM movimientos_bancarios
+            WHERE conciliado = FALSE AND valor > 0 AND fecha >= %s
+            ORDER BY fecha DESC
+        """, (fecha_minima,))
+    else:
+        cur.execute("""
+            SELECT id, banco, fecha, descripcion, valor, estado, rc_sheet, cliente_sheet, sheet_tab
+            FROM movimientos_bancarios
+            WHERE conciliado = FALSE AND valor > 0
+            ORDER BY fecha DESC
+            LIMIT 1000
+        """)
     movimientos = cur.fetchall()
     cur.close(); conn.close()
 
