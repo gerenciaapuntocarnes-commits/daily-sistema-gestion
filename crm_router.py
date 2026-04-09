@@ -1280,7 +1280,7 @@ def generar_rc(factura_id: int):
     cur = conn.cursor()
     cur.execute("""
         SELECT id, siigo_invoice_id, numero, prefix, total, balance,
-               estado_pago, medio_pago, cuenta_debito, rc_siigo_id
+               estado_pago, medio_pago, cuenta_debito, rc_siigo_id, movimiento_id
         FROM crm_facturas WHERE id = %s
     """, (factura_id,))
     row = cur.fetchone()
@@ -1299,7 +1299,7 @@ def generar_rc(factura_id: int):
     factura = {
         "id": row[0], "siigo_invoice_id": row[1], "numero": row[2], "prefix": row[3],
         "total": row[4], "balance": row[5], "estado_pago": row[6],
-        "medio_pago": row[7], "cuenta_debito": row[8]
+        "medio_pago": row[7], "cuenta_debito": row[8], "movimiento_id": row[10]
     }
     modo = _modo_prueba()
     result = _crear_rc_en_siigo(factura, modo)
@@ -1347,7 +1347,7 @@ def generar_rc_masivo():
     cur = conn.cursor()
     cur.execute("""
         SELECT id, siigo_invoice_id, numero, prefix, total, balance,
-               estado_pago, medio_pago, cuenta_debito, rc_siigo_id
+               estado_pago, medio_pago, cuenta_debito, rc_siigo_id, movimiento_id
         FROM crm_facturas
         WHERE estado_pago = 'pagado' AND rc_siigo_id IS NULL
     """)
@@ -1362,7 +1362,7 @@ def generar_rc_masivo():
         factura = {
             "id": row[0], "siigo_invoice_id": row[1], "numero": row[2], "prefix": row[3],
             "total": row[4], "balance": row[5], "estado_pago": row[6],
-            "medio_pago": row[7], "cuenta_debito": row[8]
+            "medio_pago": row[7], "cuenta_debito": row[8], "movimiento_id": row[10]
         }
         result = _crear_rc_en_siigo(factura, modo)
         if result["ok"]:
@@ -2207,7 +2207,7 @@ def rc_masivo_seleccion(data: RcMasivoIn):
     cur = conn.cursor()
     cur.execute("""
         SELECT id, siigo_invoice_id, numero, prefix, total, balance,
-               estado_pago, medio_pago, cuenta_debito, rc_siigo_id
+               estado_pago, medio_pago, cuenta_debito, rc_siigo_id, movimiento_id
         FROM crm_facturas
         WHERE id = ANY(%s) AND estado_pago = 'pagado' AND rc_siigo_id IS NULL
     """, (list(data.factura_ids),))
@@ -2222,7 +2222,7 @@ def rc_masivo_seleccion(data: RcMasivoIn):
         factura = {
             "id": row[0], "siigo_invoice_id": row[1], "numero": row[2], "prefix": row[3],
             "total": row[4], "balance": row[5], "estado_pago": row[6],
-            "medio_pago": row[7], "cuenta_debito": row[8]
+            "medio_pago": row[7], "cuenta_debito": row[8], "movimiento_id": row[10]
         }
         result = _crear_rc_en_siigo(factura, modo)
         if result["ok"]:
