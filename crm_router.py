@@ -365,7 +365,7 @@ def actualizar_movimiento_sheet(mov_id: int, rc_numero: Optional[str] = None):
 
 @router.post("/fix/conciliados-estado")
 def fix_conciliados_estado():
-    """Marca como conciliados los movimientos cuyo estado indica que ya tienen medio de pago en Siigo."""
+    """Marca como conciliados los movimientos cuyo estado indica que ya están conciliados en el Sheet."""
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("""
@@ -373,6 +373,7 @@ def fix_conciliados_estado():
         SET conciliado = TRUE
         WHERE conciliado = FALSE
           AND (
+            estado ILIKE '%CONCILI%' OR
             estado ILIKE '%MEDIO DE PAGO%' OR
             estado ILIKE '%QUEDO CON MEDIO%'
           )
