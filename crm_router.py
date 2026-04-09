@@ -2014,8 +2014,15 @@ def revertir_factura(factura_id: int):
         cur.close(); conn.close()
         raise HTTPException(400, "No se puede revertir: ya tiene un RC real generado en Siigo. Anúlalo primero en Siigo.")
 
-    # Desligar movimiento bancario
+    # Obtener datos del movimiento para limpiar Sheets
+    sheet_info = None
     if mov_id:
+        cur.execute("""
+            SELECT banco, sheet_tab, sheet_row
+            FROM movimientos_bancarios WHERE id = %s
+        """, (mov_id,))
+        sheet_info = cur.fetchone()
+
         cur.execute("""
             UPDATE movimientos_bancarios
             SET conciliado = FALSE, factura_id = NULL
@@ -2037,7 +2044,31 @@ def revertir_factura(factura_id: int):
 
     conn.commit()
     cur.close(); conn.close()
-    return {"ok": True}
+
+    # Limpiar celdas en Google Sheets (ESTADO, RC, CLIENTE)
+    sheet_ok = False
+    if sheet_info:
+        banco, sheet_tab, sheet_row = sheet_info
+        if sheet_tab and sheet_row:
+            try:
+                cols = _SHEET_COLS.get(banco, {"estado": 3, "rc": 4, "cliente": 5})
+                service = _get_sheets_service()
+                exact_tab = _get_exact_tab_name(service, sheet_tab)
+                safe_tab  = exact_tab.replace("'", "\\'")
+                # Borrar ESTADO, RC y CLIENTE
+                for col_key in ("estado", "rc", "cliente"):
+                    col_letter = _col_letter(cols[col_key])
+                    service.spreadsheets().values().update(
+                        spreadsheetId=SHEET_ID,
+                        range=f"'{safe_tab}'!{col_letter}{sheet_row}",
+                        valueInputOption="RAW",
+                        body={"values": [[""]]}
+                    ).execute()
+                sheet_ok = True
+            except Exception:
+                pass  # no bloquear la reversión si falla el Sheet
+
+    return {"ok": True, "sheet_limpiado": sheet_ok}
 
 
 class EditarFacturaIn(BaseModel):
