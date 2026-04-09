@@ -1635,15 +1635,14 @@ def get_sugerencias(factura_id: int):
     monto_ref = float(row[2]) if row[2] else float(row[3])  # balance si existe, si no total
     fecha_ref = row[4]
 
-    # Traer movimientos no conciliados con fecha >= fecha de la factura
+    # Traer movimientos no conciliados
     cur.execute("""
         SELECT id, banco, fecha, descripcion, valor, estado, rc_sheet, cliente_sheet, sheet_tab
         FROM movimientos_bancarios
         WHERE conciliado = FALSE AND valor > 0
-          AND (%s IS NULL OR fecha >= %s)
         ORDER BY fecha DESC
         LIMIT 1000
-    """, (fecha_ref, fecha_ref))
+    """)
     movimientos = cur.fetchall()
     cur.close(); conn.close()
 
