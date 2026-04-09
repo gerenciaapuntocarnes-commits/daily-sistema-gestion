@@ -958,31 +958,36 @@ def _get_clientes_con_facturas(corte_desde: str = None, corte_hasta: str = None,
         ORDER BY ultima_factura DESC
     """, params)
 
+    clients_rows = cur.fetchall()
+    if not clients_rows:
+        cur.close(); conn.close()
+        return []
+
+    client_ids = [row[0] for row in clients_rows]
+    cur.execute("""
+        SELECT id, siigo_invoice_id, numero, prefix, fecha, total, balance,
+               estado_pago, medio_pago, cuenta_debito, origen_canal,
+               movimiento_id, rc_siigo_id, rc_numero, rc_modo_prueba, cliente_id
+        FROM crm_facturas
+        WHERE cliente_id = ANY(%s)
+        ORDER BY cliente_id, fecha DESC
+    """, (client_ids,))
+    facturas_by_cliente = {}
+    for f in cur.fetchall():
+        facturas_by_cliente.setdefault(f[15], []).append({
+            "id": f[0], "siigo_invoice_id": f[1],
+            "numero": f[2], "prefix": f[3],
+            "factura": f"{f[3]}-{f[2]}" if f[3] else str(f[2]),
+            "fecha": f[4].isoformat() if f[4] else None,
+            "total": float(f[5] or 0), "balance": float(f[6] or 0),
+            "estado_pago": f[7], "medio_pago": f[8],
+            "cuenta_debito": f[9], "origen_canal": f[10],
+            "movimiento_id": f[11], "rc_siigo_id": f[12],
+            "rc_numero": f[13], "rc_modo_prueba": f[14],
+        })
+
     clients = []
-    for row in cur.fetchall():
-        cid = row[0]
-        # Get invoices for this client
-        cur.execute("""
-            SELECT id, siigo_invoice_id, numero, prefix, fecha, total, balance,
-                   estado_pago, medio_pago, cuenta_debito, origen_canal,
-                   movimiento_id, rc_siigo_id, rc_numero, rc_modo_prueba
-            FROM crm_facturas
-            WHERE cliente_id = %s
-            ORDER BY fecha DESC
-        """, (cid,))
-        facturas = []
-        for f in cur.fetchall():
-            facturas.append({
-                "id": f[0], "siigo_invoice_id": f[1],
-                "numero": f[2], "prefix": f[3],
-                "factura": f"{f[3]}-{f[2]}" if f[3] else str(f[2]),
-                "fecha": f[4].isoformat() if f[4] else None,
-                "total": float(f[5] or 0), "balance": float(f[6] or 0),
-                "estado_pago": f[7], "medio_pago": f[8],
-                "cuenta_debito": f[9], "origen_canal": f[10],
-                "movimiento_id": f[11], "rc_siigo_id": f[12],
-                "rc_numero": f[13], "rc_modo_prueba": f[14],
-            })
+    for row in clients_rows:
         clients.append({
             "id": row[0], "siigo_id": row[1], "cedula": row[2], "nombre": row[3],
             "telefono": row[4], "email": row[5], "direccion": row[6], "ciudad": row[7],
@@ -990,7 +995,7 @@ def _get_clientes_con_facturas(corte_desde: str = None, corte_hasta: str = None,
             "num_facturas": row[10], "total_ventas": float(row[11] or 0),
             "total_pendiente": float(row[12] or 0),
             "ultima_factura": row[13].isoformat() if row[13] else None,
-            "facturas": facturas,
+            "facturas": facturas_by_cliente.get(row[0], []),
         })
 
     cur.close(); conn.close()

@@ -252,18 +252,24 @@ def listar_recetas():
         FROM recetas r WHERE r.activo=TRUE ORDER BY r.categoria, r.nombre
     """)
     recetas = cur.fetchall()
+    if not recetas:
+        cur.close(); conn.close()
+        return []
+    receta_ids = [r[0] for r in recetas]
+    cur.execute("""
+        SELECT ri.receta_id, COALESCE(SUM(ri.cantidad * COALESCE(ult.precio_unit, 0)), 0)
+        FROM receta_ingredientes ri
+        LEFT JOIN LATERAL (
+            SELECT precio_unit FROM compras_mp
+            WHERE mp_id = ri.mp_id ORDER BY fecha DESC, id DESC LIMIT 1
+        ) ult ON TRUE
+        WHERE ri.receta_id = ANY(%s)
+        GROUP BY ri.receta_id
+    """, (receta_ids,))
+    costos = {row[0]: float(row[1]) for row in cur.fetchall()}
     result = []
     for r in recetas:
-        cur.execute("""
-            SELECT COALESCE(SUM(ri.cantidad * COALESCE(ult.precio_unit,0)), 0)
-            FROM receta_ingredientes ri
-            LEFT JOIN LATERAL (
-                SELECT precio_unit FROM compras_mp
-                WHERE mp_id=ri.mp_id ORDER BY fecha DESC, id DESC LIMIT 1
-            ) ult ON TRUE
-            WHERE ri.receta_id=%s
-        """, (r[0],))
-        costo = float(cur.fetchone()[0])
+        costo = costos.get(r[0], 0.0)
         porciones = float(r[4]) if r[4] else 1
         precio_venta = float(r[5]) if r[5] else 0
         costo_mp = costo / porciones if porciones > 0 else 0
@@ -686,23 +692,28 @@ def listar_remisiones(estado: Optional[str] = None, limit: int = 200):
     has_precio = 'precio_unit' in ri_cols
 
     result = []
-    for r in rows:
+    if rows:
+        rem_ids = [r[0] for r in rows]
         lote_col = "lote" if has_lote else "NULL"
         nombre_col = "mp_nombre" if has_mp_nombre else "NULL"
         precio_col = "precio_unit" if has_precio else "0"
         cur.execute(f"""
-            SELECT {nombre_col}, cantidad, {precio_col}, {lote_col}
-            FROM remision_items WHERE remision_id=%s ORDER BY id
-        """, (r[0],))
-        items = [{"mp_nombre": i[0] or '', "cantidad": float(i[1]),
-                  "precio_unit": float(i[2]) if i[2] else 0,
-                  "lote": i[3]} for i in cur.fetchall()]
-        result.append({
-            "id": r[0], "numero": r[1], "fecha": str(r[2]) if r[2] else '',
-            "proveedor": r[3] or '', "operario": r[4] or '', "notas": r[5],
-            "estado": r[6], "aprobado_por": r[7], "rechazo_motivo": r[8],
-            "creado_en": str(r[9]), "items": items
-        })
+            SELECT remision_id, {nombre_col}, cantidad, {precio_col}, {lote_col}
+            FROM remision_items WHERE remision_id = ANY(%s) ORDER BY remision_id, id
+        """, (rem_ids,))
+        items_by_rem = {}
+        for i in cur.fetchall():
+            items_by_rem.setdefault(i[0], []).append({
+                "mp_nombre": i[1] or '', "cantidad": float(i[2]),
+                "precio_unit": float(i[3]) if i[3] else 0, "lote": i[4]
+            })
+        for r in rows:
+            result.append({
+                "id": r[0], "numero": r[1], "fecha": str(r[2]) if r[2] else '',
+                "proveedor": r[3] or '', "operario": r[4] or '', "notas": r[5],
+                "estado": r[6], "aprobado_por": r[7], "rechazo_motivo": r[8],
+                "creado_en": str(r[9]), "items": items_by_rem.get(r[0], [])
+            })
     cur.close(); conn.close()
     return result
 
@@ -1260,10 +1271,22 @@ def listar_ordenes(estado: Optional[str] = None, limit: int = 100):
             FROM ordenes_compra ORDER BY creado_en DESC LIMIT %s
         """, (limit,))
     rows = cur.fetchall()
+    if not rows:
+        cur.close(); conn.close()
+        return []
+    orden_ids = [r[0] for r in rows]
+    cur.execute("""
+        SELECT orden_id, mp_nombre, cantidad, precio_est
+        FROM orden_items WHERE orden_id = ANY(%s) ORDER BY orden_id, id
+    """, (orden_ids,))
+    items_by_orden = {}
+    for i in cur.fetchall():
+        items_by_orden.setdefault(i[0], []).append({
+            "mp_nombre": i[1], "cantidad": float(i[2]), "precio_est": float(i[3]) if i[3] else 0
+        })
     result = []
     for r in rows:
-        cur.execute("SELECT mp_nombre, cantidad, precio_est FROM orden_items WHERE orden_id=%s ORDER BY id", (r[0],))
-        items = [{"mp_nombre": i[0], "cantidad": float(i[1]), "precio_est": float(i[2]) if i[2] else 0} for i in cur.fetchall()]
+        items = items_by_orden.get(r[0], [])
         total = sum(i["cantidad"] * i["precio_est"] for i in items)
         result.append({"id": r[0], "numero": r[1], "fecha": str(r[2]), "proveedor": r[3],
                        "estado": r[4], "notas": r[5], "creado_por": r[6],

@@ -960,6 +960,7 @@ tr:hover .btn-delete { opacity: 1; }
             <tbody id="concil-facturas-body"></tbody>
           </table>
         </div>
+        <div id="concil-facturas-paginacion" class="px-3 py-2 border-top d-flex align-items-center justify-content-between small"></div>
       </div>
     </div>
   </div>
@@ -972,7 +973,7 @@ tr:hover .btn-delete { opacity: 1; }
           <div class="col">
             <div class="input-icon">
               <span class="input-icon-addon"><i class="ti ti-search"></i></span>
-              <input class="form-control form-control-sm" id="conciliados-buscar" placeholder="Buscar cliente o factura..." oninput="loadConciliados()">
+              <input class="form-control form-control-sm" id="conciliados-buscar" placeholder="Buscar cliente o factura..." oninput="debounceLoadConciliados()">
             </div>
           </div>
           <div class="col-auto">
@@ -1001,6 +1002,7 @@ tr:hover .btn-delete { opacity: 1; }
             <tbody id="conciliados-body"></tbody>
           </table>
         </div>
+        <div id="conciliados-paginacion" class="px-3 py-2 border-top d-flex align-items-center justify-content-between small"></div>
       </div>
     </div>
   </div>
@@ -2746,6 +2748,12 @@ tr:hover .btn-delete { opacity: 1; }
 const API = 'https://daily-sistema-gestion-production.up.railway.app';
 let mpList = [], recetasList = [], currentRecetaId = null, currentGastosTab = 'todos';
 let conciliadosSeleccionados = new Set();
+let conciliadosAllData = [];
+let conciliadosPage = 0;
+const CONCILIADOS_PAGE_SIZE = 50;
+let concilFacturasPage = 0;
+const PENDIENTES_PAGE_SIZE = 75;
+let _conciliadosBuscarTimer = null;
 let crmPage = 1;
 let crmClienteActual = null;
 let modalPasos = [];
@@ -5342,7 +5350,7 @@ function _pollRcSiigo(resultEl) {
   var interval = setInterval(async function(){
     intentos++;
     var status = await api('/crm/sync/rc-siigo/status','GET',null,true).catch(function(){ return null; });
-    if(!status) return;
+    if(!status) { if(intentos >= maxIntentos) clearInterval(interval); return; }
     if(status.running && intentos < maxIntentos) {
       if(resultEl) resultEl.innerHTML = '<div class="text-secondary small"><i class="ti ti-loader spin me-1"></i>Buscando RCs en Siigo... '+Math.round(intentos*3/60,1)+' min</div>';
     } else {
@@ -5452,13 +5460,26 @@ async function loadConciliacion() {
 }
 
 function _renderConcilFacturas(facts) {
-  var el = $('concil-facturas-body');
   var count = $('concil-facts-count');
   if(count) count.textContent = facts.length + ' pendientes';
-  // update badge
   var badge = $('concil-pendientes-badge');
   if(badge) { if(facts.length){ badge.textContent=facts.length; badge.style.display=''; } else { badge.style.display='none'; } }
-  el.innerHTML = facts.length ? facts.map(function(f){
+  concilFacturasPage = 0;
+  _renderConcilFacturasPage(facts, 0);
+}
+
+function _renderConcilFacturasPage(facts, page) {
+  var el = $('concil-facturas-body');
+  if(!el) return;
+  var total = facts.length;
+  if(!total) {
+    el.innerHTML = '<tr><td colspan="5" class="text-center text-secondary small py-4">Sin facturas pendientes</td></tr>';
+    var pag = $('concil-facturas-paginacion'); if(pag) pag.innerHTML = '';
+    return;
+  }
+  var start = page * PENDIENTES_PAGE_SIZE;
+  var end = Math.min(start + PENDIENTES_PAGE_SIZE, total);
+  el.innerHTML = facts.slice(start, end).map(function(f){
     var sel = concilFactSelId === f.id;
     var nombre = f.cliente_nombre || '';
     var rows = '<tr class="'+(sel?'table-warning':'')+'" style="cursor:pointer" onclick="concilSelectFact('+f.id+',\''+nombre.replace(/'/g,"\\'").replace(/"/g,'&quot;')+'\',' + f.balance + ')">' +
@@ -5475,7 +5496,18 @@ function _renderConcilFacturas(facts) {
         '</div></td></tr>';
     }
     return rows;
-  }).join('') : '<tr><td colspan="5" class="text-center text-secondary small py-4">Sin facturas pendientes</td></tr>';
+  }).join('');
+  concilFacturasPage = page;
+  var pag = $('concil-facturas-paginacion');
+  if(pag) {
+    var totalPages = Math.ceil(total / PENDIENTES_PAGE_SIZE);
+    if(totalPages <= 1) { pag.innerHTML = ''; return; }
+    pag.innerHTML = '<span class="text-secondary">Mostrando '+(start+1)+'–'+end+' de '+total+'</span>' +
+      '<div class="btn-group btn-group-sm">' +
+        '<button class="btn btn-outline-secondary" '+(page===0?'disabled':'')+' onclick="_renderConcilFacturasPage(concilFacturasCache,'+(page-1)+')"><i class="ti ti-chevron-left"></i></button>' +
+        '<button class="btn btn-outline-secondary" '+(page>=totalPages-1?'disabled':'')+' onclick="_renderConcilFacturasPage(concilFacturasCache,'+(page+1)+')"><i class="ti ti-chevron-right"></i></button>' +
+      '</div>';
+  }
 }
 
 function filterConcilFacturas(q) {
@@ -5615,6 +5647,41 @@ function marcarEfectivoSeleccionada() {
 
 // ── Tab: Conciliados ──
 
+function _buildConciliadoRow(f) {
+  var sel = conciliadosSeleccionados.has(f.id);
+  var rcNumCell;
+  if(f.rc_numero) {
+    rcNumCell = '<div class="d-flex align-items-center gap-1">' +
+        '<code class="small text-success fw-bold">'+f.rc_numero+'</code>' +
+        (f.rc_modo_prueba ? '<span class="badge bg-warning-lt" style="font-size:9px">PRUEBA</span>' : '') +
+      '</div>';
+  } else if((f.balance || 0) === 0) {
+    rcNumCell = '<span class="text-secondary small" title="Siigo ya registró este pago (balance=0). Usa \'Verificar RC\' para traer el número.">' +
+        '<i class="ti ti-circle-check me-1"></i>Pagado en Siigo</span>';
+  } else {
+    rcNumCell = '<button class="btn btn-xs btn-outline-primary" onclick="generarRcFactura('+f.id+')"><i class="ti ti-receipt me-1"></i>Generar RC</button>';
+  }
+  var bd = f.banco_display || 'Siigo';
+  var bdColor = bd === 'Siigo' ? 'bg-purple-lt' : (bd === 'Efectivo' ? 'bg-green-lt' : 'bg-azure-lt');
+  var medioBadge = '<span class="badge '+bdColor+'">'+fmtBanco(bd)+'</span>';
+  var canRevert = !f.rc_numero || f.rc_modo_prueba;
+  return '<tr class="'+(sel?'table-warning':'')+'">' +
+    '<td><input type="checkbox" class="form-check-input" '+(sel?'checked':'')+' onchange="toggleConciliadoSelect('+f.id+',this.checked)"></td>' +
+    '<td class="small">'+f.fecha+'</td>' +
+    '<td class="small" style="max-width:130px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="'+(f.cliente_nombre||'')+'">'+( f.cliente_nombre||'--')+'</td>' +
+    '<td><code class="small">'+f.factura+'</code></td>' +
+    '<td class="text-end fw-bold">$'+fmt(f.total)+'</td>' +
+    '<td>'+medioBadge+'</td>' +
+    '<td class="small">'+(f.fecha_pago||'--')+'</td>' +
+    '<td>'+rcNumCell+'</td>' +
+    '<td><div class="btn-group btn-group-sm">' +
+      '<button class="btn btn-outline-secondary btn-xs" onclick="editarConciliado('+f.id+',\''+( f.medio_pago||'')+'\',\''+(f.origen_canal||'')+'\',\''+( f.cuenta_debito||'')+'\')" title="Editar"><i class="ti ti-pencil"></i></button>' +
+      (f.movimiento_id ? '<button class="btn btn-outline-teal btn-xs" onclick="actualizarSheet('+f.movimiento_id+')" title="Marcar CONCILIADO en Sheets"><i class="ti ti-table-export"></i></button>' : '') +
+      (canRevert ? '<button class="btn btn-outline-danger btn-xs" onclick="revertirConciliacion('+f.id+')" title="Revertir"><i class="ti ti-arrow-back-up"></i></button>' : '<button class="btn btn-outline-secondary btn-xs" disabled title="Tiene RC real en Siigo"><i class="ti ti-lock"></i></button>') +
+    '</div></td>' +
+  '</tr>';
+}
+
 async function loadConciliados() {
   var q = ($('conciliados-buscar')||{}).value || '';
   var filtroRc = ($('conciliados-filtro-rc')||{}).value || '';
@@ -5623,56 +5690,40 @@ async function loadConciliados() {
   if(!el) return;
   el.innerHTML = '<tr><td colspan="9" class="text-center text-secondary py-4"><i class="ti ti-loader spin me-1"></i>Cargando...</td></tr>';
   var data = await api(url,'GET',null,true).catch(function(){ return []; });
+  conciliadosAllData = data;
+  conciliadosPage = 0;
+  conciliadosSeleccionados = new Set();
+  _updateBtnRcSeleccion();
   if(!data.length) {
     el.innerHTML = '<tr><td colspan="9" class="text-center text-secondary small py-4">Sin facturas conciliadas</td></tr>';
     _updateConciliadosBadge(0);
+    var pag = $('conciliados-paginacion'); if(pag) pag.innerHTML = '';
     return;
   }
   var sinRc = data.filter(function(f){ return !f.rc_numero; }).length;
   _updateConciliadosBadge(sinRc);
-  conciliadosSeleccionados = new Set();
-  _updateBtnRcSeleccion();
-  el.innerHTML = data.map(function(f){
-    var sel = conciliadosSeleccionados.has(f.id);
-    // Columna N° RC
-    var rcNumCell;
-    if(f.rc_numero) {
-      // RC ya registrado en nuestra BD
-      rcNumCell = '<div class="d-flex align-items-center gap-1">' +
-          '<code class="small text-success fw-bold">'+f.rc_numero+'</code>' +
-          (f.rc_modo_prueba ? '<span class="badge bg-warning-lt" style="font-size:9px">PRUEBA</span>' : '') +
-        '</div>';
-    } else if((f.balance || 0) === 0) {
-      // balance=0 en Siigo → Siigo ya tiene la factura como pagada, no generar RC duplicado
-      rcNumCell = '<span class="text-secondary small" title="Siigo ya registró este pago (balance=0). Usa \'Verificar RC\' para traer el número.">' +
-          '<i class="ti ti-circle-check me-1"></i>Pagado en Siigo</span>';
-    } else {
-      // balance>0 en Siigo → aún pendiente de pago formal, se puede generar RC
-      rcNumCell = '<button class="btn btn-xs btn-outline-primary" onclick="generarRcFactura('+f.id+')"><i class="ti ti-receipt me-1"></i>Generar RC</button>';
-    }
-    var bd = f.banco_display || 'Siigo';
-    var bdLabel = fmtBanco(bd);
-    var bdColor = bd === 'Siigo' ? 'bg-purple-lt' : (bd === 'Efectivo' ? 'bg-green-lt' : 'bg-azure-lt');
-    var medioBadge = '<span class="badge '+bdColor+'">'+bdLabel+'</span>';
-    var canRevert = !f.rc_numero || f.rc_modo_prueba;
-    return '<tr class="'+(sel?'table-warning':'')+'">' +
-      '<td><input type="checkbox" class="form-check-input" '+(sel?'checked':'')+' onchange="toggleConciliadoSelect('+f.id+',this.checked)"></td>' +
-      '<td class="small">'+f.fecha+'</td>' +
-      '<td class="small" style="max-width:130px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="'+(f.cliente_nombre||'')+'">'+( f.cliente_nombre||'--')+'</td>' +
-      '<td><code class="small">'+f.factura+'</code></td>' +
-      '<td class="text-end fw-bold">$'+fmt(f.total)+'</td>' +
-      '<td>'+medioBadge+'</td>' +
-      '<td class="small">'+(f.fecha_pago||'--')+'</td>' +
-      '<td>'+rcNumCell+'</td>' +
-      '<td>' +
-        '<div class="btn-group btn-group-sm">' +
-          '<button class="btn btn-outline-secondary btn-xs" onclick="editarConciliado('+f.id+',\''+( f.medio_pago||'')+'\',\''+(f.origen_canal||'')+'\',\''+( f.cuenta_debito||'')+'\')" title="Editar"><i class="ti ti-pencil"></i></button>' +
-          (f.movimiento_id ? '<button class="btn btn-outline-teal btn-xs" onclick="actualizarSheet('+f.movimiento_id+')" title="Marcar CONCILIADO en Sheets"><i class="ti ti-table-export"></i></button>' : '') +
-          (canRevert ? '<button class="btn btn-outline-danger btn-xs" onclick="revertirConciliacion('+f.id+')" title="Revertir"><i class="ti ti-arrow-back-up"></i></button>' : '<button class="btn btn-outline-secondary btn-xs" disabled title="Tiene RC real en Siigo"><i class="ti ti-lock"></i></button>') +
-        '</div>' +
-      '</td>' +
-    '</tr>';
-  }).join('');
+  _renderConciliadosPage(0);
+}
+
+function _renderConciliadosPage(page) {
+  var el = $('conciliados-body');
+  if(!el) return;
+  var data = conciliadosAllData;
+  var total = data.length;
+  var start = page * CONCILIADOS_PAGE_SIZE;
+  var end = Math.min(start + CONCILIADOS_PAGE_SIZE, total);
+  el.innerHTML = data.slice(start, end).map(_buildConciliadoRow).join('');
+  conciliadosPage = page;
+  var pag = $('conciliados-paginacion');
+  if(pag) {
+    var totalPages = Math.ceil(total / CONCILIADOS_PAGE_SIZE);
+    if(totalPages <= 1) { pag.innerHTML = ''; return; }
+    pag.innerHTML = '<span class="text-secondary">Mostrando '+(start+1)+'–'+end+' de '+total+'</span>' +
+      '<div class="btn-group btn-group-sm">' +
+        '<button class="btn btn-outline-secondary" '+(page===0?'disabled':'')+' onclick="_renderConciliadosPage('+(page-1)+')"><i class="ti ti-chevron-left"></i> Anterior</button>' +
+        '<button class="btn btn-outline-secondary" '+(page>=totalPages-1?'disabled':'')+' onclick="_renderConciliadosPage('+(page+1)+')">Siguiente <i class="ti ti-chevron-right"></i></button>' +
+      '</div>';
+  }
 }
 
 function _updateConciliadosBadge(sinRc) {
@@ -5686,21 +5737,14 @@ function toggleConciliadoSelect(id, checked) {
   if(checked) conciliadosSeleccionados.add(id);
   else conciliadosSeleccionados.delete(id);
   _updateBtnRcSeleccion();
-  // highlight row
-  loadConciliados();
+  _renderConciliadosPage(conciliadosPage);
 }
 
 function toggleAllConciliados(checked) {
-  var rows = document.querySelectorAll('#conciliados-body input[type=checkbox]');
-  rows.forEach(function(cb){ cb.checked = checked; });
   conciliadosSeleccionados = new Set();
-  if(checked) {
-    rows.forEach(function(cb){
-      var m = cb.getAttribute('onchange').match(/\d+/);
-      if(m) conciliadosSeleccionados.add(parseInt(m[0]));
-    });
-  }
+  if(checked) conciliadosAllData.forEach(function(f){ conciliadosSeleccionados.add(f.id); });
   _updateBtnRcSeleccion();
+  _renderConciliadosPage(conciliadosPage);
 }
 
 async function actualizarSheet(movId) {
@@ -6187,12 +6231,18 @@ async function crearCampana() {
   }
 }
 
+function debounceLoadConciliados() {
+  clearTimeout(_conciliadosBuscarTimer);
+  _conciliadosBuscarTimer = setTimeout(loadConciliados, 400);
+}
+
 // ── INIT ──────────────────────────────────────────────────────────
 loadDashboard();
 api('/materias-primas','GET',null,true).then(function(m){ mpList=m; }).catch(function(){});
 api('/recetas','GET',null,true).then(function(r){ recetasList=r; }).catch(function(){});
 updatePendingBadge();
-setInterval(updatePendingBadge, 10000);
+var _pendingBadgeInterval = setInterval(updatePendingBadge, 30000);
+window.addEventListener('beforeunload', function(){ clearInterval(_pendingBadgeInterval); });
 </script>
 </body>
 </html>
