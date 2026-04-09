@@ -405,25 +405,34 @@ def limpiar_sheet(data: LimpiarSheetIn):
     ).execute()
     rows = result.get("values", [])
 
-    limpiados = []
+    # Encontrar filas que matchean
+    filas_limpiar = []
     for row_idx, row in enumerate(rows, start=1):
         cell = (row[0] if row else "").strip().lower()
         if not cell:
             continue
         for cli_name in data.clientes:
             if cli_name.lower() in cell:
-                for col_key in ("estado", "rc", "cliente"):
-                    col_letter = _col_letter(cols[col_key])
-                    service.spreadsheets().values().update(
-                        spreadsheetId=SHEET_ID,
-                        range=f"'{safe_tab}'!{col_letter}{row_idx}",
-                        valueInputOption="RAW",
-                        body={"values": [[""]]}
-                    ).execute()
-                limpiados.append({"fila": row_idx, "cliente": row[0].strip()})
+                filas_limpiar.append({"fila": row_idx, "cliente": row[0].strip()})
                 break
 
-    return {"ok": True, "tab": exact_tab, "limpiados": limpiados}
+    # Batch update: una sola llamada para todas las celdas
+    if filas_limpiar:
+        batch_data = []
+        for item in filas_limpiar:
+            r = item["fila"]
+            for col_key in ("estado", "rc", "cliente"):
+                col_letter = _col_letter(cols[col_key])
+                batch_data.append({
+                    "range": f"'{safe_tab}'!{col_letter}{r}",
+                    "values": [[""]]
+                })
+        service.spreadsheets().values().batchUpdate(
+            spreadsheetId=SHEET_ID,
+            body={"valueInputOption": "RAW", "data": batch_data}
+        ).execute()
+
+    return {"ok": True, "tab": exact_tab, "limpiados": filas_limpiar}
 
 
 @router.post("/reset/bancos")
