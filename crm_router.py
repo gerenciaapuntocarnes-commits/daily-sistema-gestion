@@ -1239,6 +1239,21 @@ def generar_rc(factura_id: int):
     return result
 
 
+@router.post("/facturas/{factura_id}/reset-rc")
+def reset_rc(factura_id: int):
+    """Limpia el RC de una factura (para re-generar después de anular en Siigo)."""
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE crm_facturas
+        SET rc_siigo_id = NULL, rc_numero = NULL, rc_modo_prueba = TRUE
+        WHERE id = %s
+    """, (factura_id,))
+    conn.commit()
+    cur.close(); conn.close()
+    return {"ok": True, "mensaje": "RC limpiado. Puedes generar uno nuevo."}
+
+
 @router.post("/generar-rc-masivo")
 def generar_rc_masivo():
     """Genera RC para todas las facturas marcadas como pagado sin RC aún."""
