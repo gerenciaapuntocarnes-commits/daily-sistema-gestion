@@ -639,6 +639,22 @@ def _create_tables():
         )
     """)
 
+    # ── Ventas Daily ──────────────────────────────────────────────
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS ventas_daily (
+            id              SERIAL PRIMARY KEY,
+            fecha_despacho  DATE,
+            fecha_pago      DATE,
+            cliente         TEXT NOT NULL,
+            numero_factura  TEXT,
+            valor           NUMERIC(14,2),
+            medio_pago      TEXT,
+            canal           TEXT,
+            notas           TEXT,
+            creado_en       TIMESTAMP DEFAULT NOW()
+        )
+    """)
+
     conn.commit()
 
     # ── Seed INVIMA programs if empty ──────────────────────────

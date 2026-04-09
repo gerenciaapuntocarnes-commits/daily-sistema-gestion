@@ -2963,4 +2963,94 @@ def admin_migrate_clientes():
     conn.commit()
     cur.close()
     conn.close()
+
+
+# ═══════════════════════════════════════════════════════════════
+# VENTAS DAILY
+# ═══════════════════════════════════════════════════════════════
+
+class VentaIn(BaseModel):
+    fecha_despacho: Optional[str] = None
+    fecha_pago: Optional[str] = None
+    cliente: str
+    numero_factura: Optional[str] = None
+    valor: Optional[float] = None
+    medio_pago: Optional[str] = None
+    canal: Optional[str] = None
+    notas: Optional[str] = None
+
+@router.get("/ventas-daily")
+def listar_ventas_daily(
+    desde: Optional[str] = None,
+    hasta: Optional[str] = None,
+    canal: Optional[str] = None,
+    pagado: Optional[bool] = None,
+    limit: int = 500
+):
+    conn = get_conn()
+    cur = conn.cursor()
+    where = []
+    params = []
+    if desde:
+        where.append("fecha_despacho >= %s"); params.append(desde)
+    if hasta:
+        where.append("fecha_despacho <= %s"); params.append(hasta)
+    if canal:
+        where.append("canal = %s"); params.append(canal)
+    if pagado is True:
+        where.append("fecha_pago IS NOT NULL")
+    elif pagado is False:
+        where.append("fecha_pago IS NULL")
+    sql = """SELECT id, fecha_despacho, fecha_pago, cliente, numero_factura,
+                    valor, medio_pago, canal, notas
+             FROM ventas_daily"""
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY fecha_despacho DESC, id DESC LIMIT %s"
+    params.append(limit)
+    cur.execute(sql, params)
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+    return [{"id": r[0],
+             "fecha_despacho": str(r[1]) if r[1] else None,
+             "fecha_pago": str(r[2]) if r[2] else None,
+             "cliente": r[3], "numero_factura": r[4],
+             "valor": float(r[5]) if r[5] else None,
+             "medio_pago": r[6], "canal": r[7], "notas": r[8]} for r in rows]
+
+@router.post("/ventas-daily")
+def crear_venta(data: VentaIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        INSERT INTO ventas_daily
+            (fecha_despacho, fecha_pago, cliente, numero_factura, valor, medio_pago, canal, notas)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+    """, (data.fecha_despacho or None, data.fecha_pago or None, data.cliente,
+          data.numero_factura, data.valor, data.medio_pago, data.canal, data.notas))
+    new_id = cur.fetchone()[0]
+    conn.commit(); cur.close(); conn.close()
+    return {"id": new_id, "ok": True}
+
+@router.put("/ventas-daily/{venta_id}")
+def actualizar_venta(venta_id: int, data: VentaIn):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE ventas_daily
+        SET fecha_despacho=%s, fecha_pago=%s, cliente=%s, numero_factura=%s,
+            valor=%s, medio_pago=%s, canal=%s, notas=%s
+        WHERE id=%s
+    """, (data.fecha_despacho or None, data.fecha_pago or None, data.cliente,
+          data.numero_factura, data.valor, data.medio_pago, data.canal, data.notas, venta_id))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
+
+@router.delete("/ventas-daily/{venta_id}")
+def eliminar_venta(venta_id: int):
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM ventas_daily WHERE id=%s", (venta_id,))
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True}
     return {"ok": True, "results": results}

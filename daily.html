@@ -366,6 +366,12 @@ tr:hover .btn-delete { opacity: 1; }
 
         <li class="nav-item pt-3"><span class="nav-link text-uppercase text-secondary small py-1" style="font-size:10px;letter-spacing:1px">Ventas / CRM</span></li>
         <li class="nav-item">
+          <a class="nav-link" href="#" onclick="goto('ventas-daily');return false;">
+            <span class="nav-link-icon"><i class="ti ti-shopping-bag"></i></span>
+            <span class="nav-link-title">Ventas</span>
+          </a>
+        </li>
+        <li class="nav-item">
           <a class="nav-link" href="#" onclick="goto('ventas');return false;">
             <span class="nav-link-icon"><i class="ti ti-git-compare"></i></span>
             <span class="nav-link-title">Conciliación</span>
@@ -911,6 +917,93 @@ tr:hover .btn-delete { opacity: 1; }
 </div>
 
 <!-- ════ CONCILIACIÓN BANCARIA ════ -->
+<!-- ════ VENTAS DAILY ════ -->
+<div id="s-ventas-daily" class="section">
+  <div class="page-header d-print-none mb-3">
+    <div class="row align-items-center">
+      <div class="col-auto">
+        <div class="page-pretitle">Ventas / CRM</div>
+        <h2 class="page-title">Ventas</h2>
+      </div>
+      <div class="col-auto ms-auto d-flex gap-2">
+        <button class="btn btn-primary" onclick="openNuevaVenta()"><i class="ti ti-plus me-1"></i>Nueva venta</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="row row-cards mb-3" id="ventas-daily-kpis"></div>
+
+  <!-- Filtros -->
+  <div class="card mb-3">
+    <div class="card-body py-2">
+      <div class="row g-2 align-items-center">
+        <div class="col">
+          <div class="input-icon">
+            <span class="input-icon-addon"><i class="ti ti-search"></i></span>
+            <input class="form-control form-control-sm" id="vd-buscar" placeholder="Buscar cliente o factura..." oninput="filterTable('vd-body', this.value)">
+          </div>
+        </div>
+        <div class="col-auto">
+          <input class="form-control form-control-sm" type="date" id="vd-desde" onchange="loadVentasDaily()">
+        </div>
+        <div class="col-auto">
+          <input class="form-control form-control-sm" type="date" id="vd-hasta" onchange="loadVentasDaily()">
+        </div>
+        <div class="col-auto">
+          <select class="form-select form-select-sm" id="vd-canal" onchange="loadVentasDaily()" style="width:160px">
+            <option value="">Todos los canales</option>
+            <option>CLIENTE DAILY</option>
+            <option>PÁGINA</option>
+            <option>INSTAGRAM</option>
+            <option>TIK TOK</option>
+            <option>REFERIDO</option>
+            <option>SIN INFORMACIÓN</option>
+          </select>
+        </div>
+        <div class="col-auto">
+          <select class="form-select form-select-sm" id="vd-estado" onchange="loadVentasDaily()" style="width:130px">
+            <option value="">Todos</option>
+            <option value="pendiente">Sin pago</option>
+            <option value="pagado">Pagados</option>
+          </select>
+        </div>
+        <div class="col-auto">
+          <button class="btn btn-sm btn-outline-secondary" onclick="vdLimpiarFiltros()"><i class="ti ti-x me-1"></i>Limpiar</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tabla -->
+  <div class="card">
+    <div class="card-header">
+      <h3 class="card-title"><i class="ti ti-shopping-bag me-2"></i>Ventas</h3>
+      <div class="card-actions text-secondary small" id="vd-count"></div>
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-vcenter table-sm card-table table-hover">
+          <thead>
+            <tr>
+              <th>Despacho</th>
+              <th>Pago</th>
+              <th>Cliente</th>
+              <th>Factura</th>
+              <th class="text-end">Valor</th>
+              <th>Medio de Pago</th>
+              <th>Canal</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="vd-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div id="vd-body-pag"></div>
+</div>
+
 <div id="s-ventas" class="section">
   <div class="page-header d-print-none mb-3">
     <div class="row align-items-center">
@@ -2753,6 +2846,72 @@ tr:hover .btn-delete { opacity: 1; }
   </div>
 </div>
 
+<!-- Modal Venta Daily -->
+<div id="modal-venta" class="modal-bg">
+  <div class="card" style="width:100%;max-width:600px;max-height:90vh;overflow-y:auto">
+    <div class="card-header">
+      <h3 class="card-title" id="modal-venta-title">Nueva Venta</h3>
+      <button type="button" class="btn-close" onclick="closeModal('modal-venta')"></button>
+    </div>
+    <div class="card-body">
+      <div class="row g-3">
+        <div class="col-md-6">
+          <label class="form-label">Fecha de Despacho</label>
+          <input class="form-control" type="date" id="venta-fecha-despacho">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Fecha de Pago</label>
+          <input class="form-control" type="date" id="venta-fecha-pago">
+        </div>
+        <div class="col-12">
+          <label class="form-label">Cliente *</label>
+          <input class="form-control" type="text" id="venta-cliente" placeholder="Nombre del cliente">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label"># Factura</label>
+          <input class="form-control" type="text" id="venta-factura" placeholder="Ej: FE 3539">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Valor ($)</label>
+          <input class="form-control" type="number" id="venta-valor" step="100" placeholder="0">
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Medio de Pago</label>
+          <select class="form-select" id="venta-medio-pago">
+            <option value="">— Seleccionar —</option>
+            <option>BANCOLOMBIA</option>
+            <option>BANCO DE BOGOTA</option>
+            <option>EFECTIVO</option>
+            <option>AVALPAY</option>
+            <option>CRUCE</option>
+            <option>MARIA INES</option>
+          </select>
+        </div>
+        <div class="col-md-6">
+          <label class="form-label">Canal</label>
+          <select class="form-select" id="venta-canal">
+            <option value="">— Seleccionar —</option>
+            <option>CLIENTE DAILY</option>
+            <option>PÁGINA</option>
+            <option>INSTAGRAM</option>
+            <option>TIK TOK</option>
+            <option>REFERIDO</option>
+            <option>SIN INFORMACIÓN</option>
+          </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Notas</label>
+          <textarea class="form-control" id="venta-notas" rows="2" placeholder="Observaciones opcionales"></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="card-footer text-end">
+      <button class="btn btn-link me-2" onclick="closeModal('modal-venta')">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveVenta()"><i class="ti ti-device-floppy me-1"></i>Guardar</button>
+    </div>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@tabler/core@1.2.0/dist/js/tabler.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/apexcharts@3/dist/apexcharts.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/notyf@3/notyf.min.js"></script>
@@ -2969,6 +3128,7 @@ function goto(sec) {
     'productos-siigo': loadProductosSiigo,
     reglas: loadReglas,
     'plan-produccion': loadPlanProduccion,
+    'ventas-daily': loadVentasDaily,
     ventas: loadVentasSection,
     crm: loadCrmModule
   };
@@ -6296,6 +6456,148 @@ async function crearCampana() {
 function debounceLoadConciliados() {
   clearTimeout(_conciliadosBuscarTimer);
   _conciliadosBuscarTimer = setTimeout(loadConciliados, 400);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// VENTAS DAILY
+// ═══════════════════════════════════════════════════════════════
+
+var _ventasDailyData = [];
+var _ventaEditId = null;
+
+async function loadVentasDaily() {
+  var desde = ($('vd-desde') || {}).value || '';
+  var hasta = ($('vd-hasta') || {}).value || '';
+  var canal = ($('vd-canal') || {}).value || '';
+  var estado = ($('vd-estado') || {}).value || '';
+  var qs = [];
+  if (desde) qs.push('desde=' + desde);
+  if (hasta) qs.push('hasta=' + hasta);
+  if (canal) qs.push('canal=' + encodeURIComponent(canal));
+  if (estado === 'pagado') qs.push('pagado=true');
+  if (estado === 'pendiente') qs.push('pagado=false');
+  var url = '/ventas-daily' + (qs.length ? '?' + qs.join('&') : '');
+  var rows = await api(url, 'GET', null, true).catch(function() { return []; });
+  _ventasDailyData = rows;
+  _renderVentasKpis(rows);
+  _initTable('vd-body', rows.map(_renderVentaRow));
+  $('vd-count').textContent = rows.length + ' registros';
+}
+
+function _renderVentasKpis(rows) {
+  var total = rows.reduce(function(s, r) { return s + (r.valor || 0); }, 0);
+  var pagadas = rows.filter(function(r) { return r.fecha_pago; });
+  var cobrado = pagadas.reduce(function(s, r) { return s + (r.valor || 0); }, 0);
+  var pendiente = total - cobrado;
+  var canales = {};
+  rows.forEach(function(r) {
+    var c = r.canal || 'SIN INFORMACIÓN';
+    canales[c] = (canales[c] || 0) + (r.valor || 0);
+  });
+  var topCanal = Object.entries(canales).sort(function(a, b) { return b[1] - a[1]; })[0];
+  $('ventas-daily-kpis').innerHTML =
+    '<div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center"><div class="col-auto"><span class="bg-blue text-white avatar"><i class="ti ti-shopping-bag"></i></span></div><div class="col"><div class="font-weight-medium">' + rows.length + ' ventas</div><div class="text-secondary small">Total registros</div></div></div></div></div></div>' +
+    '<div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center"><div class="col-auto"><span class="bg-azure text-white avatar"><i class="ti ti-currency-dollar"></i></span></div><div class="col"><div class="font-weight-medium">' + '$'+fmt(total) + '</div><div class="text-secondary small">Total ventas</div></div></div></div></div></div>' +
+    '<div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center"><div class="col-auto"><span class="bg-green text-white avatar"><i class="ti ti-circle-check"></i></span></div><div class="col"><div class="font-weight-medium">' + fmtCOP(cobrado) + '</div><div class="text-secondary small">Cobrado (' + pagadas.length + ')</div></div></div></div></div></div>' +
+    '<div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center"><div class="col-auto"><span class="bg-yellow text-white avatar"><i class="ti ti-clock"></i></span></div><div class="col"><div class="font-weight-medium">' + fmtCOP(pendiente) + '</div><div class="text-secondary small">Pendiente (' + (rows.length - pagadas.length) + ')</div></div></div></div></div></div>';
+}
+
+function _renderVentaRow(r) {
+  var canalBadge = '';
+  var canalColor = {
+    'CLIENTE DAILY': 'bg-blue-lt', 'PÁGINA': 'bg-azure-lt',
+    'INSTAGRAM': 'bg-pink-lt', 'TIK TOK': 'bg-purple-lt',
+    'REFERIDO': 'bg-green-lt', 'SIN INFORMACIÓN': 'bg-secondary'
+  };
+  if (r.canal) canalBadge = '<span class="badge ' + (canalColor[r.canal] || 'bg-secondary') + '">' + r.canal + '</span>';
+  var pagoBadge = r.fecha_pago
+    ? '<span class="badge bg-green-lt text-green">' + r.fecha_pago + '</span>'
+    : '<span class="badge bg-yellow-lt text-yellow">Pendiente</span>';
+  var medioBadge = r.medio_pago ? '<span class="badge bg-secondary-lt">' + r.medio_pago + '</span>' : '';
+  return '<tr>' +
+    '<td>' + (r.fecha_despacho || '-') + '</td>' +
+    '<td>' + pagoBadge + '</td>' +
+    '<td>' + r.cliente + '</td>' +
+    '<td class="text-secondary">' + (r.numero_factura || '') + '</td>' +
+    '<td class="text-end fw-medium">' + (r.valor ? '$'+fmt(r.valor) : '-') + '</td>' +
+    '<td>' + medioBadge + '</td>' +
+    '<td>' + canalBadge + '</td>' +
+    '<td class="text-end">' +
+      '<button class="btn btn-xs btn-outline-secondary me-1" onclick="editVenta(' + r.id + ')"><i class="ti ti-edit"></i></button>' +
+      '<button class="btn btn-xs btn-outline-danger btn-delete" onclick="deleteVenta(' + r.id + ')"><i class="ti ti-trash"></i></button>' +
+    '</td>' +
+  '</tr>';
+}
+
+function openNuevaVenta() {
+  _ventaEditId = null;
+  $('modal-venta-title').textContent = 'Nueva Venta';
+  $('venta-fecha-despacho').value = new Date().toISOString().slice(0, 10);
+  $('venta-fecha-pago').value = '';
+  $('venta-cliente').value = '';
+  $('venta-factura').value = '';
+  $('venta-valor').value = '';
+  $('venta-medio-pago').value = '';
+  $('venta-canal').value = '';
+  $('venta-notas').value = '';
+  openModal('modal-venta');
+}
+
+function editVenta(id) {
+  var r = _ventasDailyData.find(function(x) { return x.id === id; });
+  if (!r) return;
+  _ventaEditId = id;
+  $('modal-venta-title').textContent = 'Editar Venta';
+  $('venta-fecha-despacho').value = r.fecha_despacho || '';
+  $('venta-fecha-pago').value = r.fecha_pago || '';
+  $('venta-cliente').value = r.cliente || '';
+  $('venta-factura').value = r.numero_factura || '';
+  $('venta-valor').value = r.valor || '';
+  $('venta-medio-pago').value = r.medio_pago || '';
+  $('venta-canal').value = r.canal || '';
+  $('venta-notas').value = r.notas || '';
+  openModal('modal-venta');
+}
+
+async function saveVenta() {
+  var cliente = $('venta-cliente').value.trim();
+  if (!cliente) { notyf.error('El cliente es obligatorio'); return; }
+  var body = {
+    fecha_despacho: $('venta-fecha-despacho').value || null,
+    fecha_pago: $('venta-fecha-pago').value || null,
+    cliente: cliente,
+    numero_factura: $('venta-factura').value.trim() || null,
+    valor: parseFloat($('venta-valor').value) || null,
+    medio_pago: $('venta-medio-pago').value || null,
+    canal: $('venta-canal').value || null,
+    notas: $('venta-notas').value.trim() || null
+  };
+  var res;
+  if (_ventaEditId) {
+    res = await api('/ventas-daily/' + _ventaEditId, 'PUT', body).catch(function() { return null; });
+  } else {
+    res = await api('/ventas-daily', 'POST', body).catch(function() { return null; });
+  }
+  if (res) {
+    notyf.success(_ventaEditId ? 'Venta actualizada' : 'Venta registrada');
+    closeModal('modal-venta');
+    loadVentasDaily();
+  }
+}
+
+async function deleteVenta(id) {
+  if (!confirm('¿Eliminar esta venta?')) return;
+  var res = await api('/ventas-daily/' + id, 'DELETE').catch(function() { return null; });
+  if (res) { notyf.success('Venta eliminada'); loadVentasDaily(); }
+}
+
+function vdLimpiarFiltros() {
+  $('vd-desde').value = '';
+  $('vd-hasta').value = '';
+  $('vd-canal').value = '';
+  $('vd-estado').value = '';
+  $('vd-buscar').value = '';
+  loadVentasDaily();
 }
 
 // ── INIT ──────────────────────────────────────────────────────────
