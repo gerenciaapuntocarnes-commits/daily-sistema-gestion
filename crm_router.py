@@ -150,17 +150,22 @@ def _parse_date_sheet(v) -> Optional[date]:
 
 
 _sheet_name_cache = {}  # tab_name_normalizado -> nombre exacto del Sheet
+_sheet_name_cache_ts: float = 0.0  # timestamp de la última carga
 
 def _get_exact_tab_name(service, tab_name: str) -> str:
-    """Resuelve el nombre exacto de una pestaña normalizando espacios y mayúsculas."""
-    global _sheet_name_cache
-    if not _sheet_name_cache:
+    """Resuelve el nombre exacto de una pestaña normalizando espacios y mayúsculas. TTL 1h."""
+    global _sheet_name_cache, _sheet_name_cache_ts
+    import time
+    if not _sheet_name_cache or (time.time() - _sheet_name_cache_ts) > 3600:
         try:
             meta = service.spreadsheets().get(spreadsheetId=SHEET_ID).execute()
+            new_cache = {}
             for s in meta.get("sheets", []):
                 title = s["properties"]["title"]
                 key = title.strip().upper().replace("\xa0", " ")
-                _sheet_name_cache[key] = title
+                new_cache[key] = title
+            _sheet_name_cache = new_cache
+            _sheet_name_cache_ts = time.time()
         except Exception as e:
             print(f"Error obteniendo metadatos del Sheet: {e}")
     key = tab_name.strip().upper().replace("\xa0", " ")
@@ -331,31 +336,16 @@ def actualizar_movimiento_sheet(mov_id: int, rc_numero: Optional[str] = None):
         exact_tab = _get_exact_tab_name(service, sheet_tab)
         safe_tab  = exact_tab.replace("'", "\\'")
 
-        # Actualizar celda ESTADO
-        service.spreadsheets().values().update(
-            spreadsheetId=SHEET_ID,
-            range=f"'{safe_tab}'!{col_estado}{sheet_row}",
-            valueInputOption="RAW",
-            body={"values": [["CONCILIADO"]]}
-        ).execute()
-
-        # Actualizar celda RC
+        # Una sola llamada batchUpdate para las 3 celdas
+        batch_data = [{"range": f"'{safe_tab}'!{col_estado}{sheet_row}", "values": [["CONCILIADO"]]}]
         if rc_final:
-            service.spreadsheets().values().update(
-                spreadsheetId=SHEET_ID,
-                range=f"'{safe_tab}'!{col_rc}{sheet_row}",
-                valueInputOption="RAW",
-                body={"values": [[rc_final]]}
-            ).execute()
-
-        # Actualizar celda CLIENTE
+            batch_data.append({"range": f"'{safe_tab}'!{col_rc}{sheet_row}", "values": [[rc_final]]})
         if cliente_nombre:
-            service.spreadsheets().values().update(
-                spreadsheetId=SHEET_ID,
-                range=f"'{safe_tab}'!{col_cliente}{sheet_row}",
-                valueInputOption="RAW",
-                body={"values": [[cliente_nombre]]}
-            ).execute()
+            batch_data.append({"range": f"'{safe_tab}'!{col_cliente}{sheet_row}", "values": [[cliente_nombre]]})
+        service.spreadsheets().values().batchUpdate(
+            spreadsheetId=SHEET_ID,
+            body={"valueInputOption": "RAW", "data": batch_data}
+        ).execute()
 
         return {"ok": True, "tab": exact_tab, "fila": sheet_row,
                 "estado": "CONCILIADO", "rc": rc_final, "cliente": cliente_nombre}
@@ -509,11 +499,13 @@ def _parse_invoices(invoices: list) -> list:
 
 def _run_sync_siigo():
     """Tarea en background: sincroniza clientes y facturas de Siigo usando upsert batch."""
+    import time
     job = _sync_jobs["siigo"]
     job["running"] = True
     job["ok"] = None
     job["msg"] = ""
     job["result"] = None
+    job["started_at"] = time.time()
     try:
         _run_sync_siigo_inner(job)
     except Exception as e:
@@ -645,13 +637,23 @@ def sync_siigo(background_tasks: BackgroundTasks):
 @router.get("/sync/siigo/status")
 def sync_siigo_status():
     """Retorna el estado actual del sync de Siigo."""
-    return _sync_jobs["siigo"]
+    import time
+    job = _sync_jobs["siigo"]
+    # Auto-reset si lleva más de 30 min corriendo (Siigo caído o proceso muerto)
+    started = job.get("started_at", 0)
+    if job["running"] and started and (time.time() - started) > 1800:
+        _sync_jobs["siigo"] = {"running": False, "ok": False, "msg": "Timeout: sync superó 30 min, reinicia manualmente.", "step": "Timeout", "result": None, "started_at": 0}
+    result = dict(_sync_jobs["siigo"])
+    # Limpiar result tras entregarlo (evita acumular en memoria)
+    if result.get("result") and not result.get("running"):
+        _sync_jobs["siigo"]["result"] = None
+    return result
 
 
 @router.post("/sync/siigo/reset")
 def sync_siigo_reset():
     """Resetea el estado del job si quedó bloqueado."""
-    _sync_jobs["siigo"] = {"running": False, "ok": None, "msg": "", "step": "", "result": None}
+    _sync_jobs["siigo"] = {"running": False, "ok": None, "msg": "", "step": "", "result": None, "started_at": 0}
     return {"ok": True}
 
 
@@ -1740,12 +1742,14 @@ def auto_conciliar():
     cur.execute("""
         SELECT id, balance, total, fecha FROM crm_facturas
         WHERE estado_pago = 'pendiente' AND movimiento_id IS NULL
+        FOR UPDATE SKIP LOCKED
     """)
     facturas = cur.fetchall()
 
     cur.execute("""
         SELECT id, valor, fecha, banco FROM movimientos_bancarios
         WHERE conciliado = FALSE AND valor > 0
+        FOR UPDATE SKIP LOCKED
     """)
     movimientos = cur.fetchall()
 

@@ -85,12 +85,19 @@
 /* ── Delete btn show on row hover ── */
 tr .btn-delete { opacity: 0; transition: opacity .15s; }
 tr:hover .btn-delete { opacity: 1; }
+@media (max-width: 768px) { tr .btn-delete { opacity: 1; } }
 
 /* ── Animated rows ── */
 @keyframes rowFadeIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
 .animate-row { animation: rowFadeIn .3s ease both; }
 @keyframes spinAnim { to { transform: rotate(360deg); } }
 .spin { display: inline-block; animation: spinAnim .8s linear infinite; }
+
+/* ── Mobile performance ── */
+@media (max-width: 768px) {
+  .modal-bg, #command-palette, #confirm-modal { backdrop-filter: none !important; }
+  .btn { min-height: 44px; }
+}
 
 /* ── Skeleton placeholders ── */
 .skel-row td { padding: 12px 8px; }
@@ -587,6 +594,7 @@ tr:hover .btn-delete { opacity: 1; }
       </table>
     </div>
   </div>
+  <div id="mp-body-pag"></div>
 </div>
 
 <!-- ════ REGISTRO DE MP (COMPRAS) ════ -->
@@ -622,6 +630,7 @@ tr:hover .btn-delete { opacity: 1; }
       </table>
     </div>
   </div>
+  <div id="compras-body-pag"></div>
 </div>
 
 <!-- ════ RECETAS ════ -->
@@ -647,6 +656,7 @@ tr:hover .btn-delete { opacity: 1; }
           </table>
         </div>
       </div>
+      <div id="recetas-body-pag"></div>
     </div>
     <div class="col-lg-5" id="receta-detalle-panel">
       <div class="card"><div class="card-body text-center text-secondary py-4">Selecciona una receta para ver el detalle y editar ingredientes.</div></div>
@@ -714,6 +724,7 @@ tr:hover .btn-delete { opacity: 1; }
       </table>
     </div>
   </div>
+  <div id="inventario-body-pag"></div>
 </div>
 
 <!-- ════ REMISIONES ════ -->
@@ -746,6 +757,7 @@ tr:hover .btn-delete { opacity: 1; }
       </table>
     </div>
   </div>
+  <div id="remisiones-body-pag"></div>
 </div>
 
 <!-- ════ APROBACIONES (SUPERVISOR) ════ -->
@@ -803,6 +815,7 @@ tr:hover .btn-delete { opacity: 1; }
       </table>
     </div>
   </div>
+  <div id="gastos-body-pag"></div>
 </div>
 
 <!-- ════ PROCEDIMIENTOS ════ -->
@@ -2836,13 +2849,17 @@ function emptyState(icon, title, subtitle, btnText, btnAction) {
 }
 
 // ── Search / filter ────────────────────────────────────────────
+var _filterTableTimers = {};
 function filterTable(tbodyId, query) {
-  var rows = $(tbodyId).querySelectorAll('tr');
-  var q = query.toLowerCase();
-  rows.forEach(function(row){
-    if(row.querySelector('.empty-state') || row.classList.contains('skel-row')) return;
-    row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
-  });
+  clearTimeout(_filterTableTimers[tbodyId]);
+  _filterTableTimers[tbodyId] = setTimeout(function(){
+    var rows = $(tbodyId).querySelectorAll('tr');
+    var q = query.toLowerCase();
+    rows.forEach(function(row){
+      if(row.querySelector('.empty-state') || row.classList.contains('skel-row')) return;
+      row.style.display = row.textContent.toLowerCase().includes(q) ? '' : 'none';
+    });
+  }, 200);
 }
 function filterTableByDate(tbodyId, desde, hasta) {
   var rows = $(tbodyId).querySelectorAll('tr');
@@ -2856,6 +2873,41 @@ function filterTableByDate(tbodyId, desde, hasta) {
     if(hasta && dateStr > hasta) show = false;
     row.style.display = show ? '' : 'none';
   });
+}
+
+// ── Universal table pagination ─────────────────────────────────
+var _tableState = {};
+var TABLE_PAGE_SIZE = 60;
+function _initTable(tableId, rows) {
+  _tableState[tableId] = { rows: rows, page: 0 };
+  _renderPage(tableId);
+}
+function _renderPage(tableId) {
+  var state = _tableState[tableId];
+  if(!state) return;
+  var start = state.page * TABLE_PAGE_SIZE;
+  var end = Math.min(start + TABLE_PAGE_SIZE, state.rows.length);
+  $(tableId).innerHTML = state.rows.slice(start, end).join('');
+  var pag = $(tableId + '-pag');
+  if(!pag) return;
+  var total = state.rows.length;
+  var pages = Math.ceil(total / TABLE_PAGE_SIZE);
+  if(pages <= 1) { pag.innerHTML = ''; return; }
+  pag.innerHTML =
+    '<div class="d-flex align-items-center justify-content-between mt-2 px-1 py-1 text-secondary small">' +
+      '<span>' + (start+1) + '–' + end + ' de ' + total + '</span>' +
+      '<div class="btn-group btn-group-sm">' +
+        '<button class="btn btn-outline-secondary" onclick="_tablePage(\''+tableId+'\','+(state.page-1)+')" '+(state.page===0?'disabled':'')+'>‹ Ant</button>' +
+        '<button class="btn btn-outline-secondary" onclick="_tablePage(\''+tableId+'\','+(state.page+1)+')" '+(state.page>=pages-1?'disabled':'')+'>Sig ›</button>' +
+      '</div>' +
+    '</div>';
+}
+function _tablePage(tableId, page) {
+  var state = _tableState[tableId];
+  if(!state) return;
+  var pages = Math.ceil(state.rows.length / TABLE_PAGE_SIZE);
+  state.page = Math.max(0, Math.min(page, pages-1));
+  _renderPage(tableId);
 }
 
 // ── Sparkline SVG generator ────────────────────────────────────
@@ -2879,6 +2931,18 @@ function goto(sec) {
   document.querySelectorAll('#sidebar-menu .nav-link').forEach(function(b){
     if(b.getAttribute('onclick') && b.getAttribute('onclick').includes("'"+sec+"'")) b.classList.add('active');
   });
+  // Destruir charts al salir del dashboard para liberar GPU/memoria
+  if(sec !== 'dashboard') {
+    if(chartProd) { chartProd.destroy(); chartProd = null; }
+    if(chartGastosCat) { chartGastosCat.destroy(); chartGastosCat = null; }
+    if(chartTopRecetas) { chartTopRecetas.destroy(); chartTopRecetas = null; }
+  }
+  // Limpiar polling de remisión si el usuario navega mientras espera
+  if(sec !== 'remisiones' && pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+    $('rem-espera-overlay').style.display = 'none';
+  }
   // Close mobile sidebar
   var collapse = document.querySelector('#sidebar-menu');
   if(collapse && collapse.classList.contains('show')) {
@@ -3017,14 +3081,14 @@ async function loadDashboard() {
     $('dash-stock-body').innerHTML = d.items_stock_bajo.map(function(s, i){
       var pct = s.stock_minimo > 0 ? (s.cantidad_actual / s.stock_minimo) : 1;
       var badge = pct <= 0 ? '<span class="badge bg-red">Agotado</span>' : pct <= 0.5 ? '<span class="badge bg-red-lt">Critico</span>' : '<span class="badge bg-yellow-lt">Bajo</span>';
-      return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s"><td><strong>'+s.nombre+'</strong></td><td class="num">'+fmtD(s.cantidad_actual,1)+' '+s.unidad+'</td><td class="num">'+fmtD(s.stock_minimo,1)+'</td><td>'+badge+'</td><td>'+(s.proveedor||'<span class="text-secondary">--</span>')+'</td></tr>';
+      return '<tr class="animate-row"><td><strong>'+s.nombre+'</strong></td><td class="num">'+fmtD(s.cantidad_actual,1)+' '+s.unidad+'</td><td class="num">'+fmtD(s.stock_minimo,1)+'</td><td>'+badge+'</td><td>'+(s.proveedor||'<span class="text-secondary">--</span>')+'</td></tr>';
     }).join('');
   } else {
     stockPanel.style.display = 'none';
   }
 
   $('dash-prod-body').innerHTML = d.ultima_produccion.length
-    ? d.ultima_produccion.map(function(p,i){return '<tr class="animate-row" style="animation-delay:'+i*0.05+'s"><td>'+p.fecha+'</td><td>'+( p.receta||'--')+'</td><td class="num">'+fmtD(p.porciones_planeadas,1)+'</td><td class="num">'+fmtD(p.porciones,1)+'</td><td>'+(p.operario||'--')+'</td></tr>';}).join('')
+    ? d.ultima_produccion.map(function(p,i){return '<tr class="animate-row"><td>'+p.fecha+'</td><td>'+( p.receta||'--')+'</td><td class="num">'+fmtD(p.porciones_planeadas,1)+'</td><td class="num">'+fmtD(p.porciones,1)+'</td><td>'+(p.operario||'--')+'</td></tr>';}).join('')
     : emptyState('building-factory-2','Sin produccion reciente','Registra tu primera produccion para verla aqui','Registrar',"goto('produccion');openModal('modal-prod')");
 
   setTimeout(loadDashboardCharts, 300);
@@ -3125,7 +3189,7 @@ async function loadMP() {
     $('mp-body').innerHTML = emptyState('meat','Sin materias primas','Crea tu primera materia prima para empezar','Nueva MP',"openModal('modal-mp')");
     return;
   }
-  $('mp-body').innerHTML = mpList.map(function(m, i){return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+  _initTable('mp-body', mpList.map(function(m){return '<tr class="animate-row">' +
     '<td><span class="badge bg-blue-lt">' + (m.codigo || '<span class="text-secondary">--</span>') + '</span></td>' +
     '<td><strong>' + m.nombre + '</strong></td>' +
     '<td><span class="badge bg-orange-lt">' + m.unidad + '</span></td>' +
@@ -3134,7 +3198,7 @@ async function loadMP() {
     '<td>' + (m.ultima_compra || '<span class="text-secondary">--</span>') + '</td>' +
     '<td>' + (m.ultimo_proveedor || '<span class="text-secondary">--</span>') + '</td>' +
     '<td><button class="btn btn-outline-danger btn-sm btn-delete" onclick="eliminarMP('+m.id+')"><i class="ti ti-trash"></i></button></td>' +
-    '</tr>';}).join('');
+    '</tr>';}));
 }
 
 function checkCodigoMP() {
@@ -3188,7 +3252,7 @@ async function loadCompras() {
     $('compras-body').innerHTML = emptyState('package-import','Sin registros de llegadas','Registra la primera llegada de materia prima','Registrar llegada',"openModal('modal-compra')");
     return;
   }
-  $('compras-body').innerHTML = compras.map(function(c, i){return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+  _initTable('compras-body', compras.map(function(c){return '<tr class="animate-row">' +
     '<td>'+c.fecha+'</td>' +
     '<td><strong>'+c.mp_nombre+'</strong></td>' +
     '<td class="num">'+fmtD(c.cantidad,3)+' <span class="text-secondary">'+c.unidad+'</span></td>' +
@@ -3198,7 +3262,7 @@ async function loadCompras() {
     '<td>'+(c.factura||'<span class="text-secondary">--</span>')+'</td>' +
     '<td>'+(c.notas||'<span class="text-secondary">--</span>')+'</td>' +
     '<td><button class="btn btn-outline-danger btn-sm btn-delete" onclick="eliminarCompra('+c.id+')"><i class="ti ti-x"></i></button></td>' +
-    '</tr>';}).join('');
+    '</tr>';}));
 }
 
 async function registrarCompra() {
@@ -3247,14 +3311,14 @@ async function loadRecetas() {
     $('recetas-body').innerHTML = emptyState('clipboard-list','Sin recetas','Crea tu primera receta para empezar','Nueva receta',"openModal('modal-receta')");
     return;
   }
-  $('recetas-body').innerHTML = recetasList.map(function(r, i){return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s;cursor:pointer" onclick="verReceta('+r.id+')">' +
+  _initTable('recetas-body', recetasList.map(function(r){return '<tr class="animate-row" style="cursor:pointer" onclick="verReceta('+r.id+')">' +
     '<td><strong>'+r.nombre+'</strong></td>' +
     '<td><span class="badge bg-blue-lt">'+r.categoria+'</span></td>' +
     '<td class="num">$'+fmt(r.costo_porcion)+'</td>' +
     '<td class="num">$'+fmt(r.precio_venta)+'</td>' +
     '<td class="num '+(r.margen_pct>=0?'pos':'neg')+'">'+fmtD(r.margen_pct,1)+'%</td>' +
     '<td><button class="btn btn-outline-danger btn-sm btn-delete" onclick="event.stopPropagation();eliminarReceta('+r.id+')"><i class="ti ti-x"></i></button></td>' +
-    '</tr>';}).join('');
+    '</tr>';}));
 }
 
 let productosSinRecetaCache = [];
@@ -3320,7 +3384,6 @@ function selectProducto(id, name) {
   }
 }
 
-function autoFillFromProducto() {}
 
 async function crearReceta() {
   var nombre = $('rec-nombre').value.trim();
@@ -3515,7 +3578,7 @@ async function loadProduccion() {
     var dif = p.porciones - p.porciones_planeadas;
     var difClass = dif >= 0 ? 'pos' : 'neg';
     var difStr = p.porciones_planeadas > 0 ? '<span class="'+difClass+'">'+(dif>=0?'+':'')+fmtD(dif,1)+'</span>' : '<span class="text-secondary">--</span>';
-    return '<tr class="animate-row" style="animation-delay:'+idx*0.03+'s">' +
+    return '<tr class="animate-row">' +
       '<td>'+p.fecha+'</td>' +
       '<td><strong>'+(p.receta||'--')+'</strong></td>' +
       '<td><span class="badge bg-blue-lt">'+(p.categoria||'--')+'</span></td>' +
@@ -3573,13 +3636,13 @@ async function loadInventario() {
     $('inventario-body').innerHTML = emptyState('packages','Sin datos de inventario','Agrega materias primas para ver el inventario','Ir a MP',"goto('mp')");
     return;
   }
-  $('inventario-body').innerHTML = inventarioData.map(function(item, i){
+  _initTable('inventario-body', inventarioData.map(function(item){
     var pct = item.stock_minimo > 0 ? Math.min(100, Math.round((item.stock_actual / item.stock_minimo) * 100)) : 100;
     var status = item.status || 'ok';
     var barColor = status === 'ok' ? '#2fb344' : status === 'bajo' ? '#f76707' : status === 'critico' ? '#d63939' : '#8b0000';
     var badgeClass = status === 'ok' ? 'bg-green-lt' : status === 'bajo' ? 'bg-yellow-lt' : status === 'critico' ? 'bg-red-lt' : 'bg-red';
     var badgeLabel = status === 'ok' ? 'OK' : status === 'bajo' ? 'Bajo' : status === 'critico' ? 'Critico' : 'Agotado';
-    return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+    return '<tr class="animate-row">' +
       '<td><strong>'+item.nombre+'</strong></td>' +
       '<td><span class="badge bg-blue-lt">'+(item.codigo||'--')+'</span></td>' +
       '<td>'+item.unidad+'</td>' +
@@ -3593,7 +3656,7 @@ async function loadInventario() {
       '</td>' +
       '<td><button class="btn btn-outline-secondary btn-sm" onclick="abrirStockMin('+item.id+',\''+item.nombre.replace(/'/g,"\\'")+'\','+item.stock_minimo+')"><i class="ti ti-settings me-1"></i>Min</button></td>' +
     '</tr>';
-  }).join('');
+  }));
 }
 
 function abrirStockMin(id, nombre, valorActual) {
@@ -3766,13 +3829,13 @@ async function loadRemisiones() {
     $('remisiones-body').innerHTML = emptyState('truck','Sin remisiones registradas','Crea tu primera remision','Nueva remision',"openModal('modal-remision')");
     return;
   }
-  $('remisiones-body').innerHTML = lista.map(function(r, i){
+  _initTable('remisiones-body', lista.map(function(r){
     var estadoCls = r.estado === 'aprobada' ? 'bg-green-lt' : r.estado === 'rechazada' ? 'bg-red-lt' : 'bg-yellow-lt';
     var estadoIcon = r.estado === 'aprobada' ? '<i class="ti ti-check me-1"></i>' : r.estado === 'rechazada' ? '<i class="ti ti-x me-1"></i>' : '<i class="ti ti-clock me-1"></i>';
     var estadoLbl = r.estado === 'aprobada' ? 'Aprobada' : r.estado === 'rechazada' ? 'Rechazada' : 'Pendiente';
     var itemsText = r.items.map(function(it){return it.mp_nombre;}).join(', ');
     var por = r.aprobado_por || '<span class="text-secondary">--</span>';
-    return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+    return '<tr class="animate-row">' +
       '<td><strong style="font-family:monospace;font-size:12px">'+r.numero+'</strong></td>' +
       '<td>'+r.fecha+'</td>' +
       '<td>'+r.proveedor+'</td>' +
@@ -3782,7 +3845,7 @@ async function loadRemisiones() {
       '<td>'+por+(r.rechazo_motivo?'<div class="text-danger small mt-1">'+r.rechazo_motivo+'</div>':'')+'</td>' +
       '<td><button class="btn btn-outline-danger btn-sm btn-delete" onclick="eliminarRemision('+r.id+')"><i class="ti ti-x"></i></button></td>' +
     '</tr>';
-  }).join('');
+  }));
 }
 
 async function eliminarRemision(id) {
@@ -3919,7 +3982,7 @@ async function loadGastos() {
     $('gastos-body').innerHTML = emptyState('cash','Sin gastos registrados','Registra tu primer gasto','Registrar gasto',"openModal('modal-gasto')");
     return;
   }
-  $('gastos-body').innerHTML = gastos.map(function(g, i){return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+  _initTable('gastos-body', gastos.map(function(g){return '<tr class="animate-row">' +
     '<td>'+g.fecha+'</td>' +
     '<td><span class="badge '+(g.tipo==='caja_menor'?'bg-yellow-lt':'bg-blue-lt')+'">'+(g.tipo==='caja_menor'?'Caja menor':'Mensual')+'</span></td>' +
     '<td>'+g.categoria+'</td>' +
@@ -3928,7 +3991,7 @@ async function loadGastos() {
     '<td>'+(g.responsable||'<span class="text-secondary">--</span>')+'</td>' +
     '<td>'+(g.comprobante||'<span class="text-secondary">--</span>')+'</td>' +
     '<td><button class="btn btn-outline-danger btn-sm btn-delete" onclick="eliminarGasto('+g.id+')"><i class="ti ti-x"></i></button></td>' +
-    '</tr>';}).join('');
+    '</tr>';}));
 }
 
 async function registrarGasto() {
@@ -4059,7 +4122,7 @@ async function loadSanitario() {
     var cls = r.resultado==='Aprobado'?'bg-green-lt':r.resultado==='Rechazado'?'bg-red-lt':'bg-yellow-lt';
     var hoy = today();
     var alerta = r.proxima_revision && r.proxima_revision <= hoy ? '<i class="ti ti-alert-triangle text-warning me-1"></i>' : '';
-    return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+    return '<tr class="animate-row">' +
       '<td>'+r.fecha+'</td><td>'+r.tipo+'</td><td>'+r.descripcion+'</td>' +
       '<td><span class="badge '+cls+'">'+r.resultado+'</span></td>' +
       '<td>'+(r.operario||'<span class="text-secondary">--</span>')+'</td>' +
@@ -4159,7 +4222,7 @@ async function buscarLotes(q) {
     $('traza-lotes-body').innerHTML = emptyState('route','Sin lotes','Registra produccion para generar lotes','Ir a produccion',"goto('produccion')");
     return;
   }
-  $('traza-lotes-body').innerHTML = data.map(function(l,i){return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s;cursor:pointer" onclick="trazarLote(\''+l.lote+'\')">' +
+  $('traza-lotes-body').innerHTML = data.map(function(l,i){return '<tr class="animate-row" style="cursor:pointer" onclick="trazarLote(\''+l.lote+'\')">' +
     '<td><span class="badge bg-yellow-lt" style="font-family:monospace;font-size:10px">'+l.lote+'</span></td>' +
     '<td>'+l.fecha+'</td><td><strong>'+(l.receta||'--')+'</strong></td>' +
     '<td class="num">'+fmtD(l.porciones,1)+'</td></tr>';}).join('');
@@ -4211,7 +4274,7 @@ async function loadOrdenes() {
   $('ordenes-body').innerHTML = data.map(function(o, i){
     var estadoBadge = o.estado==='borrador'?'bg-secondary-lt':o.estado==='enviada'?'bg-blue-lt':o.estado==='recibida'?'bg-green-lt':'bg-red-lt';
     var itemsStr = o.items.map(function(it){return it.mp_nombre+' ('+fmtD(it.cantidad,1)+')';}).join(', ');
-    return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+    return '<tr class="animate-row">' +
       '<td><span class="badge bg-yellow-lt" style="font-family:monospace;font-size:10px">'+o.numero+'</span></td>' +
       '<td>'+o.fecha+'</td><td><strong>'+o.proveedor+'</strong></td>' +
       '<td style="max-width:200px;font-size:12px" class="text-secondary">'+itemsStr+'</td>' +
@@ -4333,7 +4396,7 @@ async function loadInvimaRegistros(programaId) {
     '<thead><tr><th>Fecha</th><th>Programa</th><th>Descripción</th><th>Resultado</th><th>Responsable</th><th></th></tr></thead><tbody>' +
     data.map(function(r,i){
       var resCls = r.resultado==='Conforme'?'bg-green-lt':r.resultado==='No conforme'?'bg-red-lt':'bg-yellow-lt';
-      return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s"><td>'+r.fecha+'</td><td><span class="badge bg-blue-lt">'+r.codigo+'</span></td><td style="max-width:200px;font-size:12px">'+r.descripcion+'</td><td><span class="badge '+resCls+'">'+r.resultado+'</span></td><td>'+(r.responsable||'--')+'</td><td><button class="btn btn-outline-danger btn-sm btn-delete" onclick="eliminarInvimaRegistro('+r.id+')"><i class="ti ti-x"></i></button></td></tr>';
+      return '<tr class="animate-row"><td>'+r.fecha+'</td><td><span class="badge bg-blue-lt">'+r.codigo+'</span></td><td style="max-width:200px;font-size:12px">'+r.descripcion+'</td><td><span class="badge '+resCls+'">'+r.resultado+'</span></td><td>'+(r.responsable||'--')+'</td><td><button class="btn btn-outline-danger btn-sm btn-delete" onclick="eliminarInvimaRegistro('+r.id+')"><i class="ti ti-x"></i></button></td></tr>';
     }).join('') + '</tbody></table></div></div>';
 }
 
@@ -4403,7 +4466,7 @@ async function loadProyecciones() {
   var maxProy = Math.max.apply(null, data.recetas.map(function(r){return r.proyeccion_porciones;})) || 1;
   $('proy-body').innerHTML = data.recetas.length ? data.recetas.map(function(r,i){
     var pct = Math.round((r.proyeccion_porciones / maxProy)*100);
-    return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+    return '<tr class="animate-row">' +
       '<td><strong>'+r.nombre+'</strong></td>' +
       '<td><span class="badge bg-blue-lt">'+r.categoria+'</span></td>' +
       '<td class="num">'+r.veces_90d+'</td>' +
@@ -4586,7 +4649,7 @@ async function loadFinBalance() {
   if(!bg) { $('bg-activos').innerHTML='<tr><td class="text-center text-secondary py-3">Error</td></tr>'; return; }
   function bgSection(items, total, label) {
     var h = '';
-    items.forEach(function(i,idx){h+='<tr class="animate-row" style="animation-delay:'+idx*0.02+'s"><td style="padding-left:16px;font-size:13px">'+i.nombre+'</td><td class="num">$'+fmt(i.saldo)+'</td></tr>';});
+    items.forEach(function(i,idx){h+='<tr class="animate-row"><td style="padding-left:16px;font-size:13px">'+i.nombre+'</td><td class="num">$'+fmt(i.saldo)+'</td></tr>';});
     h += '<tr style="background:var(--tblr-bg-surface-secondary);font-weight:700"><td>'+label+'</td><td class="num">$'+fmt(total)+'</td></tr>';
     return h;
   }
@@ -4629,7 +4692,7 @@ async function loadPresupuestos() {
     $('ppto-body').innerHTML = data.items.map(function(i,idx){
       var dc=i.desviacion>0?(i.alerta==='sobre_presupuesto'?'neg':'pos'):(i.alerta==='bajo_presupuesto'?'neg':'pos');
       var eb=i.alerta==='sobre_presupuesto'?'<span class="badge bg-red-lt">Excedido</span>':i.alerta==='bajo_presupuesto'?'<span class="badge bg-yellow-lt">Bajo meta</span>':'<span class="badge bg-green-lt">OK</span>';
-      return '<tr class="animate-row" style="animation-delay:'+idx*0.03+'s"><td><span class="badge bg-blue-lt" style="font-family:monospace">'+i.cuenta+'</span></td><td><strong>'+i.nombre+'</strong></td><td>'+(i.clase||'')+'</td><td class="num">$'+fmt(i.presupuesto)+'</td><td class="num">$'+fmt(i.real)+'</td><td class="num '+dc+'">$'+fmt(i.desviacion)+'</td><td class="num '+dc+'">'+fmtD(i.desviacion_pct,1)+'%</td><td>'+eb+'</td></tr>';
+      return '<tr class="animate-row"><td><span class="badge bg-blue-lt" style="font-family:monospace">'+i.cuenta+'</span></td><td><strong>'+i.nombre+'</strong></td><td>'+(i.clase||'')+'</td><td class="num">$'+fmt(i.presupuesto)+'</td><td class="num">$'+fmt(i.real)+'</td><td class="num '+dc+'">$'+fmt(i.desviacion)+'</td><td class="num '+dc+'">'+fmtD(i.desviacion_pct,1)+'%</td><td>'+eb+'</td></tr>';
     }).join('');
   }
 }
@@ -4672,7 +4735,7 @@ async function loadProductosSiigo() {
   var optsHtml = '<option value="">-- Sin ligar --</option>' + recs.map(function(r){return '<option value="'+r.id+'">'+r.nombre+' ('+r.categoria+')</option>';}).join('');
   $('prod-siigo-body').innerHTML = data.map(function(p,i){
     var linked = p.receta_id ? '<span class="badge bg-green-lt"><i class="ti ti-link me-1"></i>'+p.receta_nombre+'</span>' : '<span class="badge bg-secondary-lt">Sin ligar</span>';
-    return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+    return '<tr class="animate-row">' +
       '<td><span class="badge bg-blue-lt" style="font-family:monospace">'+p.siigo_code+'</span></td>' +
       '<td><strong>'+p.siigo_name+'</strong></td>' +
       '<td><span class="badge bg-azure-lt">'+(p.siigo_group||'')+'</span></td>' +
@@ -4712,7 +4775,7 @@ async function loadReglas() {
   var tipoBadges = {dias_recepcion:'bg-azure-lt',vida_util:'bg-yellow-lt',dias_entrega:'bg-orange-lt',no_fin_semana:'bg-red-lt',stock_seguridad:'bg-green-lt',produccion_dia:'bg-purple-lt',capacidad_max:'bg-pink-lt'};
   var tipoLabels = {dias_recepcion:'Días recepción',vida_util:'Vida útil',dias_entrega:'Lead time',no_fin_semana:'No fin semana',stock_seguridad:'Stock seguridad',produccion_dia:'Días producción',capacidad_max:'Capacidad máx'};
   $('reglas-body').innerHTML = data.map(function(r,i){
-    return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+    return '<tr class="animate-row">' +
       '<td><span class="badge '+(tipoBadges[r.tipo]||'bg-secondary-lt')+'"><i class="'+(tipoIcons[r.tipo]||'ti-settings')+' me-1"></i>'+(tipoLabels[r.tipo]||r.tipo)+'</span></td>' +
       '<td><strong>'+(r.entidad||'Global')+'</strong></td>' +
       '<td>'+r.parametro+'</td>' +
@@ -4800,7 +4863,7 @@ async function loadPlanProduccion() {
       var decBadge = p.decision==='batch_completo'?'<span class="badge bg-green-lt" title="'+p.razon+'">Batch completo</span>':
                      p.decision==='parcial'?'<span class="badge bg-yellow-lt" title="'+p.razon+'">Parcial</span>':
                      '<span class="badge bg-secondary-lt">Sin config</span>';
-      return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+      return '<tr class="animate-row">' +
         '<td><strong>'+p.producto+'</strong></td>' +
         '<td class="num">'+fmtD(p.venta_semanal,1)+'</td>' +
         '<td class="num">'+fmtD(p.stock_minimo,0)+'</td>' +
@@ -4820,7 +4883,7 @@ async function loadPlanProduccion() {
     $('plan-compras-body').innerHTML = pc.map(function(m,i){
       var pedirClass = m.a_pedir > 0 ? 'fw-bold text-danger' : 'text-success';
       var reglasHtml = m.reglas.length ? m.reglas.map(function(r){return '<span class="badge bg-yellow-lt me-1" style="font-size:10px">'+r+'</span>';}).join('') : '<span class="text-secondary" style="font-size:11px">--</span>';
-      return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+      return '<tr class="animate-row">' +
         '<td><strong>'+m.nombre+'</strong><div class="small text-secondary">'+(m.proveedor||'')+'</div></td>' +
         '<td class="num">'+fmtD(m.necesario_semanal,1)+' '+m.unidad+'</td>' +
         '<td class="num">'+fmtD(m.stock_actual,1)+'</td>' +
@@ -4888,7 +4951,7 @@ async function loadSiigoVentas() {
       var h = Math.max(2, Math.round((w.qty / maxQty) * 24));
       return '<div style="width:6px;height:'+h+'px;background:var(--tblr-primary);border-radius:2px;opacity:'+(w.qty>0?'1':'0.2')+'" title="'+w.week+': '+w.qty+' und"></div>';
     }).join('');
-    return '<tr class="animate-row" style="animation-delay:'+i*0.03+'s">' +
+    return '<tr class="animate-row">' +
       '<td><span class="badge bg-blue-lt" style="font-family:monospace">'+p.code+'</span></td>' +
       '<td><strong>'+p.name+'</strong></td>' +
       '<td class="num">'+fmtD(p.total_qty,0)+'</td>' +
@@ -4930,7 +4993,7 @@ async function loadSiigoProductos() {
   }
   $('siigo-prod-body').innerHTML = prods.map(function(p,i){
     var statusBadge = p.active ? '<span class="badge bg-green-lt">Activo</span>' : '<span class="badge bg-secondary-lt">Inactivo</span>';
-    return '<tr class="animate-row" style="animation-delay:'+i*0.02+'s">' +
+    return '<tr class="animate-row">' +
       '<td><span class="badge bg-blue-lt" style="font-family:monospace">'+p.code+'</span></td>' +
       '<td><strong>'+p.name+'</strong></td>' +
       '<td>'+p.group+'</td>' +
@@ -5627,10 +5690,7 @@ async function autoConciliar() {
   });
 }
 
-// conservar stubs para compatibilidad con código existente
-function concilSelectMov(id) {}
 function concilClearSelection() { concilFactSelId = null; loadConciliacion(); }
-function conciliarSeleccion() {}
 
 // ── Efectivo ──
 async function marcarEfectivoFactura(fid) {
@@ -6248,6 +6308,18 @@ setTimeout(function(){
 }, 800);
 var _pendingBadgeInterval = setInterval(updatePendingBadge, 30000);
 window.addEventListener('beforeunload', function(){ clearInterval(_pendingBadgeInterval); });
+// Pausar badge poll cuando la pestaña está oculta — ahorra CPU y requests innecesarios
+document.addEventListener('visibilitychange', function(){
+  if(document.hidden) {
+    clearInterval(_pendingBadgeInterval);
+    _pendingBadgeInterval = null;
+  } else {
+    if(!_pendingBadgeInterval) {
+      updatePendingBadge();
+      _pendingBadgeInterval = setInterval(updatePendingBadge, 30000);
+    }
+  }
+});
 </script>
 </body>
 </html>
