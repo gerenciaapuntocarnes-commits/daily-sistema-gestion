@@ -1189,7 +1189,8 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
         except Exception:
             pass  # usar datos locales si falla
 
-    factura_ref = f"{prefix}-{numero}" if prefix else str(numero)
+    # Usar prefijo contable (due_prefix) para todas las referencias visibles en el RC
+    factura_ref = f"{due_prefix}-{due_consecutive}" if due_prefix else str(numero)
 
     # ── Payload según documentación Siigo API (Detailed voucher) ──
     payload = {
@@ -1200,7 +1201,7 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
             "identification": cedula,
             "branch_office": branch_office
         },
-        "observations": f"Pago factura {factura_ref}",
+        "observations": f"Generado por Daily Sistema de Gestión",
         "items": [
             {
                 "account": {"code": cuenta, "movement": "Debit"},
