@@ -9,6 +9,19 @@ from database import get_conn
 
 router = APIRouter()
 
+# Cache de columnas para evitar queries a information_schema en cada request
+_col_cache: dict = {}
+
+def _has_col(cur, table: str, col: str) -> bool:
+    key = f"{table}.{col}"
+    if key not in _col_cache:
+        cur.execute(
+            "SELECT 1 FROM information_schema.columns WHERE table_name=%s AND column_name=%s LIMIT 1",
+            (table, col)
+        )
+        _col_cache[key] = cur.fetchone() is not None
+    return _col_cache[key]
+
 # ═══════════════════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════════════════
@@ -663,11 +676,9 @@ class RechazarIn(BaseModel):
 def listar_remisiones(estado: Optional[str] = None, limit: int = 200):
     conn = get_conn()
     cur = conn.cursor()
-    # Detect available columns
-    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='remisiones'")
-    rem_cols = {r[0] for r in cur.fetchall()}
-    has_proveedor = 'proveedor' in rem_cols
-    has_operario = 'operario' in rem_cols
+    # Detect available columns (resultado cacheado tras el primer request)
+    has_proveedor = _has_col(cur, 'remisiones', 'proveedor')
+    has_operario  = _has_col(cur, 'remisiones', 'operario')
 
     prov_col = "proveedor" if has_proveedor else "NULL"
     oper_col = "operario" if has_operario else "NULL"
@@ -684,12 +695,10 @@ def listar_remisiones(estado: Optional[str] = None, limit: int = 200):
         cur.execute(base_q + " ORDER BY creado_en DESC LIMIT %s", (limit,))
     rows = cur.fetchall()
 
-    # Detect remision_items columns
-    cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='remision_items'")
-    ri_cols = {r[0] for r in cur.fetchall()}
-    has_lote = 'lote' in ri_cols
-    has_mp_nombre = 'mp_nombre' in ri_cols
-    has_precio = 'precio_unit' in ri_cols
+    # Detect remision_items columns (resultado cacheado)
+    has_lote      = _has_col(cur, 'remision_items', 'lote')
+    has_mp_nombre = _has_col(cur, 'remision_items', 'mp_nombre')
+    has_precio    = _has_col(cur, 'remision_items', 'precio_unit')
 
     result = []
     if rows:

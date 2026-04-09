@@ -3027,7 +3027,7 @@ async function loadDashboard() {
     ? d.ultima_produccion.map(function(p,i){return '<tr class="animate-row" style="animation-delay:'+i*0.05+'s"><td>'+p.fecha+'</td><td>'+( p.receta||'--')+'</td><td class="num">'+fmtD(p.porciones_planeadas,1)+'</td><td class="num">'+fmtD(p.porciones,1)+'</td><td>'+(p.operario||'--')+'</td></tr>';}).join('')
     : emptyState('building-factory-2','Sin produccion reciente','Registra tu primera produccion para verla aqui','Registrar',"goto('produccion');openModal('modal-prod')");
 
-  loadDashboardCharts();
+  setTimeout(loadDashboardCharts, 300);
 }
 
 async function loadDashboardCharts() {
@@ -3064,9 +3064,10 @@ async function loadDashboardCharts() {
     chartProd.render();
   }
 
-  // Gastos donut
-  var gastosEl = $('chart-gastos-cat');
-  if(gastosEl) {
+  // Gastos donut — 200ms después para no competir con el primer chart
+  setTimeout(function(){
+    var gastosEl = $('chart-gastos-cat');
+    if(!gastosEl) return;
     var gastosLabels = [];
     var gastosSeries = [];
     if(chartData && chartData.gastos_por_categoria) {
@@ -3087,32 +3088,33 @@ async function loadDashboardCharts() {
       dataLabels:{enabled:false}
     });
     chartGastosCat.render();
-  }
 
-  // Top recetas bar chart
-  var topEl = $('chart-top-recetas');
-  if(topEl) {
-    var topNames = [];
-    var topMargen = [];
-    if(chartData && chartData.top_recetas_margen) {
-      chartData.top_recetas_margen.forEach(function(x){
-        topNames.push(x.nombre);
-        topMargen.push(x.margen_pct || 0);
+    // Top recetas bar chart — 200ms después del donut
+    setTimeout(function(){
+      var topEl = $('chart-top-recetas');
+      if(!topEl) return;
+      var topNames = [];
+      var topMargen = [];
+      if(chartData && chartData.top_recetas_margen) {
+        chartData.top_recetas_margen.forEach(function(x){
+          topNames.push(x.nombre);
+          topMargen.push(x.margen_pct || 0);
+        });
+      }
+      if(!topNames.length) { topNames = ['Sin datos']; topMargen = [0]; }
+      if(chartTopRecetas) chartTopRecetas.destroy();
+      chartTopRecetas = new ApexCharts(topEl, {
+        chart:{type:'bar',height:230,toolbar:{show:false},fontFamily:'inherit'},
+        theme:{mode:themeMode},
+        series:[{name:'Margen %',data:topMargen}],
+        plotOptions:{bar:{horizontal:true,borderRadius:4}},
+        xaxis:{categories:topNames},
+        colors:['#2fb344'],
+        dataLabels:{enabled:true,formatter:function(v){return v.toFixed(1)+'%';}}
       });
-    }
-    if(!topNames.length) { topNames = ['Sin datos']; topMargen = [0]; }
-    if(chartTopRecetas) chartTopRecetas.destroy();
-    chartTopRecetas = new ApexCharts(topEl, {
-      chart:{type:'bar',height:230,toolbar:{show:false},fontFamily:'inherit'},
-      theme:{mode:themeMode},
-      series:[{name:'Margen %',data:topMargen}],
-      plotOptions:{bar:{horizontal:true,borderRadius:4}},
-      xaxis:{categories:topNames},
-      colors:['#2fb344'],
-      dataLabels:{enabled:true,formatter:function(v){return v.toFixed(1)+'%';}}
-    });
-    chartTopRecetas.render();
-  }
+      chartTopRecetas.render();
+    }, 200);
+  }, 200);
 }
 
 // ── MATERIAS PRIMAS ────────────────────────────────────────────────
@@ -6238,9 +6240,12 @@ function debounceLoadConciliados() {
 
 // ── INIT ──────────────────────────────────────────────────────────
 loadDashboard();
-api('/materias-primas','GET',null,true).then(function(m){ mpList=m; }).catch(function(){});
-api('/recetas','GET',null,true).then(function(r){ recetasList=r; }).catch(function(){});
 updatePendingBadge();
+// Catálogos y charts se cargan después de que el browser pinte la página
+setTimeout(function(){
+  api('/materias-primas','GET',null,true).then(function(m){ mpList=m; }).catch(function(){});
+  api('/recetas','GET',null,true).then(function(r){ recetasList=r; }).catch(function(){});
+}, 800);
 var _pendingBadgeInterval = setInterval(updatePendingBadge, 30000);
 window.addEventListener('beforeunload', function(){ clearInterval(_pendingBadgeInterval); });
 </script>
