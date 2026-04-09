@@ -384,6 +384,48 @@ def fix_conciliados_estado():
     return {"ok": True, "marcados": marcados}
 
 
+class LimpiarSheetIn(BaseModel):
+    tab: str
+    clientes: list  # list of client name substrings to match
+
+@router.post("/fix/limpiar-sheet")
+def limpiar_sheet(data: LimpiarSheetIn):
+    """Busca filas en un tab del Sheet por nombre de cliente y limpia ESTADO, RC, CLIENTE."""
+    service = _get_sheets_service()
+    exact_tab = _get_exact_tab_name(service, data.tab)
+    safe_tab = exact_tab.replace("'", "\\'")
+
+    banco = "BDB" if "BDB" in exact_tab.upper() else "BANCOLOMBIA"
+    cols = _SHEET_COLS.get(banco, {"estado": 3, "rc": 4, "cliente": 5})
+    col_cli = _col_letter(cols["cliente"])
+
+    result = service.spreadsheets().values().get(
+        spreadsheetId=SHEET_ID,
+        range=f"'{safe_tab}'!{col_cli}1:{col_cli}10000"
+    ).execute()
+    rows = result.get("values", [])
+
+    limpiados = []
+    for row_idx, row in enumerate(rows, start=1):
+        cell = (row[0] if row else "").strip().lower()
+        if not cell:
+            continue
+        for cli_name in data.clientes:
+            if cli_name.lower() in cell:
+                for col_key in ("estado", "rc", "cliente"):
+                    col_letter = _col_letter(cols[col_key])
+                    service.spreadsheets().values().update(
+                        spreadsheetId=SHEET_ID,
+                        range=f"'{safe_tab}'!{col_letter}{row_idx}",
+                        valueInputOption="RAW",
+                        body={"values": [[""]]}
+                    ).execute()
+                limpiados.append({"fila": row_idx, "cliente": row[0].strip()})
+                break
+
+    return {"ok": True, "tab": exact_tab, "limpiados": limpiados}
+
+
 @router.post("/reset/bancos")
 def reset_bancos():
     """Elimina solo los movimientos bancarios, conservando clientes y facturas."""
