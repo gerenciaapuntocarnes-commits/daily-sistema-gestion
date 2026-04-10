@@ -630,23 +630,72 @@ def _run_sync_siigo_inner(job):
     cur.execute("SELECT COUNT(*) FROM crm_facturas")
     inv_total = cur.fetchone()[0]
 
+    # ── Notas de Crédito: marcar facturas con NC como pagadas ──────────
+    # Las NC cancelan la deuda — no deben aparecer en conciliación pendiente
+    nc_marcadas = 0
+    try:
+        job["step"] = "Procesando Notas de Crédito..."
+        from siigo import fetch_credit_notes
+        ncs = fetch_credit_notes()
+        nc_invoice_ids = list({
+            nc["invoice"]["id"]
+            for nc in ncs
+            if nc.get("invoice") and nc["invoice"].get("id")
+        })
+        if nc_invoice_ids:
+            cur.execute("""
+                UPDATE crm_facturas
+                SET balance = 0, estado_pago = 'pagado'
+                WHERE siigo_invoice_id = ANY(%s) AND estado_pago = 'pendiente'
+            """, (nc_invoice_ids,))
+            nc_marcadas = cur.rowcount
+            conn.commit()
+    except Exception as e:
+        job["step"] = f"NC: error no crítico ({e})"
+
     cur.execute("""
         INSERT INTO crm_sync_log (tipo, registros, nuevos, actualizados, detalle)
         VALUES ('siigo_full', %s, %s, %s, %s)
     """, (len(cli_rows) + len(final_rows), len(cli_rows), len(final_rows),
-          f"Clientes: {len(cli_rows)} | Facturas: {len(final_rows)}"))
+          f"Clientes: {len(cli_rows)} | Facturas: {len(final_rows)} | NC marcadas: {nc_marcadas}"))
     conn.commit()
     cur.close(); conn.close()
 
     job["running"] = False
     job["ok"] = True
-    job["msg"] = f"{len(cli_rows)} clientes y {len(final_rows)} facturas sincronizados."
+    job["msg"] = f"{len(cli_rows)} clientes, {len(final_rows)} facturas, {nc_marcadas} NC aplicadas."
     job["step"] = "Completado"
     job["result"] = {
         "ok": True,
         "clientes": {"total": len(cli_rows)},
-        "facturas": {"total": len(final_rows)}
+        "facturas": {"total": len(final_rows)},
+        "nc_marcadas": nc_marcadas
     }
+
+
+@router.post("/sync/nc-siigo")
+def sync_nc_siigo():
+    """Aplica todas las NC de Siigo: marca facturas con NC como pagadas."""
+    from siigo import fetch_credit_notes
+    ncs = fetch_credit_notes()
+    nc_invoice_ids = list({
+        nc["invoice"]["id"]
+        for nc in ncs
+        if nc.get("invoice") and nc["invoice"].get("id")
+    })
+    if not nc_invoice_ids:
+        return {"ok": True, "nc_total": 0, "marcadas": 0}
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        UPDATE crm_facturas
+        SET balance = 0, estado_pago = 'pagado'
+        WHERE siigo_invoice_id = ANY(%s) AND estado_pago = 'pendiente'
+    """, (nc_invoice_ids,))
+    marcadas = cur.rowcount
+    conn.commit()
+    cur.close(); conn.close()
+    return {"ok": True, "nc_total": len(nc_invoice_ids), "marcadas": marcadas}
 
 
 @router.post("/sync/siigo")
