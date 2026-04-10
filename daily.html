@@ -927,6 +927,7 @@ tr:hover .btn-delete { opacity: 1; }
       </div>
       <div class="col-auto ms-auto d-flex gap-2">
         <button class="btn btn-outline-success" id="vd-export-btn" onclick="exportVentasSeleccion()" style="display:none"><i class="ti ti-file-spreadsheet me-1"></i>Exportar selección</button>
+        <button class="btn btn-outline-secondary" onclick="syncVentasDesdeSiigo()" id="vd-sync-btn"><i class="ti ti-refresh me-1"></i>Sync Siigo</button>
         <button class="btn btn-primary" onclick="openNuevaVenta()"><i class="ti ti-plus me-1"></i>Nueva venta</button>
       </div>
     </div>
@@ -6708,6 +6709,17 @@ async function deleteVenta(id) {
   if (!confirm('¿Eliminar esta venta?')) return;
   var res = await api('/ventas-daily/' + id, 'DELETE').catch(function() { return null; });
   if (res) { notyf.success('Venta eliminada'); loadVentasDaily(); }
+}
+
+async function syncVentasDesdeSiigo() {
+  var btn = $('vd-sync-btn');
+  if(btn) { btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader spin me-1"></i>Sincronizando...'; }
+  var res = await api('/ventas-daily/sync-desde-siigo', 'POST', null, false).catch(function(){ return null; });
+  if(btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-refresh me-1"></i>Sync Siigo'; }
+  if(res && res.ok) {
+    notyf.success('Vinculadas: ' + res.vinculadas + ' · Creadas: ' + res.creadas);
+    loadVentasDaily();
+  }
 }
 
 function vdLimpiarFiltros() {
