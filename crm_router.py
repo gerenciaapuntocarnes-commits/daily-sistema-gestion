@@ -1975,6 +1975,18 @@ def debug_vouchers_siigo():
         return {"error": str(e)}
 
 
+@router.get("/debug/credit-notes-siigo")
+def debug_credit_notes_siigo():
+    """Muestra las primeras 3 NC de Siigo para ver su estructura."""
+    from siigo import fetch_credit_notes
+    try:
+        ncs = fetch_credit_notes()
+        sample = ncs[:3]
+        return {"total": len(ncs), "muestra": sample, "campos": list(sample[0].keys()) if sample else []}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @router.get("/debug/factura-local/{factura_id}")
 def debug_factura_local(factura_id: int):
     """Busca el siigo_invoice_id de una factura por su ID local y consulta Siigo."""
