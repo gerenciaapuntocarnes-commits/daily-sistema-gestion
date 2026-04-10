@@ -926,6 +926,7 @@ tr:hover .btn-delete { opacity: 1; }
         <h2 class="page-title">Ventas</h2>
       </div>
       <div class="col-auto ms-auto d-flex gap-2">
+        <button class="btn btn-outline-success" id="vd-export-btn" onclick="exportVentasSeleccion()" style="display:none"><i class="ti ti-file-spreadsheet me-1"></i>Exportar selección</button>
         <button class="btn btn-primary" onclick="openNuevaVenta()"><i class="ti ti-plus me-1"></i>Nueva venta</button>
       </div>
     </div>
@@ -986,6 +987,7 @@ tr:hover .btn-delete { opacity: 1; }
         <table class="table table-vcenter table-sm card-table table-hover">
           <thead>
             <tr>
+              <th style="width:36px"><input type="checkbox" class="form-check-input" id="vd-check-all" onchange="vdToggleAll(this.checked)"></th>
               <th>Despacho</th>
               <th>Pago</th>
               <th>Cliente</th>
@@ -993,6 +995,7 @@ tr:hover .btn-delete { opacity: 1; }
               <th class="text-end">Valor</th>
               <th>Medio de Pago</th>
               <th>Canal</th>
+              <th>Conciliación</th>
               <th></th>
             </tr>
           </thead>
@@ -2879,6 +2882,7 @@ tr:hover .btn-delete { opacity: 1; }
           <label class="form-label">Medio de Pago</label>
           <select class="form-select" id="venta-medio-pago">
             <option value="">— Seleccionar —</option>
+            <option>LINK</option>
             <option>BANCOLOMBIA</option>
             <option>BANCO DE BOGOTA</option>
             <option>EFECTIVO</option>
@@ -2898,6 +2902,10 @@ tr:hover .btn-delete { opacity: 1; }
             <option>REFERIDO</option>
             <option>SIN INFORMACIÓN</option>
           </select>
+        </div>
+        <div class="col-12">
+          <label class="form-label">Conciliación</label>
+          <input class="form-control" type="text" id="venta-conciliacion" placeholder="Estado de conciliación">
         </div>
         <div class="col-12">
           <label class="form-label">Notas</label>
@@ -6503,18 +6511,19 @@ function _renderVentasKpis(rows) {
 }
 
 function _renderVentaRow(r) {
-  var canalBadge = '';
   var canalColor = {
     'CLIENTE DAILY': 'bg-blue-lt', 'PÁGINA': 'bg-azure-lt',
     'INSTAGRAM': 'bg-pink-lt', 'TIK TOK': 'bg-purple-lt',
-    'REFERIDO': 'bg-green-lt', 'SIN INFORMACIÓN': 'bg-secondary'
+    'REFERIDO': 'bg-green-lt', 'SIN INFORMACIÓN': 'bg-secondary-lt'
   };
-  if (r.canal) canalBadge = '<span class="badge ' + (canalColor[r.canal] || 'bg-secondary') + '">' + r.canal + '</span>';
+  var canalBadge = r.canal ? '<span class="badge ' + (canalColor[r.canal] || 'bg-secondary-lt') + '">' + r.canal + '</span>' : '';
   var pagoBadge = r.fecha_pago
     ? '<span class="badge bg-green-lt text-green">' + r.fecha_pago + '</span>'
     : '<span class="badge bg-yellow-lt text-yellow">Pendiente</span>';
   var medioBadge = r.medio_pago ? '<span class="badge bg-secondary-lt">' + r.medio_pago + '</span>' : '';
+  var concilBadge = r.conciliacion ? '<span class="badge bg-teal-lt">' + r.conciliacion + '</span>' : '';
   return '<tr>' +
+    '<td><input type="checkbox" class="form-check-input vd-check-row" data-id="' + r.id + '" onchange="vdUpdateSeleccion()"></td>' +
     '<td>' + (r.fecha_despacho || '-') + '</td>' +
     '<td>' + pagoBadge + '</td>' +
     '<td>' + r.cliente + '</td>' +
@@ -6522,11 +6531,56 @@ function _renderVentaRow(r) {
     '<td class="text-end fw-medium">' + (r.valor ? '$'+fmt(r.valor) : '-') + '</td>' +
     '<td>' + medioBadge + '</td>' +
     '<td>' + canalBadge + '</td>' +
+    '<td>' + concilBadge + '</td>' +
     '<td class="text-end">' +
       '<button class="btn btn-xs btn-outline-secondary me-1" onclick="editVenta(' + r.id + ')"><i class="ti ti-edit"></i></button>' +
       '<button class="btn btn-xs btn-outline-danger btn-delete" onclick="deleteVenta(' + r.id + ')"><i class="ti ti-trash"></i></button>' +
     '</td>' +
   '</tr>';
+}
+
+function vdToggleAll(checked) {
+  document.querySelectorAll('.vd-check-row').forEach(function(cb) { cb.checked = checked; });
+  vdUpdateSeleccion();
+}
+
+function vdUpdateSeleccion() {
+  var sel = document.querySelectorAll('.vd-check-row:checked').length;
+  var btn = $('vd-export-btn');
+  if (btn) btn.style.display = sel > 0 ? '' : 'none';
+  var all = $('vd-check-all');
+  if (all) {
+    var total = document.querySelectorAll('.vd-check-row').length;
+    all.indeterminate = sel > 0 && sel < total;
+    all.checked = sel > 0 && sel === total;
+  }
+}
+
+function exportVentasSeleccion() {
+  var ids = Array.from(document.querySelectorAll('.vd-check-row:checked')).map(function(cb) { return parseInt(cb.dataset.id); });
+  var sel = _ventasDailyData.filter(function(r) { return ids.indexOf(r.id) >= 0; });
+  if (!sel.length) { notyf.error('Selecciona al menos una fila'); return; }
+  var header = ['Fecha Despacho','Fecha Pago','Cliente','Factura','Valor','Medio de Pago','Canal','Conciliación','Notas'];
+  var wsData = [header].concat(sel.map(function(r) {
+    return [
+      r.fecha_despacho || '',
+      r.fecha_pago || '',
+      r.cliente,
+      r.numero_factura || '',
+      r.valor || '',
+      r.medio_pago || '',
+      r.canal || '',
+      r.conciliacion || '',
+      r.notas || ''
+    ];
+  }));
+  var wb = XLSX.utils.book_new();
+  var ws = XLSX.utils.aoa_to_sheet(wsData);
+  // Ancho de columnas
+  ws['!cols'] = [12,12,30,15,12,18,16,16,20].map(function(w){return {wch:w};});
+  XLSX.utils.book_append_sheet(wb, ws, 'Ventas');
+  XLSX.writeFile(wb, 'ventas_daily_' + new Date().toISOString().slice(0,10) + '.xlsx');
+  notyf.success(sel.length + ' registros exportados');
 }
 
 function openNuevaVenta() {
@@ -6539,6 +6593,7 @@ function openNuevaVenta() {
   $('venta-valor').value = '';
   $('venta-medio-pago').value = '';
   $('venta-canal').value = '';
+  $('venta-conciliacion').value = '';
   $('venta-notas').value = '';
   openModal('modal-venta');
 }
@@ -6555,6 +6610,7 @@ function editVenta(id) {
   $('venta-valor').value = r.valor || '';
   $('venta-medio-pago').value = r.medio_pago || '';
   $('venta-canal').value = r.canal || '';
+  $('venta-conciliacion').value = r.conciliacion || '';
   $('venta-notas').value = r.notas || '';
   openModal('modal-venta');
 }
@@ -6570,6 +6626,7 @@ async function saveVenta() {
     valor: parseFloat($('venta-valor').value) || null,
     medio_pago: $('venta-medio-pago').value || null,
     canal: $('venta-canal').value || null,
+    conciliacion: $('venta-conciliacion').value.trim() || null,
     notas: $('venta-notas').value.trim() || null
   };
   var res;

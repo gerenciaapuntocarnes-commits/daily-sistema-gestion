@@ -2977,6 +2977,7 @@ class VentaIn(BaseModel):
     valor: Optional[float] = None
     medio_pago: Optional[str] = None
     canal: Optional[str] = None
+    conciliacion: Optional[str] = None
     notas: Optional[str] = None
 
 @router.get("/ventas-daily")
@@ -2985,7 +2986,7 @@ def listar_ventas_daily(
     hasta: Optional[str] = None,
     canal: Optional[str] = None,
     pagado: Optional[bool] = None,
-    limit: int = 500
+    limit: int = 2000
 ):
     conn = get_conn()
     cur = conn.cursor()
@@ -3002,7 +3003,7 @@ def listar_ventas_daily(
     elif pagado is False:
         where.append("fecha_pago IS NULL")
     sql = """SELECT id, fecha_despacho, fecha_pago, cliente, numero_factura,
-                    valor, medio_pago, canal, notas
+                    valor, medio_pago, canal, conciliacion, notas
              FROM ventas_daily"""
     if where:
         sql += " WHERE " + " AND ".join(where)
@@ -3016,7 +3017,8 @@ def listar_ventas_daily(
              "fecha_pago": str(r[2]) if r[2] else None,
              "cliente": r[3], "numero_factura": r[4],
              "valor": float(r[5]) if r[5] else None,
-             "medio_pago": r[6], "canal": r[7], "notas": r[8]} for r in rows]
+             "medio_pago": r[6], "canal": r[7],
+             "conciliacion": r[8], "notas": r[9]} for r in rows]
 
 @router.post("/ventas-daily")
 def crear_venta(data: VentaIn):
@@ -3024,10 +3026,10 @@ def crear_venta(data: VentaIn):
     cur = conn.cursor()
     cur.execute("""
         INSERT INTO ventas_daily
-            (fecha_despacho, fecha_pago, cliente, numero_factura, valor, medio_pago, canal, notas)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
+            (fecha_despacho, fecha_pago, cliente, numero_factura, valor, medio_pago, canal, conciliacion, notas)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id
     """, (data.fecha_despacho or None, data.fecha_pago or None, data.cliente,
-          data.numero_factura, data.valor, data.medio_pago, data.canal, data.notas))
+          data.numero_factura, data.valor, data.medio_pago, data.canal, data.conciliacion, data.notas))
     new_id = cur.fetchone()[0]
     conn.commit(); cur.close(); conn.close()
     return {"id": new_id, "ok": True}
@@ -3039,10 +3041,10 @@ def actualizar_venta(venta_id: int, data: VentaIn):
     cur.execute("""
         UPDATE ventas_daily
         SET fecha_despacho=%s, fecha_pago=%s, cliente=%s, numero_factura=%s,
-            valor=%s, medio_pago=%s, canal=%s, notas=%s
+            valor=%s, medio_pago=%s, canal=%s, conciliacion=%s, notas=%s
         WHERE id=%s
     """, (data.fecha_despacho or None, data.fecha_pago or None, data.cliente,
-          data.numero_factura, data.valor, data.medio_pago, data.canal, data.notas, venta_id))
+          data.numero_factura, data.valor, data.medio_pago, data.canal, data.conciliacion, data.notas, venta_id))
     conn.commit(); cur.close(); conn.close()
     return {"ok": True}
 
@@ -3053,4 +3055,91 @@ def eliminar_venta(venta_id: int):
     cur.execute("DELETE FROM ventas_daily WHERE id=%s", (venta_id,))
     conn.commit(); cur.close(); conn.close()
     return {"ok": True}
-    return {"ok": True, "results": results}
+
+@router.post("/ventas-daily/import-sheet")
+def importar_ventas_sheet():
+    import re as _re, json, os
+    try:
+        import gspread
+        from google.oauth2.service_account import Credentials
+    except ImportError:
+        raise HTTPException(status_code=500, detail="gspread no instalado")
+
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    if not creds_json:
+        raise HTTPException(status_code=500, detail="GOOGLE_CREDENTIALS_JSON no configurado")
+    import tempfile
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False) as f:
+        f.write(creds_json); tmp_path = f.name
+    try:
+        creds = Credentials.from_service_account_file(tmp_path, scopes=['https://www.googleapis.com/auth/spreadsheets.readonly'])
+        gc = gspread.authorize(creds)
+        sh = gc.open_by_key('1fMC3syH7ObP6-kf96zXruMYIYnBkxwyi4u1AxenFm7Q')
+        ws = sh.worksheet('VENTAS DAILY 2026')
+        rows = ws.get_all_values()
+    finally:
+        os.unlink(tmp_path)
+
+    skip_clients = {'FEBRERO', 'MARZO', 'ABRIL', ' ', ''}
+
+    def parse_date(s):
+        s = s.strip()
+        if not s: return None
+        m = _re.match(r'^(\d{1,2})/(\d{1,2})/(\d{4})$', s)
+        if m: return f'{m.group(3)}-{m.group(2).zfill(2)}-{m.group(1).zfill(2)}'
+        return None
+
+    def parse_valor(s):
+        s = s.strip().replace('$','').replace(',','').replace(' ','')
+        try: return float(s)
+        except: return None
+
+    def map_medio(s):
+        s = s.strip().upper()
+        if not s: return None
+        if s.startswith('LINK'): return 'LINK'
+        if 'BANCOLOMBIA' in s: return 'BANCOLOMBIA'
+        if 'EFECTIVO' in s and 'BANCOLOMBIA' not in s: return 'EFECTIVO'
+        if 'EFECTIVO' in s: return 'BANCOLOMBIA'
+        if 'BANCO DE BOGOTA' in s: return 'BANCO DE BOGOTA'
+        if 'CRUCE' in s: return 'CRUCE'
+        if 'AVALPAY' in s: return 'AVALPAY'
+        if 'MARIA INES' in s or s == 'S.MARIA INES': return 'MARIA INES'
+        return None
+
+    def map_canal(s):
+        s = s.strip().upper()
+        if s == 'CLIENTE DAILY': return 'CLIENTE DAILY'
+        if s in ('PAGINA','PÁGINA'): return 'PÁGINA'
+        if s == 'INSTAGRAM': return 'INSTAGRAM'
+        if s == 'TIKTOK': return 'TIK TOK'
+        if s in ('REFERIDO','REFERID@'): return 'REFERIDO'
+        if s == 'SIN INFORMACION': return 'SIN INFORMACIÓN'
+        return None
+
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM ventas_daily")
+    existing = cur.fetchone()[0]
+    if existing > 0:
+        cur.close(); conn.close()
+        return {"ok": False, "detail": f"Ya hay {existing} registros. Usa force=true para reimportar.", "existing": existing}
+
+    inserted = 0; skipped = 0
+    for r in rows[1:]:
+        cliente = r[2].strip() if len(r)>2 else ''
+        if not cliente or cliente in skip_clients: skipped += 1; continue
+        fd = parse_date(r[0]) if len(r)>0 else None
+        fp = parse_date(r[1]) if len(r)>1 else None
+        factura = r[3].strip() if len(r)>3 else None
+        valor   = parse_valor(r[4]) if len(r)>4 else None
+        medio   = map_medio(r[6]) if len(r)>6 else None
+        canal   = map_canal(r[7]) if len(r)>7 else None
+        cur.execute(
+            "INSERT INTO ventas_daily (fecha_despacho, fecha_pago, cliente, numero_factura, valor, medio_pago, canal) VALUES (%s,%s,%s,%s,%s,%s,%s)",
+            (fd, fp, cliente, factura or None, valor, medio, canal)
+        )
+        inserted += 1
+
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True, "inserted": inserted, "skipped": skipped}

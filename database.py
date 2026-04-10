@@ -650,10 +650,12 @@ def _create_tables():
             valor           NUMERIC(14,2),
             medio_pago      TEXT,
             canal           TEXT,
+            conciliacion    TEXT,
             notas           TEXT,
             creado_en       TIMESTAMP DEFAULT NOW()
         )
     """)
+    cur.execute("ALTER TABLE ventas_daily ADD COLUMN IF NOT EXISTS conciliacion TEXT")
 
     conn.commit()
 
