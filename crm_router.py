@@ -490,6 +490,14 @@ def _parse_invoices(invoices: list) -> list:
             continue
         prefix = inv.get("prefix", "") or ""
         number = inv.get("number", 0) or 0
+        # Siigo name contiene el prefijo contable: "FV-2-4892"
+        # Si prefix es el electrónico (FE) o está vacío, lo reemplazamos con el contable
+        inv_name = inv.get("name", "") or ""
+        if inv_name and "-" in inv_name:
+            parts = inv_name.rsplit("-", 1)
+            if len(parts) == 2 and parts[1].isdigit() and len(parts[1]) >= 3:
+                prefix = parts[0]          # "FV-2"
+                number = int(parts[1])     # 4892
         fecha_str = (inv.get("date") or "")[:10]
         try:
             fecha = datetime.strptime(fecha_str, "%Y-%m-%d").date() if fecha_str else date.today()
@@ -600,6 +608,8 @@ def _run_sync_siigo_inner(job):
             ON CONFLICT (siigo_invoice_id) DO UPDATE SET
               total = EXCLUDED.total,
               balance = EXCLUDED.balance,
+              prefix = EXCLUDED.prefix,
+              numero = EXCLUDED.numero,
               cliente_id = EXCLUDED.cliente_id,
               cliente_nombre = EXCLUDED.cliente_nombre,
               cliente_cedula = EXCLUDED.cliente_cedula,
