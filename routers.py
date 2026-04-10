@@ -3116,13 +3116,14 @@ def sync_ventas_desde_siigo():
     conn = get_conn()
     cur = conn.cursor()
 
-    # Traer todas las facturas de Siigo
+    # Traer todas las facturas de Siigo — excluir las que tienen NC
     cur.execute("""
         SELECT f.id, f.numero, f.prefix, f.fecha, f.total, f.balance,
                COALESCE(NULLIF(TRIM(c.nombre),''), f.cliente_nombre) as nombre,
                f.estado_pago
         FROM crm_facturas f
         LEFT JOIN crm_clientes c ON c.id = f.cliente_id
+        WHERE COALESCE(f.tiene_nc, FALSE) = FALSE
         ORDER BY f.fecha DESC
     """)
     facturas = cur.fetchall()
@@ -3197,6 +3198,7 @@ def listar_ventas_daily_v2(
     elif pagado is False:
         where.append("v.fecha_pago IS NULL")
     params.append(limit)
+    where.append("COALESCE(f.tiene_nc, FALSE) = FALSE")
     cur.execute(f"""
         SELECT v.id, v.fecha_despacho, v.fecha_pago, v.cliente, v.numero_factura,
                v.valor, v.medio_pago, v.canal, v.conciliacion, v.notas, v.factura_id,

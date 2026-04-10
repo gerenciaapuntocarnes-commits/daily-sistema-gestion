@@ -645,8 +645,8 @@ def _run_sync_siigo_inner(job):
         if nc_invoice_ids:
             cur.execute("""
                 UPDATE crm_facturas
-                SET balance = 0, estado_pago = 'pagado'
-                WHERE siigo_invoice_id = ANY(%s) AND estado_pago = 'pendiente'
+                SET balance = 0, estado_pago = 'pagado', tiene_nc = TRUE
+                WHERE siigo_invoice_id = ANY(%s)
             """, (nc_invoice_ids,))
             nc_marcadas = cur.rowcount
             conn.commit()
@@ -689,8 +689,8 @@ def sync_nc_siigo():
     cur = conn.cursor()
     cur.execute("""
         UPDATE crm_facturas
-        SET balance = 0, estado_pago = 'pagado'
-        WHERE siigo_invoice_id = ANY(%s) AND estado_pago = 'pendiente'
+        SET balance = 0, estado_pago = 'pagado', tiene_nc = TRUE
+        WHERE siigo_invoice_id = ANY(%s)
     """, (nc_invoice_ids,))
     marcadas = cur.rowcount
     conn.commit()

@@ -658,6 +658,7 @@ def _create_tables():
     cur.execute("ALTER TABLE ventas_daily ADD COLUMN IF NOT EXISTS conciliacion TEXT")
     cur.execute("ALTER TABLE ventas_daily ADD COLUMN IF NOT EXISTS factura_id INTEGER REFERENCES crm_facturas(id)")
     cur.execute("CREATE INDEX IF NOT EXISTS idx_vd_factura ON ventas_daily(factura_id)")
+    cur.execute("ALTER TABLE crm_facturas ADD COLUMN IF NOT EXISTS tiene_nc BOOLEAN DEFAULT FALSE")
 
     conn.commit()
 
