@@ -64,9 +64,21 @@ SHEET_ID = "1TPNSQWHHZbGJNrDwVbiSXmWRnQNQNRX97ciSWjfEXwU"
 SHEET_TABS = [
     ("BDB2024",           "BDB"),
     ("BDB2025",           "BDB"),
-    ("BANCOLOMBIA 2025",  "BANCOLOMBIA"),  # nombre exacto del Sheet
+    ("BANCOLOMBIA 2025",  "BANCOLOMBIA"),
     ("BANCOLOMBIA 2024",  "BANCOLOMBIA"),
+    ("AVALPAY",           "AVALPAY"),
 ]
+
+# Mapeo medio_pago → bancos a buscar en sugerencias
+_MEDIO_A_BANCOS = {
+    "BANCOLOMBIA":    ["BANCOLOMBIA"],
+    "BANCO DE BOGOTA":["BDB"],
+    "LINK":           ["AVALPAY", "BDB"],   # AVALPAY primero (identificación), BDB para conciliar
+    "AVALPAY":        ["AVALPAY", "BDB"],
+    "EFECTIVO":       [],
+    "CRUCE":          [],
+    "MARIA INES":     [],
+}
 
 def _get_sheets_service():
     """Build Google Sheets service from env var or local credentials file."""
@@ -141,7 +153,8 @@ def _parse_date_sheet(v) -> Optional[date]:
     if isinstance(v, date):
         return v
     s = str(v).strip()
-    for fmt in ("%Y%m%d", "%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y"):
+    for fmt in ("%Y%m%d", "%d/%m/%Y", "%Y-%m-%d", "%m/%d/%Y", "%d-%m-%Y",
+                "%d/%m/%Y %H:%M", "%d/%m/%Y %H:%M:%S"):
         try:
             return datetime.strptime(s, fmt).date()
         except ValueError:
@@ -796,11 +809,31 @@ def sync_bancos():
             continue
 
         is_bdb = banco == "BDB"
+        is_avalpay = banco == "AVALPAY"
 
         for row_idx, row in enumerate(rows[1:], start=2):
-            row = list(row) + [""] * 10
+            row = list(row) + [""] * 15
 
-            if is_bdb:
+            if is_avalpay:
+                # AVALPAY PSE: id|date|franchise|card_num|currency_code|amount|tax|invoice_num|reference_alt
+                # amount está en centavos, date = "DD/MM/YYYY HH:MM"
+                fecha_raw = row[1]   # col B: date
+                amount_raw = row[5]  # col F: amount (centavos)
+                invoice_num = str(row[7]).strip() if row[7] else ""
+                reference_alt = str(row[8]).strip() if row[8] else ""
+                # Descripción: usar reference_alt si no dice "shopify payment", si no invoice_num
+                if reference_alt and reference_alt.lower() != "shopify payment":
+                    desc_raw = reference_alt
+                elif invoice_num and invoice_num.lower() != "shopify payment":
+                    desc_raw = invoice_num
+                else:
+                    desc_raw = "AVALPAY PSE"
+                try:
+                    valor = float(str(amount_raw).replace(",", "").replace(" ", "")) / 100
+                except:
+                    valor = None
+                estado = None; rc_sheet = None; cli_sheet = reference_alt if reference_alt and reference_alt.lower() != "shopify payment" else None
+            elif is_bdb:
                 # BDB: formato colombiano, columnas: Fecha|Transaccion|Debitos|Creditos|Estado|RC|Cliente
                 fecha_raw = row[0]
                 desc_raw  = row[1]
@@ -1568,27 +1601,34 @@ def get_conciliacion(banco: Optional[str] = None, solo_pendientes: bool = True):
             "conciliado": r[8], "factura_id": r[9], "sheet_tab": r[10]
         })
 
-    # Facturas pendientes de pago
+    # Facturas pendientes de pago — con medio_esperado desde ventas_daily
     cur.execute("""
         SELECT f.id, f.siigo_invoice_id, f.numero, f.prefix, f.fecha,
                f.total, f.balance, f.estado_pago, f.medio_pago,
                COALESCE(NULLIF(TRIM(c.nombre), ''), NULLIF(f.cliente_nombre, '(Sin nombre)'), f.cliente_nombre) AS cliente_nombre,
-               COALESCE(c.cedula, f.cliente_cedula) AS cliente_cedula
+               COALESCE(c.cedula, f.cliente_cedula) AS cliente_cedula,
+               vd.medio_pago AS vd_medio_pago
         FROM crm_facturas f
         LEFT JOIN crm_clientes c ON c.id = f.cliente_id
+        LEFT JOIN ventas_daily vd ON vd.factura_id = f.id
         WHERE f.estado_pago = 'pendiente' AND f.balance > 0
         ORDER BY f.fecha DESC
         LIMIT 500
     """)
     facturas_pendientes = []
     for r in cur.fetchall():
+        medio_esperado = r[11]  # medio_pago de ventas_daily
+        bancos = _MEDIO_A_BANCOS.get(medio_esperado, None) if medio_esperado else None
         facturas_pendientes.append({
             "id": r[0], "siigo_invoice_id": r[1], "numero": r[2], "prefix": r[3],
             "factura": f"{r[3]}-{r[2]}" if r[3] else str(r[2]),
             "fecha": r[4].isoformat() if r[4] else None,
             "total": float(r[5]), "balance": float(r[6]),
             "estado_pago": r[7], "medio_pago": r[8],
-            "cliente_nombre": r[9], "cliente_cedula": r[10]
+            "cliente_nombre": r[9], "cliente_cedula": r[10],
+            "medio_esperado": medio_esperado,
+            "bancos_filtro": bancos,
+            "banco_sugerido": bancos[0] if bancos else None
         })
 
     cur.close(); conn.close()
@@ -1670,23 +1710,53 @@ def get_sugerencias(factura_id: int):
     monto_ref = float(row[2]) if row[2] else float(row[3])  # balance si existe, si no total
     fecha_ref = row[4]
 
-    # Traer movimientos no conciliados: desde 15 días antes de la factura hasta hoy (sin límite hacia adelante)
+    # Buscar medio_pago en ventas_daily para filtrar por banco esperado
+    cur.execute("""
+        SELECT medio_pago FROM ventas_daily WHERE factura_id = %s LIMIT 1
+    """, (factura_id,))
+    vd_row = cur.fetchone()
+    medio_pago_vd = vd_row[0] if vd_row else None
+    bancos_filtro = _MEDIO_A_BANCOS.get(medio_pago_vd, None) if medio_pago_vd else None
+    # bancos_filtro = None → sin filtro; [] → sin movimiento esperado (efectivo/cruce)
+
+    # Traer movimientos no conciliados: desde 15 días antes de la factura hasta hoy
     fecha_minima = (fecha_ref - timedelta(days=15)) if fecha_ref else None
+
+    # Para LINK: traer AVALPAY primero (identificación) + BDB (contable)
+    # Para otros: filtrar por bancos_filtro si existe
+    if bancos_filtro is not None and len(bancos_filtro) == 0:
+        # EFECTIVO / CRUCE / MARIA INES: no hay movimiento bancario
+        cur.close(); conn.close()
+        return {
+            "factura_id": factura_id, "monto_ref": monto_ref, "sugerencias": [],
+            "medio_esperado": medio_pago_vd, "bancos_filtro": bancos_filtro,
+            "sin_movimiento": True,
+            "msg": f"Medio de pago '{medio_pago_vd}' no genera movimiento bancario"
+        }
+
+    # Construir query con filtro de banco opcional
+    banco_sql = ""
+    params_mov: list = []
+    if bancos_filtro:
+        banco_sql = "AND banco = ANY(%s)"
+        params_mov.append(bancos_filtro)
+
     if fecha_minima:
-        cur.execute("""
+        params_mov_q = [fecha_minima] + params_mov if not bancos_filtro else [fecha_minima] + params_mov
+        cur.execute(f"""
             SELECT id, banco, fecha, descripcion, valor, estado, rc_sheet, cliente_sheet, sheet_tab
             FROM movimientos_bancarios
-            WHERE conciliado = FALSE AND valor > 0 AND fecha >= %s
+            WHERE conciliado = FALSE AND valor > 0 AND fecha >= %s {banco_sql}
             ORDER BY fecha DESC
-        """, (fecha_minima,))
+        """, [fecha_minima] + (params_mov if bancos_filtro else []))
     else:
-        cur.execute("""
+        cur.execute(f"""
             SELECT id, banco, fecha, descripcion, valor, estado, rc_sheet, cliente_sheet, sheet_tab
             FROM movimientos_bancarios
-            WHERE conciliado = FALSE AND valor > 0
+            WHERE conciliado = FALSE AND valor > 0 {banco_sql}
             ORDER BY fecha DESC
             LIMIT 1000
-        """)
+        """, params_mov)
     movimientos = cur.fetchall()
     cur.close(); conn.close()
 
@@ -1694,6 +1764,7 @@ def get_sugerencias(factura_id: int):
     for m in movimientos:
         mov_valor = float(m[4])
         mov_fecha = m[2]
+        mov_banco = m[1]
 
         # Score de monto: 100% si coincide exacto, cae linealmente hasta 0% con diferencia >50%
         if monto_ref > 0:
@@ -1715,22 +1786,34 @@ def get_sugerencias(factura_id: int):
             continue
 
         diff_abs = round(mov_valor - monto_ref, 0)
+        # Para LINK: AVALPAY es solo identificación (no conciliar contablemente)
+        es_avalpay_identificacion = (mov_banco == "AVALPAY" and medio_pago_vd in ("LINK", "AVALPAY"))
         scored.append({
-            "id": m[0], "banco": m[1],
+            "id": m[0], "banco": mov_banco,
             "fecha": m[2].isoformat() if m[2] else None,
             "descripcion": m[3], "valor": mov_valor,
-            "estado": m[4], "rc_sheet": m[6], "cliente_sheet": m[7], "sheet_tab": m[8],
+            "estado": m[5], "rc_sheet": m[6], "cliente_sheet": m[7], "sheet_tab": m[8],
             "score": score_total,
             "score_monto": round(score_monto, 3),
             "score_fecha": round(score_fecha, 3),
             "diff_monto": diff_abs,
-            "diff_pct": round(diff_pct * 100, 2),   # porcentaje real de diferencia de monto
-            "match_exacto": diff_pct < 0.001,         # realmente exacto: < 0.1%
-            "match_cercano": 0.001 <= diff_pct <= 0.01  # cercano: entre 0.1% y 1%
+            "diff_pct": round(diff_pct * 100, 2),
+            "match_exacto": diff_pct < 0.001,
+            "match_cercano": 0.001 <= diff_pct <= 0.01,
+            "solo_identificacion": es_avalpay_identificacion
         })
 
-    scored.sort(key=lambda x: -x["score"])
-    return {"factura_id": factura_id, "monto_ref": monto_ref, "sugerencias": scored[:8]}
+    # Para LINK: ordenar AVALPAY (identificación) antes que BDB
+    if medio_pago_vd in ("LINK", "AVALPAY"):
+        scored.sort(key=lambda x: (not x.get("solo_identificacion", False), -x["score"]))
+    else:
+        scored.sort(key=lambda x: -x["score"])
+
+    return {
+        "factura_id": factura_id, "monto_ref": monto_ref, "sugerencias": scored[:10],
+        "medio_esperado": medio_pago_vd, "bancos_filtro": bancos_filtro,
+        "sin_movimiento": False
+    }
 
 
 @router.post("/auto-conciliar")

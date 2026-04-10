@@ -2980,46 +2980,6 @@ class VentaIn(BaseModel):
     conciliacion: Optional[str] = None
     notas: Optional[str] = None
 
-@router.get("/ventas-daily")
-def listar_ventas_daily(
-    desde: Optional[str] = None,
-    hasta: Optional[str] = None,
-    canal: Optional[str] = None,
-    pagado: Optional[bool] = None,
-    limit: int = 2000
-):
-    conn = get_conn()
-    cur = conn.cursor()
-    where = []
-    params = []
-    if desde:
-        where.append("fecha_despacho >= %s"); params.append(desde)
-    if hasta:
-        where.append("fecha_despacho <= %s"); params.append(hasta)
-    if canal:
-        where.append("canal = %s"); params.append(canal)
-    if pagado is True:
-        where.append("fecha_pago IS NOT NULL")
-    elif pagado is False:
-        where.append("fecha_pago IS NULL")
-    sql = """SELECT id, fecha_despacho, fecha_pago, cliente, numero_factura,
-                    valor, medio_pago, canal, conciliacion, notas
-             FROM ventas_daily"""
-    if where:
-        sql += " WHERE " + " AND ".join(where)
-    sql += " ORDER BY fecha_despacho DESC, id DESC LIMIT %s"
-    params.append(limit)
-    cur.execute(sql, params)
-    rows = cur.fetchall()
-    cur.close(); conn.close()
-    return [{"id": r[0],
-             "fecha_despacho": str(r[1]) if r[1] else None,
-             "fecha_pago": str(r[2]) if r[2] else None,
-             "cliente": r[3], "numero_factura": r[4],
-             "valor": float(r[5]) if r[5] else None,
-             "medio_pago": r[6], "canal": r[7],
-             "conciliacion": r[8], "notas": r[9]} for r in rows]
-
 @router.post("/ventas-daily")
 def crear_venta(data: VentaIn):
     conn = get_conn()
@@ -3143,3 +3103,142 @@ def importar_ventas_sheet():
 
     conn.commit(); cur.close(); conn.close()
     return {"ok": True, "inserted": inserted, "skipped": skipped}
+
+
+@router.post("/ventas-daily/sync-desde-siigo")
+def sync_ventas_desde_siigo():
+    """Sincroniza ventas_daily desde crm_facturas (Siigo es fuente de verdad).
+    - Facturas con match en ventas_daily → vincula factura_id y actualiza cliente/valor/fecha
+    - Facturas sin match → crea fila nueva en ventas_daily
+    - No sobreescribe: canal, medio_pago, notas del comercial
+    """
+    import re as _re
+    conn = get_conn()
+    cur = conn.cursor()
+
+    # Traer todas las facturas de Siigo
+    cur.execute("""
+        SELECT f.id, f.numero, f.prefix, f.fecha, f.total, f.balance,
+               COALESCE(NULLIF(TRIM(c.nombre),''), f.cliente_nombre) as nombre,
+               f.estado_pago
+        FROM crm_facturas f
+        LEFT JOIN crm_clientes c ON c.id = f.cliente_id
+        ORDER BY f.fecha DESC
+    """)
+    facturas = cur.fetchall()
+
+    # Traer ventas_daily existentes con su número de factura y factura_id
+    cur.execute("SELECT id, numero_factura, factura_id FROM ventas_daily")
+    ventas = cur.fetchall()
+
+    # Índice por número extraído (ej: "No. FE 3539" → 3539)
+    def extraer_numero(s):
+        if not s: return None
+        m = _re.search(r'(\d{3,6})', str(s))
+        return int(m.group(1)) if m else None
+
+    ventas_por_num = {}
+    for v in ventas:
+        n = extraer_numero(v[1])
+        if n: ventas_por_num[n] = v[0]  # num → venta_id
+
+    vinculadas = 0; creadas = 0
+
+    for f in facturas:
+        fid, numero, prefix, fecha, total, balance, nombre, estado = f
+        num = numero  # ya es int desde Siigo
+
+        if num in ventas_por_num:
+            # Actualizar campos de Siigo, respetar campos del comercial
+            cur.execute("""
+                UPDATE ventas_daily
+                SET factura_id = %s,
+                    cliente = COALESCE(NULLIF(cliente,''), %s),
+                    valor = %s,
+                    fecha_despacho = COALESCE(fecha_despacho, %s)
+                WHERE id = %s AND (factura_id IS NULL OR factura_id = %s)
+            """, (fid, nombre, float(total), fecha, ventas_por_num[num], fid))
+            vinculadas += 1
+        else:
+            # Crear nueva fila desde Siigo
+            factura_str = f"No. {prefix}-{numero}" if prefix else f"No. {numero}"
+            cur.execute("""
+                INSERT INTO ventas_daily (factura_id, cliente, numero_factura, valor, fecha_despacho)
+                VALUES (%s, %s, %s, %s, %s)
+                ON CONFLICT DO NOTHING
+            """, (fid, nombre or '(Sin nombre)', factura_str, float(total), fecha))
+            creadas += 1
+
+    conn.commit(); cur.close(); conn.close()
+    return {"ok": True, "vinculadas": vinculadas, "creadas": creadas, "total_facturas": len(facturas)}
+
+
+@router.get("/ventas-daily")
+def listar_ventas_daily_v2(
+    desde: Optional[str] = None,
+    hasta: Optional[str] = None,
+    canal: Optional[str] = None,
+    pagado: Optional[bool] = None,
+    limit: int = 2000
+):
+    """Versión enriquecida: incluye estado de conciliación desde crm_facturas."""
+    conn = get_conn()
+    cur = conn.cursor()
+    where = ["1=1"]
+    params = []
+    if desde:
+        where.append("v.fecha_despacho >= %s"); params.append(desde)
+    if hasta:
+        where.append("v.fecha_despacho <= %s"); params.append(hasta)
+    if canal:
+        where.append("v.canal = %s"); params.append(canal)
+    if pagado is True:
+        where.append("v.fecha_pago IS NOT NULL")
+    elif pagado is False:
+        where.append("v.fecha_pago IS NULL")
+    params.append(limit)
+    cur.execute(f"""
+        SELECT v.id, v.fecha_despacho, v.fecha_pago, v.cliente, v.numero_factura,
+               v.valor, v.medio_pago, v.canal, v.conciliacion, v.notas, v.factura_id,
+               f.estado_pago, f.rc_numero, f.balance,
+               m.fecha AS fecha_pago_banco, m.banco AS banco_pago
+        FROM ventas_daily v
+        LEFT JOIN crm_facturas f ON v.factura_id = f.id
+        LEFT JOIN movimientos_bancarios m ON f.movimiento_id = m.id
+        WHERE {' AND '.join(where)}
+        ORDER BY v.fecha_despacho DESC NULLS LAST, v.id DESC
+        LIMIT %s
+    """, params)
+    rows = cur.fetchall()
+    cur.close(); conn.close()
+
+    result = []
+    for r in rows:
+        estado_pago = r[11]
+        rc_numero = r[12]
+        fecha_pago_banco = r[14]
+        if rc_numero:
+            estado_concil = "con_rc"
+        elif estado_pago == 'pagado':
+            estado_concil = "conciliado"
+        elif r[10]:  # tiene factura_id
+            estado_concil = "pendiente"
+        else:
+            estado_concil = "sin_factura"
+
+        result.append({
+            "id": r[0],
+            "fecha_despacho": str(r[1]) if r[1] else None,
+            "fecha_pago": str(r[2]) if r[2] else None,
+            "cliente": r[3], "numero_factura": r[4],
+            "valor": float(r[5]) if r[5] else None,
+            "medio_pago": r[6], "canal": r[7],
+            "conciliacion": r[8], "notas": r[9],
+            "factura_id": r[10],
+            "estado_conciliacion": estado_concil,
+            "rc_numero": rc_numero,
+            "balance": float(r[13]) if r[13] else None,
+            "fecha_pago_banco": str(fecha_pago_banco) if fecha_pago_banco else None,
+            "banco_pago": r[15]
+        })
+    return result

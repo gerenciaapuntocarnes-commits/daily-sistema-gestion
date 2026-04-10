@@ -1065,7 +1065,7 @@ tr:hover .btn-delete { opacity: 1; }
       <div class="card-body p-0">
         <div class="table-responsive">
           <table class="table table-vcenter table-sm card-table table-hover">
-            <thead><tr><th>Fecha</th><th>Cliente</th><th>Factura</th><th class="text-end">Saldo</th><th>Acción</th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Cliente</th><th>Factura</th><th class="text-end">Saldo</th><th>Banco esp.</th><th>Acción</th></tr></thead>
             <tbody id="concil-facturas-body"></tbody>
           </table>
         </div>
@@ -5706,25 +5706,40 @@ function _renderConcilFacturasPage(facts, page) {
   if(!el) return;
   var total = facts.length;
   if(!total) {
-    el.innerHTML = '<tr><td colspan="5" class="text-center text-secondary small py-4">Sin facturas pendientes</td></tr>';
+    el.innerHTML = '<tr><td colspan="6" class="text-center text-secondary small py-4">Sin facturas pendientes</td></tr>';
     var pag = $('concil-facturas-paginacion'); if(pag) pag.innerHTML = '';
     return;
   }
+  var _bancoBadge = {
+    'BDB': '<span class="badge bg-blue-lt text-blue" style="font-size:10px">BDB</span>',
+    'BANCOLOMBIA': '<span class="badge bg-lime-lt text-lime" style="font-size:10px">Bancolombia</span>',
+    'AVALPAY': '<span class="badge bg-purple-lt text-purple" style="font-size:10px">Avalpay</span>',
+    'EFECTIVO': '<span class="badge bg-green-lt text-green" style="font-size:10px">Efectivo</span>',
+    'CRUCE': '<span class="badge bg-secondary-lt" style="font-size:10px">Cruce</span>',
+    'MARIA INES': '<span class="badge bg-pink-lt" style="font-size:10px">M.Inés</span>',
+    'LINK': '<span class="badge bg-purple-lt text-purple" style="font-size:10px">Link</span>'
+  };
   var start = page * PENDIENTES_PAGE_SIZE;
   var end = Math.min(start + PENDIENTES_PAGE_SIZE, total);
   el.innerHTML = facts.slice(start, end).map(function(f){
     var sel = concilFactSelId === f.id;
     var nombre = f.cliente_nombre || '';
+    var bancoBadge = f.medio_esperado ? (_bancoBadge[f.banco_sugerido] || _bancoBadge[f.medio_esperado] || '<span class="badge bg-secondary-lt" style="font-size:10px">'+f.medio_esperado+'</span>') : '<span class="text-muted" style="font-size:10px">—</span>';
     var rows = '<tr class="'+(sel?'table-warning':'')+'" style="cursor:pointer" onclick="concilSelectFact('+f.id+',\''+nombre.replace(/'/g,"\\'").replace(/"/g,'&quot;')+'\',' + f.balance + ')">' +
       '<td class="small">'+f.fecha+'</td>' +
       '<td class="small" style="max-width:130px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis" title="'+nombre+'">'+nombre+'</td>' +
       '<td><code class="small">'+f.factura+'</code></td>' +
       '<td class="text-end fw-bold text-danger">$'+fmt(f.balance)+'</td>' +
+      '<td>'+bancoBadge+'</td>' +
       '<td><button class="btn btn-xs btn-outline-primary" onclick="event.stopPropagation();marcarEfectivoFactura('+f.id+')" title="Marcar como pagada en efectivo"><i class="ti ti-cash"></i></button></td>' +
     '</tr>';
     if(sel) {
-      rows += '<tr id="concil-panel-'+f.id+'"><td colspan="5" class="p-0"><div class="bg-yellow-lt p-3">' +
-        '<div class="fw-bold mb-2"><i class="ti ti-bulb me-1"></i>Movimientos sugeridos — <span class="text-secondary small" id="concil-fact-info"></span></div>' +
+      var buscandoInfo = f.medio_esperado
+        ? '<span class="badge ms-2 '+(f.bancos_filtro && f.bancos_filtro.length===0?'bg-green-lt text-green':'bg-blue-lt text-blue')+'" style="font-size:10px">' +
+          (f.bancos_filtro && f.bancos_filtro.length===0 ? '<i class="ti ti-cash me-1"></i>'+f.medio_esperado : '<i class="ti ti-building-bank me-1"></i>Buscando en: '+(f.bancos_filtro||[]).join(' + ')) + '</span>'
+        : '';
+      rows += '<tr id="concil-panel-'+f.id+'"><td colspan="6" class="p-0"><div class="bg-yellow-lt p-3">' +
+        '<div class="fw-bold mb-2"><i class="ti ti-bulb me-1"></i>Movimientos sugeridos — <span class="text-secondary small" id="concil-fact-info"></span>'+buscandoInfo+'</div>' +
         '<div id="concil-sugerencias-body"><div class="text-secondary small text-center py-3"><i class="ti ti-loader spin me-1"></i>Buscando...</div></div>' +
         '</div></td></tr>';
     }
@@ -5771,12 +5786,20 @@ async function concilSelectFact(id, nombre, balance) {
   var res = await api('/crm/sugerencias/'+id,'GET',null,true).catch(function(){ return null; });
   var bodyEl2 = $('concil-sugerencias-body'); // re-fetch in case DOM was re-rendered
   if(!bodyEl2) return;
-  if(!res || !res.sugerencias) {
+  if(!res) {
     bodyEl2.innerHTML = '<div class="text-secondary small text-center py-3">No se encontraron movimientos similares</div>';
     return;
   }
 
-  var sugs = res.sugerencias.filter(function(s){ return !banco || s.banco === banco; });
+  // Sin movimiento bancario esperado (efectivo, cruce, etc.)
+  if(res.sin_movimiento) {
+    bodyEl2.innerHTML = '<div class="alert alert-success py-2 px-3 small mb-0"><i class="ti ti-cash me-1"></i>' +
+      '<strong>' + (res.medio_esperado||'') + '</strong>: no requiere movimiento bancario. ' +
+      '<button class="btn btn-sm btn-success ms-2" onclick="marcarEfectivoFactura('+id+')"><i class="ti ti-check me-1"></i>Marcar pagada</button></div>';
+    return;
+  }
+
+  var sugs = (res.sugerencias||[]).filter(function(s){ return !banco || s.banco === banco; });
   if(!sugs.length) {
     bodyEl2.innerHTML = '<div class="text-secondary small text-center py-3">Sin movimientos similares'+(banco?' en '+banco:'')+'</div>';
     return;
@@ -5784,9 +5807,9 @@ async function concilSelectFact(id, nombre, balance) {
 
   bodyEl2.innerHTML = sugs.map(function(s){
     var pct = Math.round(s.score * 100);
-    var montoPct = Math.round((s.score_monto||0) * 100);
     var borderColor = pct >= 80 ? '#2fb344' : pct >= 50 ? '#f76707' : '#adb5bd';
     var barColor = pct >= 80 ? 'bg-success' : pct >= 50 ? 'bg-warning' : 'bg-secondary';
+    var bancoBadgeClass = s.banco === 'BDB' ? 'bg-blue-lt' : s.banco === 'AVALPAY' ? 'bg-purple-lt' : 'bg-lime-lt';
 
     // Badge de coincidencia
     var matchBadge = '';
@@ -5796,6 +5819,11 @@ async function concilSelectFact(id, nombre, balance) {
       matchBadge = '<span class="badge bg-teal-lt text-teal" style="font-size:10px;font-weight:600;">≈ Cercano</span>';
     }
 
+    // Badge solo identificación (AVALPAY en pagos LINK)
+    var identBadge = s.solo_identificacion
+      ? '<span class="badge bg-purple-lt text-purple" style="font-size:10px"><i class="ti ti-eye me-1"></i>Solo identificación</span>'
+      : '';
+
     // Diferencia de monto
     var diffStr = '';
     if(s.diff_monto !== 0) {
@@ -5803,14 +5831,19 @@ async function concilSelectFact(id, nombre, balance) {
       diffStr = '<span class="'+diffColor+' small ms-1">'+(s.diff_monto>0?'+':'')+fmt(s.diff_monto)+' ('+s.diff_pct+'%)</span>';
     }
 
+    // Botón vincular: deshabilitado si es solo identificación
+    var btnVincular = s.solo_identificacion
+      ? '<button class="btn btn-sm btn-outline-purple disabled" title="Este movimiento es solo para identificar al comprador — vincular el BDB"><i class="ti ti-eye me-1"></i>ID</button>'
+      : '<button class="btn btn-sm btn-success" onclick="conciliarDirecto('+id+','+s.id+',\''+s.banco+'\')"><i class="ti ti-check me-1"></i>Vincular</button>';
+
     return '<div class="card mb-2" style="border-left:3px solid '+borderColor+';">' +
       '<div class="card-body py-2 px-3">' +
         '<div class="row align-items-center g-2">' +
           '<div class="col">' +
-            '<div class="d-flex align-items-center gap-2 mb-1">' +
-              '<span class="badge '+(s.banco==='BDB'?'bg-blue-lt':'bg-lime-lt')+'">'+fmtBanco(s.banco)+'</span>' +
+            '<div class="d-flex align-items-center gap-2 mb-1 flex-wrap">' +
+              '<span class="badge '+bancoBadgeClass+'">'+fmtBanco(s.banco)+'</span>' +
               '<span class="small fw-bold">'+s.fecha+'</span>' +
-              matchBadge +
+              matchBadge + identBadge +
             '</div>' +
             '<div class="small text-secondary" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:300px" title="'+(s.descripcion||'')+'">'+((s.descripcion||'--').slice(0,50))+'</div>' +
             (s.cliente_sheet ? '<div class="small text-muted"><i class="ti ti-user me-1"></i>'+s.cliente_sheet+'</div>' : '') +
@@ -5822,9 +5855,7 @@ async function concilSelectFact(id, nombre, balance) {
               '<span class="small text-secondary">'+pct+'%</span>' +
             '</div>' +
           '</div>' +
-          '<div class="col-auto">' +
-            '<button class="btn btn-sm btn-success" onclick="conciliarDirecto('+id+','+s.id+',\''+s.banco+'\')"><i class="ti ti-check me-1"></i>Vincular</button>' +
-          '</div>' +
+          '<div class="col-auto">' + btnVincular + '</div>' +
         '</div>' +
       '</div>' +
     '</div>';
@@ -6494,20 +6525,21 @@ async function loadVentasDaily() {
 
 function _renderVentasKpis(rows) {
   var total = rows.reduce(function(s, r) { return s + (r.valor || 0); }, 0);
-  var pagadas = rows.filter(function(r) { return r.fecha_pago; });
-  var cobrado = pagadas.reduce(function(s, r) { return s + (r.valor || 0); }, 0);
-  var pendiente = total - cobrado;
-  var canales = {};
-  rows.forEach(function(r) {
-    var c = r.canal || 'SIN INFORMACIÓN';
-    canales[c] = (canales[c] || 0) + (r.valor || 0);
-  });
-  var topCanal = Object.entries(canales).sort(function(a, b) { return b[1] - a[1]; })[0];
+  // Conciliación basada en estado_conciliacion del backend
+  var conciliadas = rows.filter(function(r) { return r.estado_conciliacion === 'conciliado' || r.estado_conciliacion === 'con_rc'; });
+  var conRC = rows.filter(function(r) { return r.estado_conciliacion === 'con_rc'; });
+  var cobrado = conciliadas.reduce(function(s, r) { return s + (r.valor || 0); }, 0);
+  var valorPendiente = rows
+    .filter(function(r) { return r.balance && r.balance > 0; })
+    .reduce(function(s, r) { return s + (r.balance || 0); }, 0);
+  var vinculadas = rows.filter(function(r) { return r.factura_id; });
+  var pctVinc = rows.length ? Math.round(vinculadas.length / rows.length * 100) : 0;
+  var pctConcil = rows.length ? Math.round(conciliadas.length / rows.length * 100) : 0;
   $('ventas-daily-kpis').innerHTML =
-    '<div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center"><div class="col-auto"><span class="bg-blue text-white avatar"><i class="ti ti-shopping-bag"></i></span></div><div class="col"><div class="font-weight-medium">' + rows.length + ' ventas</div><div class="text-secondary small">Total registros</div></div></div></div></div></div>' +
-    '<div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center"><div class="col-auto"><span class="bg-azure text-white avatar"><i class="ti ti-currency-dollar"></i></span></div><div class="col"><div class="font-weight-medium">' + '$'+fmt(total) + '</div><div class="text-secondary small">Total ventas</div></div></div></div></div></div>' +
-    '<div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center"><div class="col-auto"><span class="bg-green text-white avatar"><i class="ti ti-circle-check"></i></span></div><div class="col"><div class="font-weight-medium">' + '$'+fmt(cobrado) + '</div><div class="text-secondary small">Cobrado (' + pagadas.length + ')</div></div></div></div></div></div>' +
-    '<div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center"><div class="col-auto"><span class="bg-yellow text-white avatar"><i class="ti ti-clock"></i></span></div><div class="col"><div class="font-weight-medium">' + '$'+fmt(pendiente) + '</div><div class="text-secondary small">Pendiente (' + (rows.length - pagadas.length) + ')</div></div></div></div></div></div>';
+    '<div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center"><div class="col-auto"><span class="bg-blue text-white avatar"><i class="ti ti-shopping-bag"></i></span></div><div class="col"><div class="font-weight-medium">' + rows.length + ' ventas</div><div class="text-secondary small">Vinculadas a Siigo: ' + pctVinc + '%</div></div></div></div></div></div>' +
+    '<div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center"><div class="col-auto"><span class="bg-azure text-white avatar"><i class="ti ti-currency-dollar"></i></span></div><div class="col"><div class="font-weight-medium">$'+fmt(total) + '</div><div class="text-secondary small">Total ventas</div></div></div></div></div></div>' +
+    '<div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center"><div class="col-auto"><span class="bg-green text-white avatar"><i class="ti ti-circle-check"></i></span></div><div class="col"><div class="font-weight-medium">'+pctConcil+'% conciliadas</div><div class="text-secondary small">'+conciliadas.length+' cobradas · '+conRC.length+' con RC</div></div></div></div></div></div>' +
+    '<div class="col-sm-6 col-lg-3"><div class="card card-sm"><div class="card-body"><div class="row align-items-center"><div class="col-auto"><span class="bg-yellow text-white avatar"><i class="ti ti-clock"></i></span></div><div class="col"><div class="font-weight-medium">$'+fmt(valorPendiente) + '</div><div class="text-secondary small">Saldo pendiente Siigo</div></div></div></div></div></div>';
 }
 
 function _renderVentaRow(r) {
@@ -6521,7 +6553,20 @@ function _renderVentaRow(r) {
     ? '<span class="badge bg-green-lt text-green">' + r.fecha_pago + '</span>'
     : '<span class="badge bg-yellow-lt text-yellow">Pendiente</span>';
   var medioBadge = r.medio_pago ? '<span class="badge bg-secondary-lt">' + r.medio_pago + '</span>' : '';
-  var concilBadge = r.conciliacion ? '<span class="badge bg-teal-lt">' + r.conciliacion + '</span>' : '';
+  // Badge dinámico de conciliación según estado_conciliacion del backend
+  var concilBadge;
+  var ec = r.estado_conciliacion;
+  if (ec === 'con_rc') {
+    concilBadge = '<span class="badge bg-green-lt text-green" style="cursor:pointer" onclick="irAConciliados(\''+r.numero_factura+'\')"><i class="ti ti-receipt me-1"></i>'+(r.rc_numero||'Con RC')+'</span>';
+  } else if (ec === 'conciliado') {
+    var fPago = r.fecha_pago_banco || r.fecha_pago || '';
+    concilBadge = '<span class="badge bg-azure-lt text-azure" style="cursor:pointer" onclick="irAConciliados(\''+r.numero_factura+'\')"><i class="ti ti-check me-1"></i>Conciliado'+(fPago?' '+fPago:'')+'</span>';
+  } else if (ec === 'pendiente') {
+    concilBadge = '<span class="badge bg-yellow-lt text-yellow"><i class="ti ti-clock me-1"></i>Pendiente</span>';
+  } else {
+    // sin_factura o null: mostrar valor manual si existe
+    concilBadge = r.conciliacion ? '<span class="badge bg-secondary-lt">' + r.conciliacion + '</span>' : '<span class="badge bg-secondary-lt text-muted">Sin Siigo</span>';
+  }
   return '<tr>' +
     '<td><input type="checkbox" class="form-check-input vd-check-row" data-id="' + r.id + '" onchange="vdUpdateSeleccion()"></td>' +
     '<td>' + (r.fecha_despacho || '-') + '</td>' +
@@ -6537,6 +6582,18 @@ function _renderVentaRow(r) {
       '<button class="btn btn-xs btn-outline-danger btn-delete" onclick="deleteVenta(' + r.id + ')"><i class="ti ti-trash"></i></button>' +
     '</td>' +
   '</tr>';
+}
+
+function irAConciliados(numeroFactura) {
+  goto('ventas');
+  setTimeout(function() {
+    var tab = document.querySelector('#tab-conciliados');
+    if(tab) tab.click();
+    if(numeroFactura) {
+      var search = $('concil-search-conciliados');
+      if(search) { search.value = numeroFactura; search.dispatchEvent(new Event('input')); }
+    }
+  }, 400);
 }
 
 function vdToggleAll(checked) {
