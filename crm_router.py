@@ -1456,12 +1456,12 @@ def _run_sync_rc_inner(job):
     conn = get_conn()
     cur = conn.cursor()
 
-    # Traer facturas conciliadas sin RC registrado en nuestra BD
+    # Traer facturas sin RC registrado en nuestra BD (pagadas o pendientes con balance=0)
     cur.execute("""
-        SELECT f.id, f.total, f.fecha, c.siigo_id AS cliente_siigo_id, f.siigo_invoice_id
+        SELECT f.id, f.numero, f.prefix, f.fecha
         FROM crm_facturas f
-        LEFT JOIN crm_clientes c ON c.id = f.cliente_id
-        WHERE f.estado_pago = 'pagado' AND f.rc_siigo_id IS NULL
+        WHERE f.rc_siigo_id IS NULL
+          AND (f.estado_pago = 'pagado' OR f.balance = 0)
         ORDER BY f.fecha DESC
     """)
     facturas_sin_rc = cur.fetchall()
@@ -1470,20 +1470,18 @@ def _run_sync_rc_inner(job):
         cur.close(); conn.close()
         return {"ok": True, "encontrados": 0, "msg": "Todas las facturas ya tienen RC"}
 
-    # Construir índice: cliente_siigo_id -> lista de facturas
-    fac_idx = {}
+    # Índice por número de factura: numero -> {id, prefix, fecha}
+    fac_por_numero = {}
     for row in facturas_sin_rc:
-        fid, total, fecha, cli_siigo, siigo_inv_id = row
-        key = str(cli_siigo) if cli_siigo else None
-        if key:
-            fac_idx.setdefault(key, []).append({
-                "id": fid, "total": float(total or 0),
-                "fecha": fecha, "siigo_invoice_id": siigo_inv_id
-            })
+        fid, numero, prefix, fecha = row
+        fac_por_numero[int(numero)] = {"id": fid, "prefix": prefix, "fecha": fecha}
 
-    # Paginar todos los RCs de Siigo y agrupar por cliente
-    # La API no retorna total en la lista — usamos cliente + fecha para el match
-    rc_por_cliente = {}  # cliente_siigo_id -> lista de {id, numero, fecha}
+    job["step"] = "Descargando RCs de Siigo..."
+
+    # Paginar todos los RCs de Siigo y extraer referencia exacta de factura
+    # Cada RC tiene un item de crédito (13050501) con campo "due" que contiene
+    # el prefix y consecutive (número) de la factura original
+    rc_por_factura_numero = {}  # numero_factura -> {id, numero_rc, fecha}
     page = 1
     while True:
         data = fetch_vouchers_paginated(page=page, page_size=100)
@@ -1498,57 +1496,53 @@ def _run_sync_rc_inner(job):
             v_num       = v.get("number")
             v_name      = str(v.get("name", "") or "")
             v_fecha_str = (v.get("date") or "")[:10]
-            v_cust      = v.get("customer", {}) or {}
-            v_cust_id   = str(v_cust.get("id", "") or "")
-            if not v_id or not v_cust_id:
+            if not v_id:
                 continue
             try:
                 v_fecha = datetime.strptime(v_fecha_str, "%Y-%m-%d").date() if v_fecha_str else None
             except ValueError:
                 v_fecha = None
             rc_num_str = v_name if (v_name and v_name != str(v_num)) else str(v_num)
-            rc_por_cliente.setdefault(v_cust_id, []).append({
-                "id": v_id, "numero": rc_num_str, "fecha": v_fecha
-            })
+
+            # Buscar el item de crédito con "due" → referencia exacta a la factura
+            items = v.get("items", []) or []
+            for item in items:
+                acc = item.get("account", {}) or {}
+                due = item.get("due") or {}
+                if acc.get("movement") == "Credit" and due.get("consecutive"):
+                    inv_numero = int(due["consecutive"])
+                    # Si ya tenemos un RC para ese número, no sobreescribir (el más reciente gana)
+                    if inv_numero not in rc_por_factura_numero:
+                        rc_por_factura_numero[inv_numero] = {
+                            "id": v_id, "numero": rc_num_str, "fecha": v_fecha
+                        }
+                    break
+
         total_results = data.get("pagination", {}).get("total_results", 0)
         if page * 100 >= total_results:
             break
         page += 1
 
-    # Cruzar facturas sin RC con RCs de Siigo por cliente
-    # Solo vincula si hay exactamente 1 RC del cliente en ±60 días de la factura
+    # Cruzar: para cada factura sin RC, buscar si Siigo tiene un RC con ese número de factura
     encontrados = ambiguos = 0
-    for cli_siigo_id, facturas in fac_idx.items():
-        rcs_cliente = rc_por_cliente.get(cli_siigo_id, [])
-        if not rcs_cliente:
+    for inv_numero, fac in fac_por_numero.items():
+        rc = rc_por_factura_numero.get(inv_numero)
+        if not rc:
             continue
-        for fac in facturas:
-            if fac.get("_matched"):
-                continue
-            cercanos = [
-                rc for rc in rcs_cliente
-                if rc["fecha"] and fac["fecha"]
-                and abs((rc["fecha"] - fac["fecha"]).days) <= 60
-            ]
-            if len(cercanos) == 1:
-                rc = cercanos[0]
-                cur.execute("""
-                    UPDATE crm_facturas
-                    SET rc_siigo_id = %s, rc_numero = %s, rc_modo_prueba = FALSE
-                    WHERE id = %s AND rc_siigo_id IS NULL
-                """, (rc["id"], rc["numero"], fac["id"]))
-                if cur.rowcount:
-                    fac["_matched"] = True
-                    encontrados += 1
-            elif len(cercanos) > 1:
-                ambiguos += 1
+        cur.execute("""
+            UPDATE crm_facturas
+            SET rc_siigo_id = %s, rc_numero = %s, rc_modo_prueba = FALSE
+            WHERE id = %s AND rc_siigo_id IS NULL
+        """, (rc["id"], rc["numero"], fac["id"]))
+        if cur.rowcount:
+            encontrados += 1
 
     conn.commit()
     cur.close(); conn.close()
-    result = {"ok": True, "encontrados": encontrados, "ambiguos": ambiguos,
-              "revisadas": len(facturas_sin_rc), "rcs_en_siigo": sum(len(v) for v in rc_por_cliente.values())}
+    result = {"ok": True, "encontrados": encontrados,
+              "revisadas": len(facturas_sin_rc), "rcs_en_siigo": len(rc_por_factura_numero)}
     job["running"] = False; job["ok"] = True
-    job["msg"] = f"{encontrados} RC vinculados, {ambiguos} ambiguos"
+    job["msg"] = f"{encontrados} RC vinculados de {len(rc_por_factura_numero)} encontrados en Siigo"
     job["step"] = "Completado"; job["result"] = result
 
 
