@@ -295,6 +295,8 @@ def reset_crm():
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("DELETE FROM movimientos_bancarios")
+    # Limpiar FK en ventas_daily antes de borrar crm_facturas
+    cur.execute("UPDATE ventas_daily SET factura_id = NULL WHERE factura_id IS NOT NULL")
     cur.execute("DELETE FROM crm_facturas")
     cur.execute("DELETE FROM crm_clientes")
     cur.execute("DELETE FROM crm_sync_log")
