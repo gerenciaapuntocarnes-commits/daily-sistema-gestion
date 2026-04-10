@@ -6717,7 +6717,9 @@ async function syncVentasDesdeSiigo() {
   var res = await api('/ventas-daily/sync-desde-siigo', 'POST', null, false).catch(function(){ return null; });
   if(btn) { btn.disabled = false; btn.innerHTML = '<i class="ti ti-refresh me-1"></i>Sync Siigo'; }
   if(res && res.ok) {
-    notyf.success('Vinculadas: ' + res.vinculadas + ' · Creadas: ' + res.creadas);
+    var msg = 'Vinculadas: ' + res.vinculadas + ' · Creadas: ' + res.creadas;
+    if(res.nc_marcadas) msg += ' · NC ocultas: ' + res.nc_marcadas;
+    notyf.success(msg);
     loadVentasDaily();
   }
 }

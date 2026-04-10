@@ -3171,7 +3171,22 @@ def sync_ventas_desde_siigo():
             creadas += 1
 
     conn.commit(); cur.close(); conn.close()
-    return {"ok": True, "vinculadas": vinculadas, "creadas": creadas, "total_facturas": len(facturas)}
+
+    # Aplicar NCs automáticamente al final
+    nc_marcadas = 0
+    try:
+        from siigo import fetch_credit_notes
+        ncs = fetch_credit_notes()
+        nc_ids = list({nc["invoice"]["id"] for nc in ncs if nc.get("invoice") and nc["invoice"].get("id")})
+        if nc_ids:
+            conn2 = get_conn(); cur2 = conn2.cursor()
+            cur2.execute("UPDATE crm_facturas SET balance=0, estado_pago='pagado', tiene_nc=TRUE WHERE siigo_invoice_id=ANY(%s)", (nc_ids,))
+            nc_marcadas = cur2.rowcount
+            conn2.commit(); cur2.close(); conn2.close()
+    except Exception:
+        pass
+
+    return {"ok": True, "vinculadas": vinculadas, "creadas": creadas, "total_facturas": len(facturas), "nc_marcadas": nc_marcadas}
 
 
 @router.get("/ventas-daily")
