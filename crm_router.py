@@ -880,20 +880,31 @@ def sync_bancos():
                 # amount está en centavos, date = "DD/MM/YYYY HH:MM"
                 fecha_raw = row[1]   # col B: date
                 amount_raw = row[5]  # col F: amount (centavos)
-                invoice_num = str(row[7]).strip() if row[7] else ""
+                invoice_num   = str(row[7]).strip() if row[7] else ""
                 reference_alt = str(row[8]).strip() if row[8] else ""
-                # Descripción: usar reference_alt si no dice "shopify payment", si no invoice_num
-                if reference_alt and reference_alt.lower() != "shopify payment":
-                    desc_raw = reference_alt
-                elif invoice_num and invoice_num.lower() != "shopify payment":
+                shopper_name  = str(row[14]).strip() if len(row) > 14 and row[14] else ""
+                shopper_email = str(row[15]).strip() if len(row) > 15 and row[15] else ""
+                # Descripción: número de orden Shopify
+                if invoice_num and invoice_num.lower() not in ("shopify payment", ""):
                     desc_raw = invoice_num
+                elif reference_alt and reference_alt.lower() != "shopify payment":
+                    desc_raw = reference_alt
                 else:
                     desc_raw = "AVALPAY PSE"
+                # Comprador: nombre real del comprador + email
+                if shopper_name:
+                    buyer_id = shopper_name + (f" <{shopper_email}>" if shopper_email else "")
+                elif shopper_email:
+                    buyer_id = shopper_email
+                elif reference_alt and reference_alt.lower() != "shopify payment":
+                    buyer_id = reference_alt
+                else:
+                    buyer_id = None
                 try:
                     valor = float(str(amount_raw).replace(",", "").replace(" ", "")) / 100
                 except:
                     valor = None
-                estado = None; rc_sheet = None; cli_sheet = reference_alt if reference_alt and reference_alt.lower() != "shopify payment" else None
+                estado = None; rc_sheet = None; cli_sheet = buyer_id
             elif is_bdb:
                 # BDB: formato colombiano, columnas: Fecha|Transaccion|Debitos|Creditos|Estado|RC|Cliente
                 fecha_raw = row[0]
@@ -1334,11 +1345,11 @@ def _crear_rc_en_siigo(factura: dict, modo_prueba: bool) -> dict:
                 }
             },
             *([{
-                "account": {"code": "53059501", "movement": "Debit"},
+                "account": {"code": "53958101", "movement": "Debit"},
                 "description": "Ajuste al peso",
                 "value": ajuste
             }] if ajuste > 0 else [{
-                "account": {"code": "42959501", "movement": "Credit"},
+                "account": {"code": "42958101", "movement": "Credit"},
                 "description": "Ajuste al peso",
                 "value": abs(ajuste)
             }] if ajuste < 0 else [])
@@ -2178,7 +2189,9 @@ def get_conciliados(q: Optional[str] = None, filtro_rc: Optional[str] = None):
         FROM crm_facturas f
         LEFT JOIN crm_clientes c ON c.id = f.cliente_id
         LEFT JOIN movimientos_bancarios m ON m.id = f.movimiento_id
-        WHERE f.estado_pago = 'pagado' {q_filter}
+        WHERE f.estado_pago = 'pagado'
+          AND COALESCE(f.tiene_nc, FALSE) = FALSE
+          {q_filter}
         ORDER BY f.fecha DESC
         LIMIT 500
     """, params)
